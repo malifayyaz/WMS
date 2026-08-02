@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Fab,
   Badge,
@@ -19,6 +20,9 @@ import {
   ListItemSecondaryAction,
   Tooltip,
   Divider,
+  Button,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import SmartToy from '@mui/icons-material/SmartToy';
 import Close from '@mui/icons-material/Close';
@@ -27,9 +31,19 @@ import AddComment from '@mui/icons-material/AddComment';
 import History from '@mui/icons-material/History';
 import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import ArrowBack from '@mui/icons-material/ArrowBack';
+import OpenInNew from '@mui/icons-material/OpenInNew';
 import { aiAPI } from '../../services/api';
 
-const EXAMPLE_CHIPS = ['Customer balances', 'Stock levels', 'This month profit'];
+const EXAMPLE_CHIPS = [
+  'Customer balances',
+  'Cash in hand today',
+  'This month profit',
+  'Ready stock',
+  'Low stock alerts',
+  'Annealing pending',
+  'Processing stock',
+];
+
 const STORAGE_KEY = 'wms_ai_chats_v1';
 
 function createChat() {
@@ -54,10 +68,7 @@ function loadStore() {
 }
 
 function saveStore(chats, activeChatId) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ chats, activeChatId })
-  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ chats, activeChatId }));
 }
 
 function titleFromMessages(messages) {
@@ -92,10 +103,66 @@ function getInitialState() {
   return { chats: [chat], activeChatId: chat.id };
 }
 
+/** Lightweight markdown: **bold**, bullets, line breaks. */
+function MessageBody({ content, isUser }) {
+  const lines = String(content || '').split('\n');
+  return (
+    <Box sx={{ '& p': { m: 0, mb: 0.75 }, '& p:last-child': { mb: 0 } }}>
+      {lines.map((line, i) => {
+        const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+        const text = bullet ? bullet[1] : line;
+        const parts = [];
+        const re = /\*\*(.+?)\*\*/g;
+        let last = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          if (m.index > last) parts.push(text.slice(last, m.index));
+          parts.push(
+            <Box component="strong" key={`b-${i}-${m.index}`} fontWeight={700}>
+              {m[1]}
+            </Box>
+          );
+          last = m.index + m[0].length;
+        }
+        if (last < text.length) parts.push(text.slice(last));
+        if (!text && !bullet) {
+          return <Box key={i} sx={{ height: 8 }} />;
+        }
+        return (
+          <Typography
+            key={i}
+            variant="body2"
+            component="p"
+            sx={{
+              color: isUser ? 'inherit' : 'text.primary',
+              pl: bullet ? 1.5 : 0,
+              position: 'relative',
+              ...(bullet
+                ? {
+                    '&::before': {
+                      content: '"•"',
+                      position: 'absolute',
+                      left: 0,
+                    },
+                  }
+                : {}),
+            }}
+          >
+            {parts.length ? parts : text || '\u00A0'}
+          </Typography>
+        );
+      })}
+    </Box>
+  );
+}
+
 export default function AIAssistant() {
+  const navigate = useNavigate();
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const initial = getInitialState();
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState('chat'); // 'chat' | 'history'
+  const [view, setView] = useState('chat');
   const [chats, setChats] = useState(initial.chats);
   const [activeChatId, setActiveChatId] = useState(initial.activeChatId);
   const [input, setInput] = useState('');
@@ -106,9 +173,7 @@ export default function AIAssistant() {
   const messages = activeChat?.messages || [];
 
   useEffect(() => {
-    if (!activeChat && chats.length) {
-      setActiveChatId(chats[0].id);
-    }
+    if (!activeChat && chats.length) setActiveChatId(chats[0].id);
   }, [activeChat, chats]);
 
   useEffect(() => {
@@ -159,7 +224,6 @@ export default function AIAssistant() {
   const deleteChat = (id, e) => {
     e?.stopPropagation?.();
     if (loading) return;
-
     setChats((prev) => {
       const remaining = prev.filter((c) => c.id !== id);
       if (!remaining.length) {
@@ -181,6 +245,11 @@ export default function AIAssistant() {
     deleteChat(activeChat.id);
   };
 
+  const goToLink = (path) => {
+    setOpen(false);
+    navigate(path);
+  };
+
   const sendMessage = async (textOverride) => {
     const text = (typeof textOverride === 'string' ? textOverride : input).trim();
     if (!text || loading || !activeChat) return;
@@ -199,13 +268,20 @@ export default function AIAssistant() {
         message: text,
         conversationHistory,
       });
+      const payload = response.data?.data || {};
       const answer =
-        response.data?.data?.answer ||
+        payload.answer ||
         response.data?.answer ||
         'Sorry, I could not generate a response.';
       updateActiveMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: answer },
+        {
+          role: 'assistant',
+          content: answer,
+          domainsFetched: payload.domainsFetched || [],
+          period: payload.period || null,
+          deepLinks: payload.deepLinks || [],
+        },
       ]);
     } catch (err) {
       const errMsg =
@@ -228,9 +304,8 @@ export default function AIAssistant() {
     }
   };
 
-  const totalMessages = chats.reduce((n, c) => n + (c.messages?.length || 0), 0);
+  const chatCount = chats.filter((c) => (c.messages || []).length > 0).length;
   const sortedChats = [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
-
   const iconBtnSx = { color: 'text.primary' };
 
   return (
@@ -242,9 +317,9 @@ export default function AIAssistant() {
         aria-label="Open AI Assistant"
       >
         <Badge
-          badgeContent={totalMessages || 0}
+          badgeContent={chatCount || 0}
           color="error"
-          invisible={totalMessages === 0}
+          invisible={chatCount === 0}
         >
           <SmartToy />
         </Badge>
@@ -256,8 +331,9 @@ export default function AIAssistant() {
         maxWidth="sm"
         fullWidth
         PaperProps={{
-          sx: { height: '560px', display: 'flex', flexDirection: 'column' },
+          sx: { height: { xs: '100%', sm: '600px' }, display: 'flex', flexDirection: 'column' },
         }}
+        fullScreen={fullScreen}
       >
         <DialogTitle
           sx={{
@@ -271,12 +347,7 @@ export default function AIAssistant() {
         >
           {view === 'history' ? (
             <Tooltip title="Back to chat">
-              <IconButton
-                onClick={() => setView('chat')}
-                size="small"
-                sx={iconBtnSx}
-                aria-label="Back"
-              >
+              <IconButton onClick={() => setView('chat')} size="small" sx={iconBtnSx}>
                 <ArrowBack />
               </IconButton>
             </Tooltip>
@@ -301,31 +372,15 @@ export default function AIAssistant() {
           {view === 'chat' && (
             <>
               <Tooltip title="Chat history">
-                <IconButton
-                  onClick={() => setView('history')}
-                  size="small"
-                  sx={iconBtnSx}
-                  aria-label="Chat history"
-                >
-                  <Badge
-                    color="primary"
-                    badgeContent={chats.length}
-                    max={99}
-                    invisible={chats.length < 2}
-                  >
+                <IconButton onClick={() => setView('history')} size="small" sx={iconBtnSx}>
+                  <Badge color="primary" badgeContent={chats.length} max={99} invisible={chats.length < 2}>
                     <History />
                   </Badge>
                 </IconButton>
               </Tooltip>
               <Tooltip title="New chat">
                 <span>
-                  <IconButton
-                    onClick={startNewChat}
-                    size="small"
-                    sx={iconBtnSx}
-                    disabled={loading}
-                    aria-label="New chat"
-                  >
+                  <IconButton onClick={startNewChat} size="small" sx={iconBtnSx} disabled={loading}>
                     <AddComment />
                   </IconButton>
                 </span>
@@ -337,7 +392,6 @@ export default function AIAssistant() {
                     size="small"
                     sx={iconBtnSx}
                     disabled={loading || (messages.length === 0 && chats.length <= 1)}
-                    aria-label="Delete chat"
                   >
                     <DeleteOutline />
                   </IconButton>
@@ -346,12 +400,7 @@ export default function AIAssistant() {
             </>
           )}
 
-          <IconButton
-            onClick={() => setOpen(false)}
-            aria-label="Close"
-            size="small"
-            sx={iconBtnSx}
-          >
+          <IconButton onClick={() => setOpen(false)} size="small" sx={iconBtnSx}>
             <Close />
           </IconButton>
         </DialogTitle>
@@ -393,17 +442,9 @@ export default function AIAssistant() {
                           secondaryTypographyProps={{ noWrap: true }}
                         />
                         <ListItemSecondaryAction>
-                          <Tooltip title="Delete chat">
-                            <IconButton
-                              edge="end"
-                              size="small"
-                              onClick={(e) => deleteChat(chat.id, e)}
-                              sx={iconBtnSx}
-                              aria-label="Delete chat"
-                            >
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <IconButton edge="end" size="small" onClick={(e) => deleteChat(chat.id, e)} sx={iconBtnSx}>
+                            <DeleteOutline fontSize="small" />
+                          </IconButton>
                         </ListItemSecondaryAction>
                       </ListItemButton>
                     </React.Fragment>
@@ -432,18 +473,13 @@ export default function AIAssistant() {
                     justifyContent: 'center',
                     gap: 2,
                     textAlign: 'center',
-                    py: 4,
+                    py: 3,
                   }}
                 >
                   <Typography color="text.secondary">
                     Ask me anything about your business
                   </Typography>
-                  <Stack
-                    direction="row"
-                    flexWrap="wrap"
-                    gap={1}
-                    justifyContent="center"
-                  >
+                  <Stack direction="row" flexWrap="wrap" gap={1} justifyContent="center">
                     {EXAMPLE_CHIPS.map((chip) => (
                       <Chip
                         key={chip}
@@ -452,6 +488,7 @@ export default function AIAssistant() {
                         onClick={() => sendMessage(chip)}
                         variant="outlined"
                         color="primary"
+                        size="small"
                       />
                     ))}
                   </Stack>
@@ -463,8 +500,9 @@ export default function AIAssistant() {
                   key={`${msg.role}-${idx}`}
                   sx={{
                     display: 'flex',
-                    justifyContent:
-                      msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    flexDirection: 'column',
+                    alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    gap: 0.5,
                   }}
                 >
                   <Box
@@ -472,18 +510,43 @@ export default function AIAssistant() {
                       bgcolor: msg.role === 'user' ? 'primary.main' : 'grey.100',
                       color: msg.role === 'user' ? 'white' : 'text.primary',
                       borderRadius:
-                        msg.role === 'user'
-                          ? '18px 18px 4px 18px'
-                          : '18px 18px 18px 4px',
+                        msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                       px: 2,
-                      py: 1,
-                      maxWidth: '80%',
-                      whiteSpace: 'pre-wrap',
+                      py: 1.25,
+                      maxWidth: '88%',
                       wordBreak: 'break-word',
                     }}
                   >
-                    <Typography variant="body2">{msg.content}</Typography>
+                    <MessageBody content={msg.content} isUser={msg.role === 'user'} />
                   </Box>
+
+                  {msg.role === 'assistant' && (msg.domainsFetched?.length > 0 || msg.period) && (
+                    <Stack direction="row" flexWrap="wrap" gap={0.5} px={0.5}>
+                      {msg.period?.label && (
+                        <Chip size="small" variant="outlined" label={msg.period.label} />
+                      )}
+                      {(msg.domainsFetched || []).slice(0, 6).map((d) => (
+                        <Chip key={d} size="small" label={d} sx={{ bgcolor: 'grey.200' }} />
+                      ))}
+                    </Stack>
+                  )}
+
+                  {msg.role === 'assistant' && msg.deepLinks?.length > 0 && (
+                    <Stack direction="row" flexWrap="wrap" gap={0.5} px={0.5}>
+                      {msg.deepLinks.map((link) => (
+                        <Button
+                          key={`${link.path}-${link.label}`}
+                          size="small"
+                          variant="text"
+                          endIcon={<OpenInNew sx={{ fontSize: 14 }} />}
+                          onClick={() => goToLink(link.path)}
+                          sx={{ textTransform: 'none', color: 'primary.dark' }}
+                        >
+                          {link.label}
+                        </Button>
+                      ))}
+                    </Stack>
+                  )}
                 </Box>
               ))}
 
@@ -518,7 +581,6 @@ export default function AIAssistant() {
               color="primary"
               onClick={() => sendMessage()}
               disabled={!input.trim() || loading}
-              aria-label="Send"
               sx={{ color: !input.trim() || loading ? undefined : 'primary.main' }}
             >
               <Send />
@@ -528,16 +590,14 @@ export default function AIAssistant() {
 
         {view === 'history' && (
           <DialogActions sx={{ px: 2, pb: 2 }}>
-            <Tooltip title="Start a new chat">
-              <Chip
-                icon={<AddComment />}
-                label="New chat"
-                color="primary"
-                clickable
-                onClick={startNewChat}
-                disabled={loading}
-              />
-            </Tooltip>
+            <Chip
+              icon={<AddComment />}
+              label="New chat"
+              color="primary"
+              clickable
+              onClick={startNewChat}
+              disabled={loading}
+            />
           </DialogActions>
         )}
       </Dialog>
