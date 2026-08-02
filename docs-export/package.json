@@ -1,0 +1,15 @@
+{
+  "name": "wms-docs-export",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Export WMS PROJECT_*.md docs to Word/HTML with Mermaid diagrams as images",
+  "scripts": {
+    "export": "node export-docs.js",
+    "postinstall": "echo Ready. Run: npm run export"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.0",
+    "html-to-docx": "^1.8.0",
+    "marked": "^15.0.0"
+  }
+}
