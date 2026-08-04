@@ -89,27 +89,30 @@ export function buildLedgerExportPayload(ledger, { title, partyType } = {}) {
         .map((e) => {
           const role = e.role === 'processing' ? '[Processing] ' : e.role === 'supplier' ? '[Supplier] ' : (e.role ? `[${e.role}] ` : '');
           const wt = e.weightKg ? ` (${e.weightKg} kg)` : '';
-          return `${role}${e.description || ''}${wt}`;
+          const pay = e.paymentMethod ? ` · ${e.paymentMethod}` : '';
+          return `${role}${e.description || ''}${wt}${pay}`;
         })
         .join('; '),
     ]);
   } else if (isDaily) {
-    headers = ['Date', 'Description', 'Amount'];
+    headers = ['Date', 'Description', 'Payment', 'Amount'];
     bodyRows = (ledger.entries || []).map((row) => [
       formatDate(row.date),
       row.description || '',
+      row.paymentMethod || '—',
       formatCurrency(row.amount),
     ]);
   } else {
     headers = ['Date'];
     if (isCombined) headers.push('Role');
-    headers.push('Description', 'Source', 'Wt', 'Rate', 'Credit', 'Debit', 'Total', 'Balance');
+    headers.push('Description', 'Source', 'Payment', 'Wt', 'Rate', 'Credit', 'Debit', 'Total', 'Balance');
     bodyRows = (ledger.entries || []).map((row) => {
       const cells = [formatDate(row.date)];
       if (isCombined) cells.push(row.role === 'processing' ? 'Processing' : row.role === 'supplier' ? 'Supplier' : (row.role || ''));
       cells.push(
         row.description || '',
         row.source || '',
+        row.paymentMethod || '—',
         fmtWt(row.weightKg),
         row.ratePerKg ? formatCurrency(row.ratePerKg) : '—',
         row.credit ? formatCurrency(row.credit) : '—',

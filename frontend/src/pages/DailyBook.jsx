@@ -2378,12 +2378,13 @@ export default function DailyBook() {
             </Button>
           </Box>
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 920, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1020, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
                 <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
-                <TableCell sx={{ width: '28%', fontWeight: 700 }}>Description</TableCell>
-                <TableCell sx={{ width: 120, fontWeight: 700 }}>Source</TableCell>
+                <TableCell sx={{ width: '24%', fontWeight: 700 }}>Description</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Source</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Payment</TableCell>
                 <TableCell sx={{ width: 72, fontWeight: 700 }} align="right">Wt</TableCell>
                 <TableCell sx={{ width: 88, fontWeight: 700 }} align="right">Rate</TableCell>
                 <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Credit</TableCell>
@@ -2400,6 +2401,7 @@ export default function DailyBook() {
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
                   <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{row.description}</TableCell>
                   <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{row.source}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }}>{row.credit ? formatCurrency(row.credit) : '—'}</TableCell>
@@ -2423,7 +2425,7 @@ export default function DailyBook() {
               })}
               {(partyLedger.entries || []).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <Typography variant="body2" color="text.secondary">
                       No activity for selected dates — current due: {formatCurrency(selectedParty?.totalAmountDue || 0)}
                     </Typography>

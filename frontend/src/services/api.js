@@ -184,7 +184,8 @@ export const workersAPI = {
 
 export const aiAPI = {
   chat: (data) => api.post("/ai/chat", data),
-  getDailySummary: () => api.get("/ai/daily-summary"),
+  getDailySummary: (date) =>
+    api.get("/ai/daily-summary", { params: date ? { date } : {} }),
   predictProfit: () => api.get("/ai/predict-profit"),
   parseOrder: (text) => api.post("/ai/parse-order", { text }),
 };
