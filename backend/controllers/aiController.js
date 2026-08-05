@@ -9,6 +9,13 @@ const { buildProfitReport } = require("../utils/profitReportService");
 const { getCashBookForDate } = require("../utils/cashBookService");
 const { currentBankBalance } = require("../utils/bankBalanceService");
 const groq = require("../utils/groqClient");
+const { parseUserIntent } = require("../utils/actionParserService");
+const {
+  executeAction,
+  findDeletableEntries,
+  findShiftableEntries,
+} = require("../utils/actionExecutorService");
+const { undoAction } = require("../utils/undoService");
 
 function includesAny(text, keywords) {
   return keywords.some((kw) => text.includes(kw));
@@ -649,6 +656,386 @@ exports.chat = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "AI chat failed",
+    });
+  }
+};
+
+function formatPreviewRs(n) {
+  return Number(n || 0).toLocaleString("en-PK");
+}
+
+/**
+ * Date the client is currently working on in Daily Book (YYYY-MM-DD).
+ * Used when the user does not mention a date.
+ */
+function sanitizeDefaultDate(value) {
+  const s = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function buildPreviewMessage(intent, data = {}) {
+  switch (intent) {
+    case "CREATE_ORDER": {
+      const total =
+        Number(data.initialWeightKg || 0) * Number(data.ratePerKg || 0);
+      return `Create order for ${data.customerName || "customer"}: ${data.initialWeightKg}kg Wire #${data.wireNumber} at Rs.${formatPreviewRs(data.ratePerKg)}/kg\nTotal: Rs.${formatPreviewRs(total)}`;
+    }
+    case "RECORD_CUSTOMER_PAYMENT":
+      return `Record payment of Rs.${formatPreviewRs(data.amount)} from ${data.customerName || "customer"} via ${data.paymentMethod || "Cash"}`;
+    case "CREATE_RAW_MATERIAL_PURCHASE": {
+      const total = Number(data.weightInKg || 0) * Number(data.ratePerKg || 0);
+      return `Record purchase of ${data.weightInKg}kg ${data.coilCategory || "coil"} from ${data.supplierName || "supplier"} at Rs.${formatPreviewRs(data.ratePerKg)}/kg\nTotal: Rs.${formatPreviewRs(total)}`;
+    }
+    case "ADD_EXPENSE": {
+      const viaBank =
+        String(data.paymentMethod || "")
+          .toLowerCase()
+          .includes("bank") || /\bbank\b|\btransfer\b/.test(String(data.paymentMethod || ""));
+      const bankNote = viaBank
+        ? ` via ${data.bankAccount || "MBL"} (bank balance will be deducted)`
+        : "";
+      return `Add expense of Rs.${formatPreviewRs(data.amount)} (${data.expenseCategory || data.expenseGroup || "expense"})${bankNote}`;
+    }
+    case "ATM_WITHDRAWAL":
+      return `ATM withdrawal of Rs.${formatPreviewRs(data.amount)} for ${data.expenseCategory || data.selfExpensePerson || "Fayyaz Expense"} from ${data.bankAccount || "MBL"} (bank balance will be deducted)`;
+    case "ADD_DAILY_TRANSACTION": {
+      const dir = data.transactionType || "transaction";
+      const party = data.relatedName || data.supplierName || data.customerName || "";
+      return `Record ${dir} of Rs.${formatPreviewRs(data.amount)}${party ? ` — ${party}` : ""} via ${data.paymentMethod || "Cash"}`;
+    }
+    case "SEND_ANNEALING":
+      return `Send ${data.weightKg || data.bundles || "?"}kg ${data.coilType || data.coilCategory || "coil"} to annealing`;
+    case "ARRIVE_ANNEALING":
+      return `Record annealing arrival of ${data.weightKg}kg ${data.coilType || data.coilCategory || "coil"}${data.weightLossKg ? ` (loss ${data.weightLossKg}kg)` : ""}`;
+    case "ADD_PROCESSING_DELIVERY":
+      return `Record processing delivery of ${data.weightKg}kg for ${data.customerName || "customer"}${data.labourAmount ? ` — labour Rs.${formatPreviewRs(data.labourAmount)}` : ""}`;
+    case "ADD_CUSTOMER":
+      return `Add new customer "${data.name}" (${data.customerType || "Ledger"})`;
+    case "ADD_SUPPLIER":
+      return `Add new supplier "${data.name}"${data.companyName ? ` — ${data.companyName}` : ""}`;
+    case "ADD_READY_STOCK":
+      return `Add ${data.producedWeightKg || data.weightKg}kg wire #${data.wireNumber} to ready stock`;
+    case "ADD_WORKER_PAYMENT":
+      return `Record ${data.entryType || "Payment"} of Rs.${formatPreviewRs(data.amount)} for ${data.workerName || "worker"}`;
+    case "DELETE_ENTRY":
+      return `Delete this entry (cannot be undone):\n${data.label || "matched record"}`;
+    case "SHIFT_ENTRY_DATE": {
+      const from = String(data.fromDate || "").slice(0, 10);
+      const to = String(data.toDate || "").slice(0, 10);
+      const count = Array.isArray(data.ids) ? data.ids.length : 0;
+      const list = (data.labels || [])
+        .map((label, i) => `${i + 1}. ${label}`)
+        .join("\n");
+      return `Move ${count} expense(s) from ${from} → ${to} (cannot be undone):\n${list}`;
+    }
+    default:
+      return `Confirm action: ${intent}`;
+  }
+}
+
+function missingFieldsQuestion(missingFields = []) {
+  if (!missingFields.length) {
+    return "Could you give more details? What would you like to do?";
+  }
+  const labels = missingFields.map((f) => f.replace(/([A-Z])/g, " $1").toLowerCase().trim());
+  if (labels.length === 1) {
+    return `Please provide the ${labels[0]}.`;
+  }
+  const last = labels[labels.length - 1];
+  return `Please provide: ${labels.slice(0, -1).join(", ")} and ${last}.`;
+}
+
+const REQUIRED_FIELDS_BY_INTENT = {
+  CREATE_ORDER: ["customerId|customerName", "wireNumber", "initialWeightKg", "ratePerKg"],
+  RECORD_CUSTOMER_PAYMENT: ["customerId|customerName", "amount"],
+  CREATE_RAW_MATERIAL_PURCHASE: [
+    "supplierId|supplierName",
+    "coilCategory",
+    "weightInKg",
+    "ratePerKg",
+  ],
+  ADD_EXPENSE: ["amount", "expenseCategory|selfExpensePerson|expenseGroup"],
+  ATM_WITHDRAWAL: ["amount"],
+  ADD_DAILY_TRANSACTION: ["amount", "transactionType", "relatedName|supplierName|customerName"],
+  SEND_ANNEALING: ["coilType|coilCategory", "weightKg|bundles"],
+  ARRIVE_ANNEALING: ["coilType|coilCategory", "weightKg"],
+  ADD_PROCESSING_DELIVERY: [
+    "customerId|customerName",
+    "weightKg",
+    "labourAmount|labourRatePerKg",
+  ],
+  ADD_CUSTOMER: ["name"],
+  ADD_SUPPLIER: ["name"],
+  ADD_READY_STOCK: ["wireNumber", "producedWeightKg|weightKg"],
+  ADD_WORKER_PAYMENT: ["workerId|workerName", "amount"],
+  DELETE_ENTRY: [],
+  SHIFT_ENTRY_DATE: ["fromDate", "toDate"],
+};
+
+function fieldPresent(data, fieldSpec) {
+  const alts = fieldSpec.split("|");
+  return alts.some((key) => {
+    const v = data?.[key];
+    if (v === null || v === undefined || v === "") return false;
+    if (typeof v === "number" && Number.isNaN(v)) return false;
+    return true;
+  });
+}
+
+const OPTIONAL_FIELDS_BY_INTENT = {
+  RECORD_CUSTOMER_PAYMENT: ["receivedBy", "orderId", "notes", "description"],
+  ADD_DAILY_TRANSACTION: ["handledBy", "description", "notes", "relatedId", "supplierId", "customerId"],
+};
+
+function collectRequiredMissing(intent, extractedData, reportedMissing = []) {
+  const required = REQUIRED_FIELDS_BY_INTENT[intent] || [];
+  const data = extractedData || {};
+  const optional = OPTIONAL_FIELDS_BY_INTENT[intent] || [];
+  const missing = new Set(
+    (reportedMissing || [])
+      .filter((f) => typeof f === "string" && f.trim())
+      .filter((f) => !optional.includes(f))
+  );
+  required.forEach((spec) => {
+    if (!fieldPresent(data, spec)) {
+      missing.add(spec.split("|")[0]);
+    }
+  });
+  return [...missing];
+}
+
+/** Reuse existing chat() without modifying it — capture its JSON response. */
+function runExistingChat(message, conversationHistory) {
+  return new Promise((resolve, reject) => {
+    const fakeReq = { body: { message, conversationHistory } };
+    const fakeRes = {
+      statusCode: 200,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        resolve({ statusCode: this.statusCode || 200, payload });
+      },
+    };
+    Promise.resolve(exports.chat(fakeReq, fakeRes)).catch(reject);
+  });
+}
+
+async function handleShiftPreview(res, parsed) {
+  const data = parsed.extractedData || {};
+  const { matches } = await findShiftableEntries(data);
+  const fromLabel = String(data.fromDate || "").slice(0, 10);
+
+  if (matches.length === 0) {
+    return res.json({
+      success: true,
+      type: "clarification",
+      message: `No expenses found on ${fromLabel || "that date"}.`,
+    });
+  }
+
+  const extractedData = {
+    fromDate: data.fromDate,
+    toDate: data.toDate,
+    entryType: data.entryType || "expense",
+    shiftAll: Boolean(data.shiftAll),
+    ids: matches.map((m) => m.id),
+    labels: matches.map((m) => m.label),
+  };
+
+  return res.json({
+    success: true,
+    type: "preview",
+    intent: "SHIFT_ENTRY_DATE",
+    extractedData,
+    confidence: "high",
+    missingFields: [],
+    previewMessage: buildPreviewMessage("SHIFT_ENTRY_DATE", extractedData),
+  });
+}
+
+/**
+ * Deletes are destructive, so resolve the actual record before previewing:
+ * show exactly what will be removed, or ask the user to narrow it down.
+ */
+async function handleDeletePreview(res, parsed) {
+  const data = parsed.extractedData || {};
+  const { matches, partyNotFound } = await findDeletableEntries(data);
+
+  if (partyNotFound) {
+    return res.json({
+      success: true,
+      type: "clarification",
+      message: `I could not find anyone named "${partyNotFound}". Please check the name.`,
+    });
+  }
+
+  if (matches.length === 0) {
+    return res.json({
+      success: true,
+      type: "clarification",
+      message:
+        "I could not find a matching entry to delete. Please mention the type (payment, expense, order, purchase), the party name, the amount or the date.",
+    });
+  }
+
+  if (matches.length > 1) {
+    const list = matches.map((m, i) => `${i + 1}. ${m.label}`).join("\n");
+    return res.json({
+      success: true,
+      type: "clarification",
+      message: `I found ${matches.length} matching entries:\n${list}\nPlease tell me the exact amount or date of the one to delete.`,
+    });
+  }
+
+  const match = matches[0];
+  const extractedData = {
+    model: match.model,
+    id: match.id,
+    label: match.label,
+  };
+
+  return res.json({
+    success: true,
+    type: "preview",
+    intent: "DELETE_ENTRY",
+    extractedData,
+    confidence: "high",
+    missingFields: [],
+    previewMessage: buildPreviewMessage("DELETE_ENTRY", extractedData),
+  });
+}
+
+exports.agentChat = async (req, res) => {
+  try {
+    const { message, conversationHistory = [] } = req.body;
+    const defaultDate = sanitizeDefaultDate(req.body.defaultDate);
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "message is required",
+      });
+    }
+
+    const parsed = await parseUserIntent(message, conversationHistory);
+
+    if (parsed.intent === "SHIFT_ENTRY_DATE") {
+      return handleShiftPreview(res, parsed);
+    }
+
+    if (parsed.intent === "DELETE_ENTRY") {
+      return handleDeletePreview(res, parsed);
+    }
+
+    if (parsed.intent === "READ_QUERY") {
+      const chatResult = await runExistingChat(message, conversationHistory);
+      const answer =
+        chatResult.payload?.data?.answer ||
+        chatResult.payload?.answer ||
+        chatResult.payload?.message ||
+        "Sorry, I could not generate a response.";
+      if (chatResult.statusCode >= 400) {
+        return res.status(chatResult.statusCode).json(chatResult.payload);
+      }
+      return res.json({
+        success: true,
+        type: "answer",
+        answer,
+      });
+    }
+
+    if (parsed.intent === "UNKNOWN" || parsed.confidence === "low") {
+      return res.json({
+        success: true,
+        type: "clarification",
+        message:
+          parsed.clarificationNeeded ||
+          "Could you give more details? What would you like to do?",
+      });
+    }
+
+    const missingFields = collectRequiredMissing(
+      parsed.intent,
+      parsed.extractedData,
+      Array.isArray(parsed.missingFields) ? parsed.missingFields : []
+    );
+
+    if (missingFields.length > 0) {
+      return res.json({
+        success: true,
+        type: "clarification",
+        message: missingFieldsQuestion(missingFields),
+        missingFields,
+      });
+    }
+
+    return res.json({
+      success: true,
+      type: "preview",
+      intent: parsed.intent,
+      extractedData: {
+        ...(parsed.extractedData || {}),
+        ...(defaultDate ? { defaultDate } : {}),
+      },
+      confidence: parsed.confidence,
+      missingFields: [],
+      previewMessage: buildPreviewMessage(
+        parsed.intent,
+        parsed.extractedData || {}
+      ),
+    });
+  } catch (error) {
+    console.error("AI agentChat error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "AI agent chat failed",
+    });
+  }
+};
+
+exports.executeAgentAction = async (req, res) => {
+  try {
+    const { intent, extractedData } = req.body;
+    if (!intent) {
+      return res.status(400).json({
+        success: false,
+        message: "intent is required",
+      });
+    }
+    const defaultDate = sanitizeDefaultDate(req.body.defaultDate);
+    const userId = req.user?._id || req.user?.id;
+    const payload = { ...(extractedData || {}) };
+    if (defaultDate && !payload.defaultDate) payload.defaultDate = defaultDate;
+    const result = await executeAction(intent, payload, userId);
+    return res.json(result);
+  } catch (error) {
+    console.error("AI executeAgentAction error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Action execution failed",
+    });
+  }
+};
+
+exports.undoAgentAction = async (req, res) => {
+  try {
+    const { model, id, deliveryId } = req.body;
+    if (!model || !id) {
+      return res.status(400).json({
+        success: false,
+        message: "model and id are required",
+      });
+    }
+    const result = await undoAction(model, id, { deliveryId });
+    return res.json(result);
+  } catch (error) {
+    console.error("AI undoAgentAction error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Undo failed",
     });
   }
 };

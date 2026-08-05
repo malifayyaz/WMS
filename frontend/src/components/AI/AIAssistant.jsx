@@ -19,6 +19,10 @@ import {
   ListItemSecondaryAction,
   Tooltip,
   Divider,
+  Button,
+  Alert,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import SmartToy from '@mui/icons-material/SmartToy';
 import Close from '@mui/icons-material/Close';
@@ -27,10 +31,67 @@ import AddComment from '@mui/icons-material/AddComment';
 import History from '@mui/icons-material/History';
 import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import ArrowBack from '@mui/icons-material/ArrowBack';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import Edit from '@mui/icons-material/Edit';
+import Cancel from '@mui/icons-material/Cancel';
+import Undo from '@mui/icons-material/Undo';
+import SwapHoriz from '@mui/icons-material/SwapHoriz';
+import QuestionAnswer from '@mui/icons-material/QuestionAnswer';
 import { aiAPI } from '../../services/api';
 
-const EXAMPLE_CHIPS = ['Customer balances', 'Stock levels', 'This month profit'];
+const EXAMPLE_CHIPS = [
+  'Add order for Ali Traders',
+  'Record customer payment',
+  'Add expense',
+  'Customer balances',
+];
 const STORAGE_KEY = 'wms_ai_chats_v1';
+const DAILY_BOOK_DATE_KEY = 'dailyBook.entryDate';
+
+/** Entries with no date typed by the user land on the Daily Book working date. */
+function getDefaultEntryDate() {
+  try {
+    const stored = sessionStorage.getItem(DAILY_BOOK_DATE_KEY);
+    if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
+  } catch {
+    /* sessionStorage unavailable */
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
+function buildEditPrompt(intent, data = {}) {
+  const d = data || {};
+  switch (intent) {
+    case 'CREATE_ORDER':
+      return `Order: ${d.customerName || ''}, ${d.initialWeightKg || ''}kg, wire ${d.wireNumber || ''}, rate ${d.ratePerKg || ''}`;
+    case 'RECORD_CUSTOMER_PAYMENT':
+      return `Payment: ${d.customerName || ''}, Rs.${d.amount || ''}, ${d.paymentMethod || 'Cash'}`;
+    case 'CREATE_RAW_MATERIAL_PURCHASE':
+      return `Purchase: ${d.supplierName || ''}, ${d.weightInKg || ''}kg ${d.coilCategory || 'coil'}, rate ${d.ratePerKg || ''}`;
+    case 'ADD_EXPENSE':
+      return `Expense: Rs.${d.amount || ''}, ${d.expenseCategory || d.expenseGroup || ''}, ${d.paymentMethod || 'Cash'}`;
+    case 'ATM_WITHDRAWAL':
+      return `ATM withdrawal: Rs.${d.amount || ''}, ${d.expenseCategory || d.selfExpensePerson || 'Fayyaz'}, bank ${d.bankAccount || 'MBL'}`;
+    case 'ADD_DAILY_TRANSACTION':
+      return `Transaction: ${d.transactionType || ''}, Rs.${d.amount || ''}, ${d.relatedName || d.relatedTo || ''}`;
+    case 'SEND_ANNEALING':
+      return `Send annealing: ${d.weightKg || ''}kg ${d.coilType || d.coilCategory || ''}, bundles ${d.bundles || 0}`;
+    case 'ARRIVE_ANNEALING':
+      return `Annealing arrival: ${d.weightKg || ''}kg ${d.coilType || d.coilCategory || ''}, loss ${d.weightLossKg || 0}`;
+    case 'ADD_PROCESSING_DELIVERY':
+      return `Processing delivery: ${d.customerName || ''}, ${d.weightKg || ''}kg, labour Rs.${d.labourAmount || ''}`;
+    case 'ADD_CUSTOMER':
+      return `New customer: ${d.name || ''}, ${d.customerType || 'Ledger'}, ${d.contactNumber || ''}`;
+    case 'ADD_SUPPLIER':
+      return `New supplier: ${d.name || ''}, ${d.companyName || ''}, ${d.contactNumber || ''}`;
+    case 'ADD_READY_STOCK':
+      return `Ready stock: wire ${d.wireNumber || ''}, ${d.producedWeightKg || d.weightKg || ''}kg`;
+    case 'ADD_WORKER_PAYMENT':
+      return `Worker payment: ${d.workerName || ''}, ${d.entryType || 'Payment'}, Rs.${d.amount || ''}`;
+    default:
+      return d.previewMessage || '';
+  }
+}
 
 function createChat() {
   return {
@@ -100,7 +161,12 @@ export default function AIAssistant() {
   const [activeChatId, setActiveChatId] = useState(initial.activeChatId);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('agent'); // "agent" | "read"
+  const [pendingAction, setPendingAction] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0];
   const messages = activeChat?.messages || [];
@@ -119,7 +185,13 @@ export default function AIAssistant() {
     if (view === 'chat' && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, loading, view, activeChatId]);
+  }, [messages, loading, view, activeChatId, pendingAction, lastSaved, actionLoading]);
+
+  useEffect(() => {
+    if (!lastSaved) return undefined;
+    const timer = setTimeout(() => setLastSaved(null), 30000);
+    return () => clearTimeout(timer);
+  }, [lastSaved]);
 
   const updateActiveMessages = useCallback(
     (updater) => {
@@ -140,25 +212,36 @@ export default function AIAssistant() {
     [activeChatId]
   );
 
+  const addMessage = useCallback(
+    (role, content) => {
+      updateActiveMessages((prev) => [...prev, { role, content }]);
+    },
+    [updateActiveMessages]
+  );
+
   const startNewChat = () => {
-    if (loading) return;
+    if (loading || actionLoading) return;
     const chat = createChat();
     setChats((prev) => [chat, ...prev]);
     setActiveChatId(chat.id);
     setInput('');
+    setPendingAction(null);
+    setLastSaved(null);
     setView('chat');
   };
 
   const openChat = (id) => {
-    if (loading) return;
+    if (loading || actionLoading) return;
     setActiveChatId(id);
     setInput('');
+    setPendingAction(null);
+    setLastSaved(null);
     setView('chat');
   };
 
   const deleteChat = (id, e) => {
     e?.stopPropagation?.();
-    if (loading) return;
+    if (loading || actionLoading) return;
 
     setChats((prev) => {
       const remaining = prev.filter((c) => c.id !== id);
@@ -166,11 +249,15 @@ export default function AIAssistant() {
         const fresh = createChat();
         setActiveChatId(fresh.id);
         setView('chat');
+        setPendingAction(null);
+        setLastSaved(null);
         return [fresh];
       }
       if (id === activeChatId) {
         setActiveChatId(remaining[0].id);
         setView('chat');
+        setPendingAction(null);
+        setLastSaved(null);
       }
       return remaining;
     });
@@ -183,7 +270,7 @@ export default function AIAssistant() {
 
   const sendMessage = async (textOverride) => {
     const text = (typeof textOverride === 'string' ? textOverride : input).trim();
-    if (!text || loading || !activeChat) return;
+    if (!text || loading || actionLoading || !activeChat) return;
 
     const conversationHistory = messages.map(({ role, content }) => ({
       role,
@@ -192,22 +279,87 @@ export default function AIAssistant() {
 
     updateActiveMessages((prev) => [...prev, { role: 'user', content: text }]);
     setInput('');
+    setPendingAction(null);
     setLoading(true);
 
     try {
-      const response = await aiAPI.chat({
-        message: text,
-        conversationHistory,
-      });
-      const answer =
-        response.data?.data?.answer ||
-        response.data?.answer ||
-        'Sorry, I could not generate a response.';
-      updateActiveMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: answer },
-      ]);
+      if (mode === 'read') {
+        const response = await aiAPI.chat({
+          message: text,
+          conversationHistory,
+        });
+        const answer =
+          response.data?.data?.answer ||
+          response.data?.answer ||
+          'Sorry, I could not generate a response.';
+        updateActiveMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: answer },
+        ]);
+      } else {
+        const response = await aiAPI.agentChat({
+          message: text,
+          conversationHistory,
+          defaultDate: getDefaultEntryDate(),
+        });
+        const data = response.data || {};
+
+        if (data.type === 'answer') {
+          setPendingAction(null);
+          updateActiveMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content:
+                data.answer ||
+                data.data?.answer ||
+                'Sorry, I could not generate a response.',
+            },
+          ]);
+        } else if (data.type === 'clarification') {
+          setPendingAction(null);
+          updateActiveMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content:
+                data.message ||
+                'Could you give more details? What would you like to do?',
+            },
+          ]);
+        } else if (data.type === 'preview') {
+          updateActiveMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content:
+                data.previewMessage ||
+                'Please confirm this action.',
+            },
+          ]);
+          setPendingAction({
+            intent: data.intent,
+            extractedData: data.extractedData || {},
+            previewMessage: data.previewMessage || '',
+            confidence: data.confidence,
+            missingFields: data.missingFields || [],
+          });
+        } else {
+          setPendingAction(null);
+          updateActiveMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content:
+                data.message ||
+                data.answer ||
+                'Sorry, I could not understand that.',
+            },
+          ]);
+        }
+      }
     } catch (err) {
+      setPendingAction(null);
       const errMsg =
         err.response?.data?.message ||
         err.message ||
@@ -221,6 +373,93 @@ export default function AIAssistant() {
     }
   };
 
+  const handleConfirmAction = async () => {
+    if (!pendingAction || actionLoading) return;
+    if (
+      Array.isArray(pendingAction.missingFields) &&
+      pendingAction.missingFields.length > 0
+    ) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await aiAPI.agentExecute({
+        intent: pendingAction.intent,
+        extractedData: pendingAction.extractedData,
+        defaultDate: getDefaultEntryDate(),
+      });
+      if (res.data?.success) {
+        addMessage('assistant', `Done! ${res.data.message}`);
+        if (res.data.undoInfo?.model && res.data.undoInfo?.id) {
+          setLastSaved({
+            model: res.data.undoInfo.model,
+            id: res.data.undoInfo.id,
+            deliveryId: res.data.undoInfo.deliveryId,
+            message: res.data.message,
+          });
+        }
+        setPendingAction(null);
+      } else {
+        addMessage('assistant', `Error: ${res.data?.message || 'Action failed'}`);
+        setPendingAction(null);
+      }
+    } catch (e) {
+      const errMsg =
+        e.response?.data?.message ||
+        e.message ||
+        'Something went wrong. Please try again.';
+      addMessage('assistant', `Error: ${errMsg}`);
+      setPendingAction(null);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!lastSaved || actionLoading) return;
+    setActionLoading(true);
+    try {
+      const res = await aiAPI.agentUndo({
+        model: lastSaved.model,
+        id: lastSaved.id,
+        deliveryId: lastSaved.deliveryId,
+      });
+      if (res.data?.success) {
+        addMessage('assistant', `Undone! ${res.data.message}`);
+        setLastSaved(null);
+      } else {
+        addMessage(
+          'assistant',
+          `Undo failed: ${res.data?.message || 'Please delete manually.'}`
+        );
+      }
+    } catch (e) {
+      const errMsg =
+        e.response?.data?.message ||
+        e.message ||
+        'Undo failed. Please delete manually.';
+      addMessage('assistant', `Undo failed: ${errMsg}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditAction = () => {
+    if (!pendingAction) return;
+    const editText = buildEditPrompt(
+      pendingAction.intent,
+      pendingAction.extractedData
+    );
+    setInput(editText);
+    setPendingAction(null);
+    setTimeout(() => inputRef.current?.focus?.(), 0);
+  };
+
+  const handleCancelAction = () => {
+    setPendingAction(null);
+    addMessage('assistant', 'Cancelled.');
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -232,6 +471,7 @@ export default function AIAssistant() {
   const sortedChats = [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
 
   const iconBtnSx = { color: 'text.primary' };
+  const busy = loading || actionLoading;
 
   return (
     <>
@@ -256,7 +496,26 @@ export default function AIAssistant() {
         maxWidth="sm"
         fullWidth
         PaperProps={{
-          sx: { height: '560px', display: 'flex', flexDirection: 'column' },
+          sx: {
+            height: '560px',
+            display: 'flex',
+            flexDirection: 'column',
+            // Override global sidebar/navbar IconButton + ListItem styles inside dialog
+            '& .MuiIconButton-root': { color: 'text.primary' },
+            '& .MuiListItemButton-root': {
+              color: 'text.primary',
+              mx: 0,
+              '& .MuiListItemIcon-root': { color: 'text.secondary' },
+              '&:hover': { backgroundColor: 'action.hover' },
+              '&.Mui-selected': {
+                backgroundColor: 'action.selected',
+                color: 'text.primary',
+                '&:hover': { backgroundColor: 'action.selected' },
+              },
+            },
+            '& .MuiListItemText-primary': { color: 'text.primary' },
+            '& .MuiListItemText-secondary': { color: 'text.secondary' },
+          },
         }}
       >
         <DialogTitle
@@ -299,6 +558,26 @@ export default function AIAssistant() {
           </Typography>
 
           {view === 'chat' && (
+            <ToggleButtonGroup
+              value={mode}
+              exclusive
+              onChange={(e, v) => v && setMode(v)}
+              size="small"
+              sx={{ mr: 0.5 }}
+              aria-label="Assistant mode"
+            >
+              <ToggleButton value="agent" aria-label="Agent mode">
+                <SmartToy sx={{ fontSize: 16, mr: 0.5 }} />
+                Agent
+              </ToggleButton>
+              <ToggleButton value="read" aria-label="Ask mode">
+                <QuestionAnswer sx={{ fontSize: 16, mr: 0.5 }} />
+                Ask
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+
+          {view === 'chat' && (
             <>
               <Tooltip title="Chat history">
                 <IconButton
@@ -323,7 +602,7 @@ export default function AIAssistant() {
                     onClick={startNewChat}
                     size="small"
                     sx={iconBtnSx}
-                    disabled={loading}
+                    disabled={busy}
                     aria-label="New chat"
                   >
                     <AddComment />
@@ -336,7 +615,7 @@ export default function AIAssistant() {
                     onClick={deleteCurrentChat}
                     size="small"
                     sx={iconBtnSx}
-                    disabled={loading || (messages.length === 0 && chats.length <= 1)}
+                    disabled={busy || (messages.length === 0 && chats.length <= 1)}
                     aria-label="Delete chat"
                   >
                     <DeleteOutline />
@@ -436,7 +715,9 @@ export default function AIAssistant() {
                   }}
                 >
                   <Typography color="text.secondary">
-                    Ask me anything about your business
+                    {mode === 'agent'
+                      ? 'Ask questions or tell me an action to perform'
+                      : 'Ask me anything about your business'}
                   </Typography>
                   <Stack
                     direction="row"
@@ -487,11 +768,158 @@ export default function AIAssistant() {
                 </Box>
               ))}
 
-              {loading && (
+              {pendingAction && (
+                <Box
+                  sx={{
+                    flexShrink: 0,
+                    border: '2px solid #1565C0',
+                    borderRadius: 2,
+                    background: '#DDEEFF',
+                    color: '#1E2A36',
+                    mx: 1,
+                    my: 1,
+                    p: 2,
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    gap={1}
+                    mb={1}
+                  >
+                    <Typography fontWeight={700} color="text.primary">
+                      {pendingAction.intent === 'DELETE_ENTRY'
+                        ? 'Confirm Delete?'
+                        : pendingAction.intent === 'SHIFT_ENTRY_DATE'
+                          ? 'Confirm Move?'
+                          : 'Confirm Action?'}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      color={
+                        pendingAction.intent === 'DELETE_ENTRY'
+                          ? 'error'
+                          : pendingAction.intent === 'SHIFT_ENTRY_DATE'
+                            ? 'warning'
+                            : pendingAction.confidence === 'high'
+                              ? 'success'
+                              : 'warning'
+                      }
+                      label={
+                        pendingAction.intent === 'DELETE_ENTRY'
+                          ? 'Permanent'
+                          : pendingAction.intent === 'SHIFT_ENTRY_DATE'
+                            ? 'Cannot undo'
+                            : pendingAction.confidence === 'high'
+                              ? 'High Confidence'
+                              : 'Please verify'
+                      }
+                    />
+                  </Stack>
+
+                  <Typography
+                    variant="body1"
+                    color="text.primary"
+                    sx={{ whiteSpace: 'pre-wrap', mb: 1.5 }}
+                  >
+                    {pendingAction.previewMessage}
+                  </Typography>
+
+                  {Array.isArray(pendingAction.missingFields) &&
+                    pendingAction.missingFields.length > 0 && (
+                      <Alert severity="warning" sx={{ mb: 1.5 }}>
+                        Missing: {pendingAction.missingFields.join(', ')} —
+                        you can still confirm or type more details
+                      </Alert>
+                    )}
+
+                    <Stack direction="row" flexWrap="wrap" gap={1}>
+                      <Button
+                        variant="contained"
+                        color={
+                          pendingAction.intent === 'DELETE_ENTRY'
+                            ? 'error'
+                            : pendingAction.intent === 'SHIFT_ENTRY_DATE'
+                              ? 'warning'
+                              : 'primary'
+                        }
+                        size="small"
+                        startIcon={
+                          pendingAction.intent === 'DELETE_ENTRY' ? (
+                            <DeleteOutline />
+                          ) : pendingAction.intent === 'SHIFT_ENTRY_DATE' ? (
+                            <SwapHoriz />
+                          ) : (
+                            <CheckCircle />
+                          )
+                        }
+                        disabled={
+                          actionLoading ||
+                          (Array.isArray(pendingAction.missingFields) &&
+                            pendingAction.missingFields.length > 0)
+                        }
+                        onClick={handleConfirmAction}
+                      >
+                        {pendingAction.intent === 'DELETE_ENTRY'
+                          ? 'Yes, Delete'
+                          : pendingAction.intent === 'SHIFT_ENTRY_DATE'
+                            ? 'Yes, Move Dates'
+                            : 'Confirm & Save'}
+                      </Button>
+                    {pendingAction.intent !== 'DELETE_ENTRY' &&
+                      pendingAction.intent !== 'SHIFT_ENTRY_DATE' && (
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                        startIcon={<Edit />}
+                        disabled={actionLoading}
+                        onClick={handleEditAction}
+                        sx={{ bgcolor: 'background.paper' }}
+                      >
+                        Edit Details
+                      </Button>
+                    )}
+                    <Button
+                      variant="text"
+                      color="error"
+                      size="small"
+                      startIcon={<Cancel />}
+                      disabled={actionLoading}
+                      onClick={handleCancelAction}
+                    >
+                      Cancel
+                    </Button>
+                  </Stack>
+                </Box>
+              )}
+
+              {lastSaved && (
+                <Alert
+                  severity="success"
+                  sx={{ mx: 1, my: 0.5, flexShrink: 0 }}
+                  action={
+                    <Button
+                      color="inherit"
+                      size="small"
+                      startIcon={<Undo />}
+                      disabled={actionLoading}
+                      onClick={handleUndo}
+                    >
+                      UNDO
+                    </Button>
+                  }
+                >
+                  {lastSaved.message} — Click UNDO to reverse this.
+                </Alert>
+              )}
+
+              {(loading || actionLoading) && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 }}>
                   <CircularProgress size={20} />
                   <Typography variant="body2" color="text.secondary">
-                    Thinking...
+                    {actionLoading ? 'Working...' : 'Thinking...'}
                   </Typography>
                 </Box>
               )}
@@ -506,20 +934,25 @@ export default function AIAssistant() {
             <TextField
               fullWidth
               size="small"
-              placeholder="Ask in English or Urdu..."
+              placeholder={
+                mode === 'agent'
+                  ? 'Ask or give an action in English or Urdu...'
+                  : 'Ask in English or Urdu...'
+              }
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              disabled={loading}
+              disabled={busy}
               multiline
               maxRows={3}
+              inputRef={inputRef}
             />
             <IconButton
               color="primary"
               onClick={() => sendMessage()}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || busy}
               aria-label="Send"
-              sx={{ color: !input.trim() || loading ? undefined : 'primary.main' }}
+              sx={{ color: !input.trim() || busy ? undefined : 'primary.main' }}
             >
               <Send />
             </IconButton>
@@ -535,7 +968,7 @@ export default function AIAssistant() {
                 color="primary"
                 clickable
                 onClick={startNewChat}
-                disabled={loading}
+                disabled={busy}
               />
             </Tooltip>
           </DialogActions>

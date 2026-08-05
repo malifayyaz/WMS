@@ -94,25 +94,43 @@ const createExpense = async (req, res, next) => {
   }
 };
 
+const EXPENSE_LIST_FIELDS =
+  'expenseGroup expenseCategory expenseType description amount paymentMethod expenseDate addedBy labourName coilType rentalRoute bankTransactionId';
+const PROCESS_LIST_FIELDS = 'materialType purchaseDate totalCost notes quantity unit';
+
 /**
  * Get all expenses with optional date and type filters.
+ * Caps returned rows (default 500) so unbounded history cannot stall the UI.
  */
 const getExpenses = async (req, res, next) => {
   try {
     const filter = buildExpenseFilter(req.query);
     const includeProcess = String(req.query.includeProcess).toLowerCase() === 'true';
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
+    const purchaseFilter = buildPurchaseFilter(req.query);
 
-    const [list, processPurchases] = await Promise.all([
-      Expense.find(filter).sort({ expenseDate: -1 }),
+    const [expenseCount, processCount, list, processPurchases] = await Promise.all([
+      Expense.countDocuments(filter),
+      includeProcess ? ConsumptionMaterial.countDocuments(purchaseFilter) : Promise.resolve(0),
+      Expense.find(filter)
+        .select(EXPENSE_LIST_FIELDS)
+        .sort({ expenseDate: -1 })
+        .limit(limit)
+        .lean(),
       includeProcess
-        ? ConsumptionMaterial.find(buildPurchaseFilter(req.query)).sort({ purchaseDate: -1 })
+        ? ConsumptionMaterial.find(purchaseFilter)
+            .select(PROCESS_LIST_FIELDS)
+            .sort({ purchaseDate: -1 })
+            .limit(limit)
+            .lean()
         : Promise.resolve([]),
     ]);
 
     const normalized = list.map((entry) => {
       if (entry.expenseGroup) return entry;
       const fallbackGroup = LEGACY_CATEGORY_TO_GROUP[entry.expenseCategory] || 'Operations';
-      return { ...entry.toObject(), expenseGroup: fallbackGroup };
+      return { ...entry, expenseGroup: fallbackGroup };
     });
 
     const processRows = processPurchases.map((m) => ({
@@ -127,8 +145,13 @@ const getExpenses = async (req, res, next) => {
       unit: m.unit,
     }));
 
-    const merged = [...normalized, ...processRows].sort((a, b) => new Date(b.expenseDate) - new Date(a.expenseDate));
-    res.json({ success: true, data: merged, total: merged.length });
+    const merged = [...normalized, ...processRows]
+      .sort((a, b) => new Date(b.expenseDate) - new Date(a.expenseDate))
+      .slice(0, limit);
+    const total = expenseCount + processCount;
+    const truncated = total > merged.length;
+
+    res.json({ success: true, data: merged, total, truncated });
   } catch (error) {
     next(error);
   }

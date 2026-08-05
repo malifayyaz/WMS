@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
@@ -19,6 +19,19 @@ const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const PROCESS_MATERIAL_GROUP = 'Process Material';
 const MATERIAL_TYPES = ['Acid', 'Dye', 'Soap', 'Stationary'];
 const getDefaultUnit = (materialType) => (['Acid', 'Soap'].includes(materialType) ? 'kg' : 'piece');
+const EXPENSE_LIST_LIMIT = 500;
+const BREAKDOWN_PERIOD_CAP = 24;
+
+function currentMonthRange() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = (n) => String(n).padStart(2, '0');
+  const start = `${y}-${pad(m + 1)}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const end = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+  return { start, end };
+}
 
 const SELF_EXPENSE_GROUP = 'Self Expense';
 const DEFAULT_EXPENSE_TREE = {
@@ -44,7 +57,10 @@ const defaultForm = {
 };
 
 export default function Expenses() {
-  const [list, setList] = useState([]);
+  const monthDefaults = useMemo(() => currentMonthRange(), []);
+  const [rawList, setRawList] = useState([]);
+  const [listTruncated, setListTruncated] = useState(false);
+  const [listTotal, setListTotal] = useState(0);
   const [config, setConfig] = useState({ rentalRoutes: [], expenseCategories: [], expenseCategoryTree: DEFAULT_EXPENSE_TREE });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(0);
@@ -54,8 +70,8 @@ export default function Expenses() {
     periodTotals: [], factoryPeriodTotals: [], selfPeriodTotals: [], selfCategoryTotals: [],
     groupTotals: [], categoryTotals: [],
   });
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(monthDefaults.start);
+  const [endDate, setEndDate] = useState(monthDefaults.end);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [editingId, setEditingId] = useState(null);
@@ -86,10 +102,20 @@ export default function Expenses() {
     : groups.filter((g) => g !== PROCESS_MATERIAL_GROUP && g !== SELF_EXPENSE_GROUP);
   const isFactoryOverviewTab = tab === 0;
 
-  const getGroupForCategory = (category) => {
+  const getGroupForCategory = useCallback((category) => {
     const groupEntry = Object.entries(categoryTree).find(([, categories]) => categories.includes(category));
     return groupEntry ? groupEntry[0] : 'Operations';
-  };
+  }, [categoryTree]);
+
+  const list = useMemo(() => {
+    if (isFactoryOverviewTab) {
+      return rawList.filter((e) => (e.expenseGroup || getGroupForCategory(e.expenseCategory)) !== SELF_EXPENSE_GROUP);
+    }
+    if (groupFilter) {
+      return rawList.filter((e) => (e.expenseGroup || getGroupForCategory(e.expenseCategory)) === groupFilter);
+    }
+    return rawList;
+  }, [rawList, isFactoryOverviewTab, groupFilter, getGroupForCategory]);
 
   const fetchProcessData = async () => {
     try {
@@ -104,25 +130,32 @@ export default function Expenses() {
     }
   };
 
-  const fetchList = async () => {
+  const fetchConfig = useCallback(async () => {
+    try {
+      const cfgRes = await configAPI.getWires();
+      setConfig({ ...cfgRes.data.data, expenseCategoryTree: cfgRes.data.data?.expenseCategoryTree || DEFAULT_EXPENSE_TREE });
+    } catch {
+      // keep defaults
+    }
+  }, []);
+
+  const fetchList = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = { includeProcess: true, limit: EXPENSE_LIST_LIMIT };
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
-      const [res, cfgRes, breakdownRes] = await Promise.all([
-        expensesAPI.getAll({ ...params, includeProcess: true }),
-        configAPI.getWires(),
-        expensesAPI.getBreakdown({ ...params, period }),
+      const [res, breakdownRes] = await Promise.all([
+        expensesAPI.getAll(params),
+        expensesAPI.getBreakdown({
+          ...(startDate ? { startDate } : {}),
+          ...(endDate ? { endDate } : {}),
+          period,
+        }),
       ]);
-      let data = res.data.data || [];
-      if (isFactoryOverviewTab) {
-        data = data.filter((e) => (e.expenseGroup || getGroupForCategory(e.expenseCategory)) !== SELF_EXPENSE_GROUP);
-      } else if (groupFilter) {
-        data = data.filter((e) => (e.expenseGroup || getGroupForCategory(e.expenseCategory)) === groupFilter);
-      }
-      setList(data);
-      setConfig({ ...cfgRes.data.data, expenseCategoryTree: cfgRes.data.data?.expenseCategoryTree || DEFAULT_EXPENSE_TREE });
+      setRawList(res.data.data || []);
+      setListTotal(res.data.total || 0);
+      setListTruncated(!!res.data.truncated);
       const bd = breakdownRes.data.data || {};
       setBreakdown({
         periodTotals: bd.periodTotals || [],
@@ -137,9 +170,10 @@ export default function Expenses() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate, period]);
 
-  useEffect(() => { fetchList(); }, [startDate, endDate, tab, period]);
+  useEffect(() => { fetchConfig(); }, [fetchConfig]);
+  useEffect(() => { fetchList(); }, [fetchList]);
 
   useEffect(() => {
     if (isProcessMaterialTab) fetchProcessData();
@@ -303,6 +337,14 @@ export default function Expenses() {
         if (groupFilter) return row._id.expenseGroup === groupFilter;
         return row._id.expenseGroup !== SELF_EXPENSE_GROUP;
       });
+
+  // Cap rendered breakdown rows (latest periods first — API already sorts desc)
+  const displayPeriodTotals = filteredPeriodTotals.slice(0, BREAKDOWN_PERIOD_CAP);
+  const allowedPeriods = new Set(displayPeriodTotals.map((row) => row._id));
+  const displayGroupTotals = filteredGroupTotals.filter((row) => allowedPeriods.has(row._id.period));
+  const displayCategoryTotals = filteredCategoryTotals.filter((row) => allowedPeriods.has(row._id.period));
+  const breakdownTruncated = filteredPeriodTotals.length > displayPeriodTotals.length;
+
   const exportGroupTotals = filteredGroupTotals;
   const exportCategoryTotals = filteredCategoryTotals;
   const periodLabel = period === 'day' ? 'Day' : period === 'week' ? 'Week' : 'Month';
@@ -433,13 +475,13 @@ export default function Expenses() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredPeriodTotals.map((row) => (
+            {displayPeriodTotals.map((row) => (
               <TableRow key={`period-${row._id}`}>
                 <TableCell>{row._id}</TableCell>
                 <TableCell align="right">{formatCurrency(row.total)}</TableCell>
               </TableRow>
             ))}
-            {filteredPeriodTotals.length === 0 && (
+            {displayPeriodTotals.length === 0 && (
               <TableRow>
                 <TableCell colSpan={2}>
                   <Typography variant="body2" color="text.secondary">No totals available for selected range.</Typography>
@@ -460,14 +502,14 @@ export default function Expenses() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredGroupTotals.map((row) => (
+            {displayGroupTotals.map((row) => (
               <TableRow key={`group-${row._id.period}-${row._id.expenseGroup}`}>
                 <TableCell>{row._id.period}</TableCell>
                 <TableCell>{row._id.expenseGroup}</TableCell>
                 <TableCell align="right">{formatCurrency(row.total)}</TableCell>
               </TableRow>
             ))}
-            {filteredGroupTotals.length === 0 && (
+            {displayGroupTotals.length === 0 && (
               <TableRow>
                 <TableCell colSpan={3}>
                   <Typography variant="body2" color="text.secondary">No category totals for selected range.</Typography>
@@ -489,7 +531,7 @@ export default function Expenses() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredCategoryTotals.map((row) => (
+            {displayCategoryTotals.map((row) => (
               <TableRow key={`category-${row._id.period}-${row._id.expenseGroup}-${row._id.expenseCategory}`}>
                 <TableCell>{row._id.period}</TableCell>
                 <TableCell>{row._id.expenseGroup}</TableCell>
@@ -497,7 +539,7 @@ export default function Expenses() {
                 <TableCell align="right">{formatCurrency(row.total)}</TableCell>
               </TableRow>
             ))}
-            {filteredCategoryTotals.length === 0 && (
+            {displayCategoryTotals.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4}>
                   <Typography variant="body2" color="text.secondary">No subcategory totals for selected range.</Typography>
@@ -507,6 +549,18 @@ export default function Expenses() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {breakdownTruncated && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          Showing latest {BREAKDOWN_PERIOD_CAP} {periodLabel.toLowerCase()} periods. Narrow the date range or export PDF for the full breakdown.
+        </Typography>
+      )}
+
+      {listTruncated && (
+        <Alert severity="info" sx={{ mb: 1 }}>
+          Showing latest {EXPENSE_LIST_LIMIT} of {listTotal} expense lines. Narrow the date range to see older entries.
+        </Alert>
+      )}
 
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>

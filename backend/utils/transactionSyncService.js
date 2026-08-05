@@ -78,7 +78,7 @@ async function syncTransactionFromRawMaterial(raw, supplierName) {
   const payload = {
     transactionType: 'Money Out',
     amount: raw.amountPaid,
-    paymentMethod: 'Cash',
+    paymentMethod: raw.paymentMethod || 'Cash',
     relatedTo: 'Supplier',
     relatedId: raw.supplierId,
     relatedName: supplierName || raw.supplierName || '',
