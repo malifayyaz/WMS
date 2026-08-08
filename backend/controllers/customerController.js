@@ -55,10 +55,7 @@ const getCustomers = async (req, res, next) => {
     const { search } = req.query;
     const filter = {};
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { contactNumber: new RegExp(search, 'i') }];
-    let customers = await Customer.find(filter).sort({ createdAt: -1 });
-    const { recalcCustomerTotals } = require('../utils/transactionSyncService');
-    await Promise.all(customers.map((c) => recalcCustomerTotals(c._id)));
-    customers = await Customer.find(filter).sort({ createdAt: -1 });
+    const customers = await Customer.find(filter).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: customers, total: customers.length });
   } catch (error) {
     next(error);

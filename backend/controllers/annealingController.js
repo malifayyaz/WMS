@@ -779,5 +779,6 @@ module.exports = {
   consumeAnnealingForSale,
   consumeAnnealingForSaleAuto,
   releaseAnnealingForSale,
+  feedPatriFactoryStock,
   computePools,
 };

@@ -110,6 +110,7 @@ export const transactionsAPI = {
   getDaily: (date) => api.get(`/transactions/daily/${date}`),
   getCashBook: (params) => api.get('/transactions/cashbook', { params }),
   setCashOpening: (data) => api.post('/transactions/cashbook/opening', data),
+  setCashBreakdown: (data) => api.post('/transactions/cashbook/breakdown', data),
   getPreviousClosing: (params) => api.get('/transactions/cashbook/previous-closing', { params }),
   getBankBook: (params) => api.get('/transactions/bank-book', { params }),
   getBankPersons: () => api.get('/transactions/bank-persons'),
@@ -184,6 +185,9 @@ export const workersAPI = {
 
 export const aiAPI = {
   chat: (data) => api.post("/ai/chat", data),
+  agentChat: (data) => api.post("/ai/agent-chat", data),
+  agentExecute: (data) => api.post("/ai/agent-execute", data),
+  agentUndo: (data) => api.post("/ai/agent-undo", data),
   getDailySummary: (date) =>
     api.get("/ai/daily-summary", { params: date ? { date } : {} }),
   predictProfit: () => api.get("/ai/predict-profit"),

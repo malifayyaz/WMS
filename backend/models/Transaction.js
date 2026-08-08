@@ -20,6 +20,8 @@ const transactionSchema = new mongoose.Schema(
     expenseCategory: String,
     /** Expense record created from this bank transfer (factory/self expense tracking) */
     linkedExpenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Expense' },
+    /** Paired transaction (e.g. ATM bank out ↔ cash in) */
+    linkedTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     /** Which bank account this transfer belongs to */
     bankAccount: { type: String, enum: ['MBL', 'UBL', 'Faisal Bank', 'Other'], default: 'MBL' },
     /** Custom bank name when bankAccount is 'Other' */

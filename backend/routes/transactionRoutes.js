@@ -13,12 +13,14 @@ const {
   setBankOpeningBalance,
   getBankOpeningBalances,
   setCashOpening,
+  setCashBreakdownHandler,
   getPrevClosing,
 } = require('../controllers/transactionController');
 
 const router = express.Router();
 router.get('/cashbook', getCashBook);
 router.post('/cashbook/opening', setCashOpening);
+router.post('/cashbook/breakdown', setCashBreakdownHandler);
 router.get('/cashbook/previous-closing', getPrevClosing);
 router.get('/bank-book', getBankBook);
 router.get('/bank-persons', getBankPersons);

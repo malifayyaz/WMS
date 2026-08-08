@@ -3,6 +3,7 @@ const Transaction = require('../models/Transaction');
 const Expense = require('../models/Expense');
 const ConsumptionMaterial = require('../models/ConsumptionMaterial');
 const DailyCashOpening = require('../models/DailyCashOpening');
+const DailyCashBreakdown = require('../models/DailyCashBreakdown');
 const { computeExpenseTotalsFromRecords } = require('../utils/transactionSyncService');
 
 function normalizeDate(d) {
@@ -178,10 +179,47 @@ async function getPreviousDayClosing(bookDate) {
   return book.closingBalance;
 }
 
+async function getCashBreakdownForDate(bookDate) {
+  const day = normalizeDate(bookDate);
+  const doc = await DailyCashBreakdown.findOne({ bookDate: day }).lean();
+  if (!doc) {
+    return { bookDate: day, lines: [], note: '', total: 0 };
+  }
+  const lines = (doc.lines || []).map((line) => ({
+    holder: line.holder,
+    amount: Number(line.amount) || 0,
+  }));
+  const total = lines.reduce((sum, line) => sum + line.amount, 0);
+  return {
+    bookDate: doc.bookDate,
+    lines,
+    note: doc.note || '',
+    total: Math.round(total * 100) / 100,
+  };
+}
+
+async function setCashBreakdown(bookDate, lines, note) {
+  const day = normalizeDate(bookDate);
+  const cleaned = (lines || [])
+    .map((line) => ({
+      holder: String(line.holder || '').trim(),
+      amount: Number(line.amount) || 0,
+    }))
+    .filter((line) => line.holder && line.amount >= 0);
+  const doc = await DailyCashBreakdown.findOneAndUpdate(
+    { bookDate: day },
+    { bookDate: day, lines: cleaned, note: note || '' },
+    { upsert: true, new: true, runValidators: true }
+  );
+  return getCashBreakdownForDate(day);
+}
+
 module.exports = {
   getCashBookForDate,
   getCashBookRange,
   setDailyOpening,
   getPreviousDayClosing,
+  getCashBreakdownForDate,
+  setCashBreakdown,
   normalizeDate,
 };

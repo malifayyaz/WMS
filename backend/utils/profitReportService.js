@@ -7,6 +7,11 @@ const Expense = require('../models/Expense');
 const ConsumptionMaterial = require('../models/ConsumptionMaterial');
 const Customer = require('../models/Customer');
 const AnnealingRecord = require('../models/AnnealingRecord');
+const ReadyStock = require('../models/ReadyStock');
+
+const SHIPLET_COIL = 'Shiplet Coil';
+const PATRI_COIL = 'Patri Coil';
+const WASTAGE_RATE = 0.05;
 
 function dateRange(startDate, endDate) {
   const range = {};
@@ -55,6 +60,7 @@ function orderRow(order) {
     weightKg: order.finalWeightKg ?? order.initialWeightKg ?? 0,
     ratePerKg: order.ratePerKg || 0,
     amount: order.totalAmount || 0,
+    coilCategory: order.coilCategory || '',
     isAnnealed: !!order.isAnnealed,
   };
 }
@@ -70,6 +76,73 @@ function rawRow(raw) {
     weightKg: raw.weightInKg || 0,
     ratePerKg: raw.ratePerKg || 0,
     amount: raw.totalAmount || 0,
+    currentStock: raw.currentStock || 0,
+  };
+}
+
+function matchesCoilCategory(coilCategory, filterKey) {
+  if (!filterKey) return true;
+  const cat = String(coilCategory || '');
+  if (filterKey === SHIPLET_COIL) return cat.includes('Shiplet');
+  if (filterKey === PATRI_COIL) return cat.includes('Patri');
+  return true;
+}
+
+function buildCoilAnalysisSlice(
+  label,
+  categoryKey,
+  purchases,
+  coilReturns,
+  sales,
+  wireReturns,
+  stockLots,
+  readyStockRows
+) {
+  const buys = purchases.filter((row) => matchesCoilCategory(row.coilCategory, categoryKey));
+  const buyReturns = coilReturns.filter((row) => matchesCoilCategory(row.coilCategory, categoryKey));
+  const sells = sales.filter((row) => matchesCoilCategory(row.coilCategory, categoryKey));
+  const sellReturns = wireReturns.filter((row) => matchesCoilCategory(row.coilCategory, categoryKey));
+
+  const purchaseKg = sum(buys, 'weightKg') - sum(buyReturns, 'weightKg');
+  const purchaseAmount = sum(buys, 'amount') - sum(buyReturns, 'amount');
+  const salesKg = sum(sells, 'weightKg') - sum(sellReturns, 'weightKg');
+  const salesAmount = sum(sells, 'amount') - sum(sellReturns, 'amount');
+
+  const lots = stockLots.filter(
+    (lot) => matchesCoilCategory(lot.coilCategory, categoryKey) && (lot.currentStock || 0) > 0
+  );
+  const stockKg = lots.reduce((total, lot) => total + (lot.currentStock || 0), 0);
+  const stockValue = lots.reduce(
+    (total, lot) => total + (lot.currentStock || 0) * (lot.ratePerKg || 0),
+    0
+  );
+
+  const readyRows = readyStockRows.filter((row) => {
+    const cat = row.coilCategory || (row.wireNumber === 20 ? PATRI_COIL : SHIPLET_COIL);
+    return matchesCoilCategory(cat, categoryKey);
+  });
+  const readyStockKg = sum(readyRows, 'weightKg');
+  const avgPurchaseRate = purchaseKg > 0 ? purchaseAmount / purchaseKg : 0;
+  const avgSaleRate = salesKg > 0 ? salesAmount / salesKg : 0;
+  const avgStockPurchaseRate = stockKg > 0 ? stockValue / stockKg : 0;
+  const estimatedReadyStockValue = readyStockKg > 0 && avgSaleRate > 0
+    ? readyStockKg * avgSaleRate
+    : 0;
+
+  return {
+    label,
+    periodPurchaseKg: round2(Math.max(0, purchaseKg)),
+    periodPurchaseAmount: round2(Math.max(0, purchaseAmount)),
+    avgPurchaseRate: round2(avgPurchaseRate),
+    periodSalesKg: round2(Math.max(0, salesKg)),
+    periodSalesAmount: round2(Math.max(0, salesAmount)),
+    avgSaleRate: round2(avgSaleRate),
+    stockKg: round2(stockKg),
+    stockValue: round2(stockValue),
+    avgStockPurchaseRate: round2(avgStockPurchaseRate),
+    readyStockKg: round2(readyStockKg),
+    estimatedReadyStockValue: round2(estimatedReadyStockValue),
+    avgReadyStockSaleRate: round2(avgSaleRate),
   };
 }
 
@@ -89,6 +162,8 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
     processingCustomers,
     annealingPeriod,
     allAnnealing,
+    stockLots,
+    readyStockRows,
   ] = await Promise.all([
     Order.find(withDate('orderDate', startDate, endDate)).sort({ orderDate: 1 }),
     RawMaterial.find(withDate('purchaseDate', startDate, endDate)).sort({ purchaseDate: 1 }),
@@ -98,6 +173,10 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
     Customer.find({ customerType: 'Processing' }).select('_id name'),
     AnnealingRecord.find(withDate('date', startDate, endDate)).sort({ date: 1, createdAt: 1 }),
     AnnealingRecord.find({ entryType: { $in: ['Send', 'Arrival', 'Sold'] } }).sort({ date: 1, createdAt: 1 }),
+    RawMaterial.find({ isReturn: { $ne: true }, currentStock: { $gt: 0 } }).select(
+      'coilCategory currentStock ratePerKg totalAmount weightInKg'
+    ).lean(),
+    ReadyStock.find({ weightKg: { $gt: 0 } }).select('wireNumber coilCategory weightKg bundles').lean(),
   ]);
 
   const sales = orders.filter((order) => !order.isReturn).map(orderRow);
@@ -112,6 +191,44 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
   const coilReturnCredits = sum(coilReturns, 'amount');
   const netMaterialCost = rawPurchases - coilReturnCredits;
   const mainGrossProfit = netMainRevenue - netMaterialCost;
+  const wastageDeduction = round2(Math.max(0, mainGrossProfit) * WASTAGE_RATE);
+  const coilAnalysis = {
+    shiplet: buildCoilAnalysisSlice(
+      'Shiplet Coil',
+      SHIPLET_COIL,
+      purchases,
+      coilReturns,
+      sales,
+      wireReturns,
+      stockLots,
+      readyStockRows
+    ),
+    patri: buildCoilAnalysisSlice(
+      'Patri Coil',
+      PATRI_COIL,
+      purchases,
+      coilReturns,
+      sales,
+      wireReturns,
+      stockLots,
+      readyStockRows
+    ),
+    combined: buildCoilAnalysisSlice(
+      'Combined (All Coil)',
+      null,
+      purchases,
+      coilReturns,
+      sales,
+      wireReturns,
+      stockLots,
+      readyStockRows
+    ),
+    wastage: {
+      rate: WASTAGE_RATE,
+      basisLabel: '5% of main gross profit',
+      amount: wastageDeduction,
+    },
+  };
   const annealingRows = annealingPeriod.map((record) => ({
     _id: record._id,
     date: record.date,
@@ -217,7 +334,9 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
   const selfExpenseTotal = sum(selfExpenses, 'amount');
   const consumptionCost = sum(consumptionMaterials, 'totalCost');
   const combinedGrossProfit = mainGrossProfit + labourEarned;
-  const finalNetProfit = combinedGrossProfit - factoryExpenseTotal - consumptionCost - selfExpenseTotal;
+  const mainNetBeforeWastage = mainGrossProfit - factoryExpenseTotal - consumptionCost;
+  const mainNetProfit = mainNetBeforeWastage - wastageDeduction;
+  const finalNetProfit = combinedGrossProfit - factoryExpenseTotal - consumptionCost - selfExpenseTotal - wastageDeduction;
 
   const main = {
     sales,
@@ -231,9 +350,11 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
     coilReturnCredits: round2(coilReturnCredits),
     netMaterialCost: round2(netMaterialCost),
     grossProfit: round2(mainGrossProfit),
+    wastageDeduction,
     factoryExpenses: round2(factoryExpenseTotal),
     consumptionMaterials: round2(consumptionCost),
-    netProfit: round2(mainGrossProfit - factoryExpenseTotal - consumptionCost),
+    netProfit: round2(mainNetProfit),
+    coilAnalysis,
     salesWeightKg: round2(sum(sales, 'weightKg')),
     salesBundles: sum(sales, 'bundles'),
     purchaseWeightKg: round2(sum(purchases, 'weightKg')),
@@ -267,7 +388,8 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
       line('MAIN GROSS PROFIT', mainGrossProfit, 'total'),
       line('Less: factory expenses', -factoryExpenseTotal, 'less'),
       line('Less: consumption materials', -consumptionCost, 'less'),
-      line('MAIN NET PROFIT', mainGrossProfit - factoryExpenseTotal - consumptionCost, 'total'),
+      line('Less: wastage allowance (5% of gross profit)', -wastageDeduction, 'less'),
+      line('MAIN NET PROFIT', mainNetProfit, 'total'),
     ],
   };
 
@@ -308,7 +430,9 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
     factoryExpenses: round2(factoryExpenseTotal),
     consumptionMaterials: round2(consumptionCost),
     selfExpenses: round2(selfExpenseTotal),
+    wastageDeduction,
     finalNetProfit: round2(finalNetProfit),
+    coilAnalysis,
     factoryExpenseRows: factoryExpenses,
     selfExpenseRows: selfExpenses,
     consumptionRows: consumptionMaterials,
@@ -328,6 +452,7 @@ async function buildProfitReport({ startDate, endDate, scope = 'combined' } = {}
       line('Less: factory expenses', -factoryExpenseTotal, 'less'),
       line('Less: consumption materials', -consumptionCost, 'less'),
       line('Less: self expenses (personal drawings)', -selfExpenseTotal, 'less'),
+      line('Less: wastage allowance (5% of main gross profit)', -wastageDeduction, 'less'),
       line('NET PROFIT', finalNetProfit, 'total'),
     ],
   };
