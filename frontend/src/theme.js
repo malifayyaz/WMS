@@ -30,6 +30,13 @@ export default createTheme({
   },
   shape: { borderRadius: 10 },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        html: { WebkitTextSizeAdjust: '100%' },
+        body: { overflowX: 'hidden' },
+        '#root': { minWidth: 0, maxWidth: '100%' },
+      },
+    },
     MuiAppBar: {
       styleOverrides: {
         root: {
@@ -37,12 +44,78 @@ export default createTheme({
           color: '#E8EDF3',
           backgroundImage: 'none',
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          '& .MuiIconButton-root': { color: '#E8EDF3' },
+        },
+      },
+    },
+    MuiTabs: {
+      defaultProps: {
+        variant: 'scrollable',
+        allowScrollButtonsMobile: true,
+      },
+      styleOverrides: {
+        root: { minHeight: 42 },
+        scrollButtons: {
+          '&.Mui-disabled': { opacity: 0.3 },
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          minHeight: 42,
+          '@media (max-width:600px)': {
+            minWidth: 'auto',
+            paddingLeft: 12,
+            paddingRight: 12,
+            fontSize: '0.8125rem',
+          },
+        },
+      },
+    },
+    MuiTableContainer: {
+      styleOverrides: {
+        root: {
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          maxWidth: '100%',
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:600px)': {
+            padding: '10px 8px',
+          },
+        },
+        head: {
+          backgroundColor: '#E2E9F1',
+          fontWeight: 600,
+          color: '#1E2A36',
+          whiteSpace: 'nowrap',
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          '@media (max-width:600px)': {
+            margin: 0,
+            width: '100%',
+            maxWidth: '100%',
+          },
         },
       },
     },
     MuiIconButton: {
       styleOverrides: {
-        root: { color: '#E8EDF3' },
+        root: {
+          '@media (max-width:600px)': {
+            padding: 10,
+          },
+        },
       },
     },
     MuiDrawer: {
@@ -92,18 +165,15 @@ export default createTheme({
         },
       },
     },
-    MuiTableCell: {
-      styleOverrides: {
-        head: {
-          backgroundColor: '#E2E9F1',
-          fontWeight: 600,
-          color: '#1E2A36',
-        },
-      },
-    },
     MuiButton: {
       styleOverrides: {
-        root: { textTransform: 'none', fontWeight: 600 },
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+          '@media (max-width:600px)': {
+            minHeight: 40,
+          },
+        },
       },
     },
   },

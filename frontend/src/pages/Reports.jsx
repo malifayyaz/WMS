@@ -28,6 +28,8 @@ import {
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import DateRangePicker from '../components/Common/DateRangePicker';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { reportsAPI, customersAPI } from '../services/api';
 import {
@@ -54,24 +56,26 @@ function MetricCard({ title, value, color = 'text.primary', helper }) {
 
 function ScopeHeader({ scope, setScope, data }) {
   return (
-    <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" mb={2}>
+    <PageToolbar sx={{ mb: 2 }}>
       <ToggleButtonGroup
         size="small"
         exclusive
         value={scope}
         onChange={(_, value) => value && setScope(value)}
+        sx={{ width: { xs: '100%', sm: 'auto' }, flexWrap: 'wrap', '& .MuiToggleButton-root': { flex: { xs: 1, sm: 'none' } } }}
       >
         <ToggleButton value="main">Main Business</ToggleButton>
         <ToggleButton value="processing">Processing / Labour</ToggleButton>
         <ToggleButton value="combined">Combined</ToggleButton>
       </ToggleButtonGroup>
       {data && (
-        <>
+        <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <Button
             size="small"
             variant="outlined"
             startIcon={<TableChartIcon />}
             onClick={() => exportProfitExcel(data, scope)}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
           >
             Export Excel
           </Button>
@@ -80,12 +84,13 @@ function ScopeHeader({ scope, setScope, data }) {
             variant="outlined"
             startIcon={<PictureAsPdfIcon />}
             onClick={() => exportProfitPdf(data, scope)}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
           >
             Export PDF
           </Button>
-        </>
+        </Box>
       )}
-    </Box>
+    </PageToolbar>
   );
 }
 
@@ -176,13 +181,13 @@ function CoilAnalysisTable({ coilAnalysis, title = 'Coil Purchase & Sale Average
             <TableRow>
               <TableCell sx={head}>Coil Type</TableCell>
               <TableCell sx={head} align="right">Purchase kg (period)</TableCell>
-              <TableCell sx={head} align="right">Avg purchase rate/kg</TableCell>
+              <TableCell sx={{ ...head, display: { xs: 'none', md: 'table-cell' } }} align="right">Avg purchase rate/kg</TableCell>
               <TableCell sx={head} align="right">Coil stock kg</TableCell>
-              <TableCell sx={head} align="right">Avg stock purchase rate/kg</TableCell>
+              <TableCell sx={{ ...head, display: { xs: 'none', md: 'table-cell' } }} align="right">Avg stock purchase rate/kg</TableCell>
               <TableCell sx={head} align="right">Sales kg (period)</TableCell>
-              <TableCell sx={head} align="right">Avg sale rate/kg</TableCell>
-              <TableCell sx={head} align="right">Ready wire stock kg</TableCell>
-              <TableCell sx={head} align="right">Est. ready stock value</TableCell>
+              <TableCell sx={{ ...head, display: { xs: 'none', md: 'table-cell' } }} align="right">Avg sale rate/kg</TableCell>
+              <TableCell sx={{ ...head, display: { xs: 'none', sm: 'table-cell' } }} align="right">Ready wire stock kg</TableCell>
+              <TableCell sx={{ ...head, display: { xs: 'none', sm: 'table-cell' } }} align="right">Est. ready stock value</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -190,13 +195,13 @@ function CoilAnalysisTable({ coilAnalysis, title = 'Coil Purchase & Sale Average
               <TableRow key={row.label}>
                 <TableCell sx={{ ...dense, fontWeight: 600 }}>{row.label}</TableCell>
                 <TableCell sx={dense} align="right">{Number(row.periodPurchaseKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.avgPurchaseRate)}</TableCell>
+                <TableCell sx={{ ...dense, display: { xs: 'none', md: 'table-cell' } }} align="right">{formatCurrency(row.avgPurchaseRate)}</TableCell>
                 <TableCell sx={dense} align="right">{Number(row.stockKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.avgStockPurchaseRate)}</TableCell>
+                <TableCell sx={{ ...dense, display: { xs: 'none', md: 'table-cell' } }} align="right">{formatCurrency(row.avgStockPurchaseRate)}</TableCell>
                 <TableCell sx={dense} align="right">{Number(row.periodSalesKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.avgSaleRate)}</TableCell>
-                <TableCell sx={dense} align="right">{Number(row.readyStockKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.estimatedReadyStockValue)}</TableCell>
+                <TableCell sx={{ ...dense, display: { xs: 'none', md: 'table-cell' } }} align="right">{formatCurrency(row.avgSaleRate)}</TableCell>
+                <TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">{Number(row.readyStockKg || 0).toFixed(1)}</TableCell>
+                <TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">{formatCurrency(row.estimatedReadyStockValue)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -435,6 +440,7 @@ function CombinedProfit({ data }) {
 }
 
 function ProfitLossPanel() {
+  const isMobile = useIsMobile();
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [scope, setScope] = useState('combined');
@@ -459,10 +465,17 @@ function ProfitLossPanel() {
 
   return (
     <Box>
-      <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
+      <PageToolbar>
         <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-        <Button variant="contained" onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
-      </Box>
+        <Button
+          variant="contained"
+          fullWidth={isMobile}
+          onClick={fetchReport}
+          disabled={!startDate || !endDate || loading}
+        >
+          Generate Report
+        </Button>
+      </PageToolbar>
       <ScopeHeader scope={scope} setScope={setScope} data={data} />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading && <CircularProgress />}
@@ -483,6 +496,7 @@ function ProfitLossPanel() {
 }
 
 function FinancialPanel() {
+  const isMobile = useIsMobile();
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [data, setData] = useState(null);
@@ -505,11 +519,13 @@ function FinancialPanel() {
 
   return (
     <Box>
-      <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
+      <PageToolbar>
         <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-        <Button variant="contained" onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
-        {data && <Button variant="outlined" startIcon={<TableChartIcon />} onClick={() => exportFinancialExcel(data, startDate, endDate)}>Export Excel</Button>}
-      </Box>
+        <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <Button variant="contained" fullWidth={isMobile} onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
+          {data && <Button variant="outlined" fullWidth={isMobile} startIcon={<TableChartIcon />} onClick={() => exportFinancialExcel(data, startDate, endDate)}>Export Excel</Button>}
+        </Box>
+      </PageToolbar>
       <Alert severity="info" sx={{ mb: 2 }}>Cash and Bank position is separate from Profit & Loss. Transfers are movement, not revenue.</Alert>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading && <CircularProgress />}
@@ -547,6 +563,7 @@ function FinancialPanel() {
 }
 
 function InventoryPanel() {
+  const isMobile = useIsMobile();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -563,7 +580,9 @@ function InventoryPanel() {
   const totals = data?.totals || {};
   return (
     <Box>
-      <Button variant="outlined" startIcon={<TableChartIcon />} onClick={() => exportInventoryExcel(data)}>Export Excel</Button>
+      <PageToolbar>
+        <Button variant="outlined" fullWidth={isMobile} startIcon={<TableChartIcon />} onClick={() => exportInventoryExcel(data)}>Export Excel</Button>
+      </PageToolbar>
       <Grid container spacing={1.5} my={1}>
         <Grid item xs={12} sm={6} md={3}><MetricCard title="Own Coil Stock" value={`${Number(totals.ownCoilKg || 0).toFixed(1)} kg`} /></Grid>
         <Grid item xs={12} sm={6} md={3}><MetricCard title="Ready Wire Stock" value={`${Number(totals.readyWireKg || 0).toFixed(1)} kg`} helper={`${totals.readyWireBundles || 0} bundles`} /></Grid>
@@ -573,12 +592,12 @@ function InventoryPanel() {
       {data?.lowStock?.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>Low stock: {data.lowStock.map((row) => row._id).join(', ')}</Alert>}
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
-          <TableHead><TableRow><TableCell sx={head}>Area</TableCell><TableCell sx={head}>Material / Party</TableCell><TableCell sx={head} align="right">Bundles</TableCell><TableCell sx={head} align="right">Weight kg</TableCell></TableRow></TableHead>
+          <TableHead><TableRow><TableCell sx={head}>Area</TableCell><TableCell sx={head}>Material / Party</TableCell><TableCell sx={{ ...head, display: { xs: 'none', sm: 'table-cell' } }} align="right">Bundles</TableCell><TableCell sx={head} align="right">Weight kg</TableCell></TableRow></TableHead>
           <TableBody>
-            {(data?.rawStock || []).map((row) => <TableRow key={`raw-${row._id}`}><TableCell sx={dense}>Own Coil</TableCell><TableCell sx={dense}>{row._id}</TableCell><TableCell sx={dense} align="right">—</TableCell><TableCell sx={dense} align="right">{Number(row.totalStock || 0).toFixed(1)}</TableCell></TableRow>)}
-            {(data?.readyStock || []).map((row) => <TableRow key={`ready-${row._id}`}><TableCell sx={dense}>Ready Wire</TableCell><TableCell sx={dense}>{row.wireLabel || `Wire #${row._id}`}</TableCell><TableCell sx={dense} align="right">{row.bundles || 0}</TableCell><TableCell sx={dense} align="right">{Number(row.totalStock || 0).toFixed(1)}</TableCell></TableRow>)}
-            {(data?.annealingPending || []).map((row) => <TableRow key={`ann-${row.key}`}><TableCell sx={dense}>Annealing</TableCell><TableCell sx={dense}>{row.partyName} — {row.materialType === 'Wire' ? `Wire #${row.wireNumber || '?'}` : row.coilCategory}</TableCell><TableCell sx={dense} align="right">{row.remainingBundles || 0}</TableCell><TableCell sx={dense} align="right">{Number(row.remainingKg || 0).toFixed(1)}</TableCell></TableRow>)}
-            {(data?.processingStock || []).filter((row) => row.remainingKg > 0).map((row, i) => <TableRow key={`job-${i}`}><TableCell sx={dense}>Processing</TableCell><TableCell sx={dense}>{row.customerName} — {row.coilCategory}</TableCell><TableCell sx={dense} align="right">—</TableCell><TableCell sx={dense} align="right">{Number(row.remainingKg || 0).toFixed(1)}</TableCell></TableRow>)}
+            {(data?.rawStock || []).map((row) => <TableRow key={`raw-${row._id}`}><TableCell sx={dense}>Own Coil</TableCell><TableCell sx={dense}>{row._id}</TableCell><TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">—</TableCell><TableCell sx={dense} align="right">{Number(row.totalStock || 0).toFixed(1)}</TableCell></TableRow>)}
+            {(data?.readyStock || []).map((row) => <TableRow key={`ready-${row._id}`}><TableCell sx={dense}>Ready Wire</TableCell><TableCell sx={dense}>{row.wireLabel || `Wire #${row._id}`}</TableCell><TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">{row.bundles || 0}</TableCell><TableCell sx={dense} align="right">{Number(row.totalStock || 0).toFixed(1)}</TableCell></TableRow>)}
+            {(data?.annealingPending || []).map((row) => <TableRow key={`ann-${row.key}`}><TableCell sx={dense}>Annealing</TableCell><TableCell sx={dense}>{row.partyName} — {row.materialType === 'Wire' ? `Wire #${row.wireNumber || '?'}` : row.coilCategory}</TableCell><TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">{row.remainingBundles || 0}</TableCell><TableCell sx={dense} align="right">{Number(row.remainingKg || 0).toFixed(1)}</TableCell></TableRow>)}
+            {(data?.processingStock || []).filter((row) => row.remainingKg > 0).map((row, i) => <TableRow key={`job-${i}`}><TableCell sx={dense}>Processing</TableCell><TableCell sx={dense}>{row.customerName} — {row.coilCategory}</TableCell><TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">—</TableCell><TableCell sx={dense} align="right">{Number(row.remainingKg || 0).toFixed(1)}</TableCell></TableRow>)}
           </TableBody>
         </Table>
       </TableContainer>
@@ -587,6 +606,7 @@ function InventoryPanel() {
 }
 
 function CustomerReportPanel() {
+  const isMobile = useIsMobile();
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [data, setData] = useState(null);
@@ -621,8 +641,8 @@ function CustomerReportPanel() {
 
   return (
     <Box>
-      <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
-        <FormControl size="small" sx={{ minWidth: 260 }}>
+      <PageToolbar>
+        <FormControl size="small" sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 260 } }}>
           <InputLabel>Customer</InputLabel>
           <Select
             value={customerId}
@@ -635,10 +655,10 @@ function CustomerReportPanel() {
             ))}
           </Select>
         </FormControl>
-        <Button variant="contained" onClick={fetchReport} disabled={!customerId || loading}>
+        <Button variant="contained" fullWidth={isMobile} onClick={fetchReport} disabled={!customerId || loading}>
           Generate Report
         </Button>
-      </Box>
+      </PageToolbar>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading && <CircularProgress />}
       {customer && (
@@ -664,11 +684,11 @@ function CustomerReportPanel() {
                 <TableRow>
                   <TableCell sx={head}>Date</TableCell>
                   <TableCell sx={head}>Wire</TableCell>
-                  <TableCell sx={head} align="right">Weight</TableCell>
+                  <TableCell sx={{ ...head, display: { xs: 'none', sm: 'table-cell' } }} align="right">Weight</TableCell>
                   <TableCell sx={head} align="right">Total</TableCell>
-                  <TableCell sx={head} align="right">Paid</TableCell>
+                  <TableCell sx={{ ...head, display: { xs: 'none', md: 'table-cell' } }} align="right">Paid</TableCell>
                   <TableCell sx={head} align="right">Due</TableCell>
-                  <TableCell sx={head}>Status</TableCell>
+                  <TableCell sx={{ ...head, display: { xs: 'none', sm: 'table-cell' } }}>Status</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -683,11 +703,11 @@ function CustomerReportPanel() {
                   <TableRow key={row._id}>
                     <TableCell sx={dense}>{formatDate(row.orderDate)}</TableCell>
                     <TableCell sx={dense}>{row.wireType || `Wire #${row.wireNumber}`}</TableCell>
-                    <TableCell sx={dense} align="right">{row.finalWeightKg ?? row.initialWeightKg}</TableCell>
+                    <TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }} align="right">{row.finalWeightKg ?? row.initialWeightKg}</TableCell>
                     <TableCell sx={dense} align="right">{formatCurrency(row.totalAmount)}</TableCell>
-                    <TableCell sx={dense} align="right">{formatCurrency(row.amountPaid)}</TableCell>
+                    <TableCell sx={{ ...dense, display: { xs: 'none', md: 'table-cell' } }} align="right">{formatCurrency(row.amountPaid)}</TableCell>
                     <TableCell sx={dense} align="right">{formatCurrency(row.amountDue)}</TableCell>
-                    <TableCell sx={dense}>{row.orderStatus}</TableCell>
+                    <TableCell sx={{ ...dense, display: { xs: 'none', sm: 'table-cell' } }}>{row.orderStatus}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -710,7 +730,13 @@ export default function Reports() {
 
   return (
     <Box>
-      <Tabs value={tab} onChange={(_, value) => setTab(value)}>
+      <Tabs
+        value={tab}
+        onChange={(_, value) => setTab(value)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+      >
         <Tab label="Profit & Loss" />
         <Tab label="Cash & Bank" />
         <Tab label="Inventory" />

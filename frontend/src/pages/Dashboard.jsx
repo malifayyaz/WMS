@@ -16,8 +16,10 @@ import AutoAwesome from '@mui/icons-material/AutoAwesome';
 import Refresh from '@mui/icons-material/Refresh';
 import StatCards from '../components/Dashboard/StatCards';
 import DashboardCharts from '../components/Dashboard/DashboardCharts';
+import ActivityAnalytics from '../components/Dashboard/ActivityAnalytics';
 import { dashboardAPI, aiAPI } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
+import PageToolbar from '../components/Common/PageToolbar';
 
 function localDateKey(d = new Date()) {
   const y = d.getFullYear();
@@ -127,21 +129,14 @@ export default function Dashboard() {
         }}
       >
         <CardContent>
-          <Box
-            display="flex"
-            justifyContent="space-between"
-            alignItems="center"
-            mb={1.5}
-            flexWrap="wrap"
-            gap={1}
-          >
+          <PageToolbar sx={{ mb: 1.5 }}>
             <Box display="flex" alignItems="center" gap={1}>
               <AutoAwesome sx={{ color: '#2E7D32' }} />
               <Typography variant="h6" fontWeight={700}>
                 {isToday ? "Today's Business Summary" : `Business Summary — ${formatDisplayDate(summaryDate)}`}
               </Typography>
             </Box>
-            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
               <TextField
                 type="date"
                 size="small"
@@ -150,7 +145,7 @@ export default function Dashboard() {
                 onChange={(e) => setSummaryDate(e.target.value || todayKey)}
                 inputProps={{ max: todayKey }}
                 InputLabelProps={{ shrink: true }}
-                sx={{ width: 160, bgcolor: 'rgba(255,255,255,0.55)', borderRadius: 1 }}
+                sx={{ width: { xs: '100%', sm: 160 }, bgcolor: 'rgba(255,255,255,0.55)', borderRadius: 1 }}
               />
               {generatedAtLabel && (
                 <Typography variant="caption" color="text.secondary">
@@ -167,7 +162,7 @@ export default function Dashboard() {
                 </IconButton>
               </Tooltip>
             </Box>
-          </Box>
+          </PageToolbar>
           {summaryLoading ? (
             <>
               <Skeleton variant="text" width="100%" />
@@ -191,7 +186,12 @@ export default function Dashboard() {
       )}
       <Typography variant="h6" gutterBottom>Overview</Typography>
       <StatCards stats={stats} />
-      <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>Charts</Typography>
+
+      <Box sx={{ mt: 3 }}>
+        <ActivityAnalytics />
+      </Box>
+
+      <Typography variant="h6" sx={{ mt: 1 }} gutterBottom>Profit & Orders</Typography>
       {profitTrend && (
         <Alert
           severity={(profitTrend.change || 0) >= 0 ? 'success' : 'warning'}

@@ -117,14 +117,15 @@ export default function Sidebar({ open, onClose }) {
       variant="temporary"
       open={open}
       onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: drawerWidth,
         flexShrink: 0,
         '& .MuiDrawer-paper': {
-          width: drawerWidth,
+          width: { xs: 'min(100vw - 48px, 280px)', sm: drawerWidth },
           boxSizing: 'border-box',
-          mt: 7,
-          height: 'calc(100% - 56px)',
+          mt: { xs: 7, sm: 8 },
+          height: { xs: 'calc(100% - 56px)', sm: 'calc(100% - 64px)' },
           overflowY: 'auto',
         },
       }}

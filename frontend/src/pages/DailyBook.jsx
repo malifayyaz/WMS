@@ -9,7 +9,6 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -54,8 +53,10 @@ import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import LedgerDialog from '../components/Common/LedgerDialog';
 import PartySearchSelect from '../components/Common/PartySearchSelect';
 import DailyBookReportDialog from '../components/DailyBook/DailyBookReportDialog';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
 import { usePermissions } from '../hooks/usePermissions';
+import { useIsMobile } from '../hooks/useBreakpoint';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const cashChequeMethods = ['Cash', 'Cheque'];
@@ -210,7 +211,7 @@ function getSourceLabel(row) {
 
 function ToolbarSection({ label, children }) {
   return (
-    <Box sx={{ minWidth: 0 }}>
+    <Box sx={{ minWidth: 0, width: { xs: '100%', md: 'auto' } }}>
       <Typography
         variant="overline"
         color="text.secondary"
@@ -229,6 +230,8 @@ const toolbarBtn = { textTransform: 'none', fontWeight: 600, borderRadius: 1.5, 
 
 export default function DailyBook() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
+  const btnSize = isMobile ? 'medium' : 'small';
   const [accessDenied, setAccessDenied] = useState(false);
   const requireAdmin = (fn) => (...args) => {
     if (isViewer) {
@@ -2093,7 +2096,13 @@ export default function DailyBook() {
 
   return (
     <Box>
-      <Tabs value={mainTab} onChange={(_, v) => { setMainTab(v); setSelectedPartyId(''); }} sx={{ mb: 2 }}>
+      <Tabs
+        value={mainTab}
+        onChange={(_, v) => { setMainTab(v); setSelectedPartyId(''); }}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        sx={{ mb: 2 }}
+      >
         {partyConfig.map((p) => <Tab key={p.label} label={p.label} />)}
       </Tabs>
 
@@ -2114,19 +2123,19 @@ export default function DailyBook() {
           alignItems={{ lg: 'center' }}
           justifyContent="space-between"
         >
-          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0, width: { xs: '100%', lg: 'auto' } }}>
             <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
             <TextField
-              size="small"
+              size={btnSize}
               type="date"
               label="Entry Date"
               value={entryDate}
               onChange={(e) => setEntryDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 150 }}
+              sx={{ minWidth: { xs: '100%', sm: 150 } }}
             />
             {mainTab !== 0 && mainTab !== 4 && (
-              <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: 320, flex: 1 }}>
+              <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: { sm: 320 }, flex: 1 }}>
                 <PartySearchSelect
                   options={parties}
                   value={selectedPartyId}
@@ -2143,18 +2152,24 @@ export default function DailyBook() {
               </Box>
             )}
           </Stack>
-          <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'stretch', sm: 'center' }}
+            sx={{ width: { xs: '100%', lg: 'auto' }, flexShrink: 0 }}
+          >
             <Button
               variant="outlined"
-              size="small"
+              size={btnSize}
               startIcon={<AssessmentIcon />}
               onClick={() => setReportDialogOpen(true)}
               sx={toolbarBtn}
+              fullWidth={isMobile}
             >
               Report
             </Button>
             {mainTab !== 4 && mainTab !== 5 && (
-              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAdd)} sx={toolbarBtn}>
+              <Button variant="contained" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAdd)} sx={toolbarBtn} fullWidth={isMobile}>
                 {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
               </Button>
             )}
@@ -2162,10 +2177,11 @@ export default function DailyBook() {
               <Button
                 variant="contained"
                 color="success"
-                size="small"
+                size={btnSize}
                 startIcon={<AddIcon />}
                 onClick={requireAdmin(() => openJobWorkDeliveryDialog(selectedPartyId || null))}
                 sx={toolbarBtn}
+                fullWidth={isMobile}
               >
                 Record Delivery
               </Button>
@@ -2178,25 +2194,25 @@ export default function DailyBook() {
         {mainTab === 0 && (
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
             <ToolbarSection label="Cash book">
-              <Button variant="outlined" size="small" startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
+              <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
                 Opening Balance
               </Button>
-              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
+              <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
                 Cash Breakdown
               </Button>
               <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
-                <Button variant="outlined" size="small" startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
                   Cash / Cheque
                 </Button>
               </Tooltip>
             </ToolbarSection>
             <ToolbarSection label="Daily expense totals">
-              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
+              <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
                 Factory Total
               </Button>
               <Button
                 variant="outlined"
-                size="small"
+                size={btnSize}
                 endIcon={<ArrowDropDownIcon />}
                 onClick={(e) => {
                   if (isViewer) { setAccessDenied(true); return; }
@@ -2225,10 +2241,10 @@ export default function DailyBook() {
               </Menu>
             </ToolbarSection>
             <ToolbarSection label="Bank (not cash in hand)">
-              <Button variant="outlined" size="small" startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
+              <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
                 Bank Transfer
               </Button>
-              <Button variant="outlined" size="small" startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
+              <Button variant="outlined" size={btnSize} startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
                 ATM Withdrawal
               </Button>
             </ToolbarSection>
@@ -2238,17 +2254,17 @@ export default function DailyBook() {
         {mainTab >= 1 && mainTab !== 4 && (
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
             <ToolbarSection label="Party">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAddParty)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAddParty)} sx={toolbarBtn}>
                   Add {getPartyTypeLabel()}
                 </Button>
                 {selectedPartyId && (
                   <>
-                    <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={requireAdmin(handleOpenEditParty)} sx={toolbarBtn}>
+                    <Button variant="outlined" size={btnSize} startIcon={<EditIcon />} onClick={requireAdmin(handleOpenEditParty)} sx={toolbarBtn}>
                       Edit
                     </Button>
                     <Button
                       variant="outlined"
-                      size="small"
+                      size={btnSize}
                       color="error"
                       startIcon={<DeleteIcon />}
                       onClick={requireAdmin(() => setPartyDeleteConfirm({ open: true, id: selectedPartyId }))}
@@ -2263,7 +2279,7 @@ export default function DailyBook() {
               <ToolbarSection label="Ledger">
                 <Button
                   variant="outlined"
-                  size="small"
+                  size={btnSize}
                   onClick={() => setLedgerDialogOpen(true)}
                   sx={toolbarBtn}
                 >
@@ -2275,7 +2291,7 @@ export default function DailyBook() {
               <ToolbarSection label="Other">
                 <Button
                   variant="outlined"
-                  size="small"
+                  size={btnSize}
                   onClick={requireAdmin(() => {
                     setGeneralCashMode(false);
                     setEditingId(null);
@@ -2302,30 +2318,30 @@ export default function DailyBook() {
             )}
             {mainTab === 2 && (
               <ToolbarSection label="Sales & returns">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
                   Add Sale
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
                   Return Wire
                 </Button>
               </ToolbarSection>
             )}
             {mainTab === 3 && (
               <ToolbarSection label="Stock">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
                   Stock Arrival
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
                   Return Coil
                 </Button>
               </ToolbarSection>
             )}
             {mainTab === 5 && (
               <ToolbarSection label="Processing">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
                   Coil Arrival
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
+                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
                   Return Wire
                 </Button>
               </ToolbarSection>
@@ -2335,10 +2351,10 @@ export default function DailyBook() {
 
         {mainTab === 4 && (
           <ToolbarSection label="Annealing">
-            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
+            <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
               Send for Annealing
             </Button>
-            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
+            <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
               Arrival from Annealing
             </Button>
           </ToolbarSection>
@@ -2355,13 +2371,14 @@ export default function DailyBook() {
             borderColor: 'divider',
             borderRadius: 2,
             bgcolor: 'grey.50',
+            minWidth: 0,
           }}
         >
           <Typography variant="subtitle1" fontWeight={700} gutterBottom>
             Cash in Hand — {formatDate(entryDate)}
           </Typography>
-          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap alignItems="flex-start">
-            <Box>
+          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap alignItems="flex-start" sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">Opening Balance</Typography>
               <Typography variant="h6">{formatCurrency(cashBook.openingBalance)}</Typography>
               <Chip
@@ -2382,18 +2399,18 @@ export default function DailyBook() {
               Includes factory ({formatCurrency(factoryCashOut)}) + self ({formatCurrency(selfCashOut)})
               {otherMoneyOut > 0 ? ` + other (${formatCurrency(otherMoneyOut)})` : ''}
             </Typography>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">Closing Balance</Typography>
               <Typography variant="h6" color="primary">{formatCurrency(cashBook.closingBalance)}</Typography>
               <Typography variant="caption" color="text.secondary">Carried to next day as opening</Typography>
             </Box>
           </Stack>
           {cashBook.cashBreakdown?.lines?.length > 0 && (
-            <Box mt={2} pt={2} borderTop={1} borderColor="divider">
+            <Box mt={2} pt={2} borderTop={1} borderColor="divider" sx={{ minWidth: 0 }}>
               <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 Cash Breakdown — who holds cash
               </Typography>
-              <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-start">
+              <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-start" sx={{ minWidth: 0 }}>
                 {cashBook.cashBreakdown.lines.map((line) => (
                   <Box key={line.holder}>
                     <Typography variant="caption" color="text.secondary">{line.holder}</Typography>
@@ -2418,14 +2435,14 @@ export default function DailyBook() {
             </Box>
           )}
           {cashBook.expenseTotals && (
-            <Box mt={2} pt={2} borderTop={1} borderColor="divider">
+            <Box mt={2} pt={2} borderTop={1} borderColor="divider" sx={{ minWidth: 0 }}>
               <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 Money Out — Expense Breakdown for {formatDate(entryDate)}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                 Only these day totals count as Money Out — individual expenses stay in the Expenses section.
               </Typography>
-              <Box display="flex" gap={3} flexWrap="wrap">
+              <Box display="flex" gap={3} flexWrap="wrap" sx={{ minWidth: 0 }}>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Factory Expense Total</Typography>
                   <Typography variant="h6">{formatCurrency(factoryCashOut)}</Typography>
@@ -2470,8 +2487,8 @@ export default function DailyBook() {
       )}
 
       {mainTab === 0 && bankBook && (
-        <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main' }}>
-          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+        <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main', minWidth: 0 }}>
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} flexWrap="wrap" gap={1} sx={{ minWidth: 0 }}>
             <Typography variant="subtitle1" fontWeight={600}>Bank Account Balance</Typography>
             <Chip
               label={`Net: ${formatCurrency(bankBook.closingBalance)}`}
@@ -2479,19 +2496,20 @@ export default function DailyBook() {
               variant="outlined"
             />
           </Box>
-          <Box display="flex" gap={3} flexWrap="wrap" mb={2}>
-            <Box>
+          <Box display="flex" gap={3} flexWrap="wrap" mb={2} sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">Opening (before period)</Typography>
               <Typography variant="h6">{formatCurrency(bankBook.openingBalance)}</Typography>
             </Box>
             <Typography>+ Received: <strong>{formatCurrency(bankBook.totalIn)}</strong></Typography>
             <Typography>− Sent: <strong>{formatCurrency(bankBook.totalOut)}</strong></Typography>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">Closing Balance</Typography>
               <Typography variant="h6" color="info.main">{formatCurrency(bankBook.closingBalance)}</Typography>
             </Box>
           </Box>
           {bankBook.transactions.length > 0 && (
+            <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'action.hover' }}>
@@ -2528,6 +2546,7 @@ export default function DailyBook() {
                 ))}
               </TableBody>
             </Table>
+            </TableContainer>
           )}
           {bankBook.transactions.length === 0 && (
             <Typography variant="body2" color="text.secondary">No bank transfers in this period.</Typography>
@@ -2536,7 +2555,7 @@ export default function DailyBook() {
       )}
 
       {mainTab === 0 && startDate && endDate && cashBookRange.length > 0 && (
-        <TableContainer component={Paper} sx={{ mb: 2 }}>
+        <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -2563,7 +2582,7 @@ export default function DailyBook() {
       )}
 
       {selectedParty && partyLedger && mainTab >= 1 && mainTab !== 4 && (
-        <Box display="flex" gap={2} mb={2} flexWrap="wrap" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+        <Box display="flex" gap={2} mb={2} flexWrap="wrap" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1, minWidth: 0 }}>
           <Typography fontWeight={600}>{selectedParty.name}</Typography>
           {partyLedger.isDailyCustomer ? (
             <Typography>Total Purchased: <strong>{formatCurrency(partyLedger.summary.totalPurchased)}</strong></Typography>
@@ -2588,7 +2607,7 @@ export default function DailyBook() {
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
       ) : mainTab === 4 || mainTab === 5 ? null : mainTab === 1 ? (
         <>
-        <TableContainer component={Paper} sx={{ mb: 2 }}>
+        <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -2636,7 +2655,7 @@ export default function DailyBook() {
         {list.length > 0 && (
           <>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>Other Transactions (refunds / adjustments)</Typography>
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -2675,7 +2694,7 @@ export default function DailyBook() {
         )}
         </>
       ) : mainTab >= 2 && !selectedPartyId ? (
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -2736,7 +2755,7 @@ export default function DailyBook() {
             </Button>
           </Box>
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1020, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: { xs: 700, sm: 1020 }, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
                 <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
@@ -2795,7 +2814,7 @@ export default function DailyBook() {
         </TableContainer>
         </>
       ) : (
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -2902,7 +2921,7 @@ export default function DailyBook() {
               </Box>
             </Paper>
           )}
-          <TableContainer component={Paper}>
+          <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
             <Typography variant="subtitle2" fontWeight={600} sx={{ p: 2, pb: 0 }}>
               Annealing — Sent &amp; Arrived (all parties)
             </Typography>
@@ -2971,7 +2990,7 @@ export default function DailyBook() {
           {jobWorkStock && (
             <Paper sx={{ p: 2, mb: 2, bgcolor: 'action.hover' }}>
               <Typography variant="subtitle2" fontWeight={600} gutterBottom>Stock Overview</Typography>
-              <Box display="flex" gap={4} flexWrap="wrap">
+              <Box display="flex" gap={4} flexWrap="wrap" sx={{ minWidth: 0 }}>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Job Work Stock (customer coil)</Typography>
                   <Typography variant="h6">{jobWorkStock.jobWorkStockKg.toFixed(2)} kg</Typography>
@@ -3004,7 +3023,7 @@ export default function DailyBook() {
               </Box>
             </Paper>
           )}
-          <TableContainer component={Paper}>
+          <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
             <Typography variant="subtitle2" fontWeight={600} sx={{ p: 2, pb: 0 }}>
               Processing Work — Customer Coil to Wire {selectedParty ? `(${selectedParty.name})` : '(all customers)'}
             </Typography>
@@ -3120,9 +3139,9 @@ export default function DailyBook() {
         </Box>
       )}
 
-      <Dialog open={dailySaleDialogOpen} onClose={() => setDailySaleDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dailySaleDialogOpen} onClose={() => setDailySaleDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Daily Sale</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <FormControl fullWidth margin="dense" required>
             <PartySearchSelect
               options={dailyCustomers}
@@ -3238,11 +3257,11 @@ export default function DailyBook() {
           <Button onClick={() => setDailySaleDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveDailySale}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={openingDialogOpen} onClose={() => setOpeningDialogOpen(false)} maxWidth="xs" fullWidth>
+      <ResponsiveDialog open={openingDialogOpen} onClose={() => setOpeningDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Set Opening Balance (Cash in Hand)</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Date: <strong>{entryDate}</strong>
             {prevClosingHint != null && (
@@ -3270,11 +3289,11 @@ export default function DailyBook() {
           <Button onClick={() => setOpeningDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveOpening}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={cashBreakdownDialogOpen} onClose={() => setCashBreakdownDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={cashBreakdownDialogOpen} onClose={() => setCashBreakdownDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Cash Breakdown — {formatDate(entryDate)}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 2 }}>
             Record who is holding how much of today&apos;s cash in hand (e.g. Fayyaz, Irfan, Faisal). Add as many rows as you need.
           </Alert>
@@ -3342,9 +3361,9 @@ export default function DailyBook() {
           <Button onClick={() => setCashBreakdownDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveCashBreakdown}>Save Breakdown</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={dialogOpen} onClose={closeTransactionDialog} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={closeTransactionDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
           {generalCashMode
             ? (editingId ? 'Edit Cash / Cheque Entry' : 'General Cash / Cheque In-Out')
@@ -3354,7 +3373,7 @@ export default function DailyBook() {
               : `Add Self Expense — ${form.expenseCategory?.replace(' Expense', '') || ''}`)
             : (editingId ? 'Edit Transaction' : 'Add Transaction')}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           {generalCashMode && (
             <Alert severity="info" sx={{ mb: 1 }}>
               Record cash or cheque received from (or paid to) anyone who is <strong>not</strong> a ledger customer or supplier.
@@ -3534,7 +3553,7 @@ export default function DailyBook() {
           <Button onClick={closeTransactionDialog}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>{editingId ? 'Update' : 'Save'}</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {selectedPartyId && selectedParty && (
         <LedgerDialog
@@ -3552,9 +3571,9 @@ export default function DailyBook() {
         />
       )}
 
-      <Dialog open={stockArrivalDialogOpen} onClose={() => setStockArrivalDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={stockArrivalDialogOpen} onClose={() => setStockArrivalDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Stock Arrival</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>Records stock in ledger — cash payment is optional.</Alert>
           <PartySearchSelect
             options={suppliers}
@@ -3582,11 +3601,11 @@ export default function DailyBook() {
           <Button onClick={() => setStockArrivalDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveStockArrival}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={coilReturnDialogOpen} onClose={() => setCoilReturnDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={coilReturnDialogOpen} onClose={() => setCoilReturnDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Return Coil to Supplier</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             Credits the supplier ledger (reduces what we owe) and deducts coil from factory stock.
           </Alert>
@@ -3639,11 +3658,11 @@ export default function DailyBook() {
           <Button onClick={() => setCoilReturnDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="warning" onClick={handleSaveCoilReturn}>Record Coil Return</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={ledgerSaleDialogOpen} onClose={() => setLedgerSaleDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={ledgerSaleDialogOpen} onClose={() => setLedgerSaleDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Sale (Ledger Customer)</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>Sale goes to customer ledger — payment optional on this date.</Alert>
           <PartySearchSelect
             options={ledgerCustomers}
@@ -3734,11 +3753,11 @@ export default function DailyBook() {
           <Button onClick={() => setLedgerSaleDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveLedgerSale}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={annealingSendDialogOpen} onClose={() => { setAnnealingSendDialogOpen(false); setAnnealingEditId(null); }} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={annealingSendDialogOpen} onClose={() => { setAnnealingSendDialogOpen(false); setAnnealingEditId(null); }} maxWidth="sm" fullWidth>
         <DialogTitle>{annealingEditId ? 'Edit Annealing Send' : 'Send for Annealing'}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             Party is optional — leave it empty for factory&apos;s own stock. If weight is unknown, enter bundles only; the system estimates weight from earlier sends.
           </Alert>
@@ -3813,11 +3832,11 @@ export default function DailyBook() {
           <Button onClick={() => { setAnnealingSendDialogOpen(false); setAnnealingEditId(null); }}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveAnnealingSend}>{annealingEditId ? 'Update' : 'Save'}</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={annealingArrivalDialogOpen} onClose={() => { setAnnealingArrivalDialogOpen(false); setAnnealingEditId(null); }} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={annealingArrivalDialogOpen} onClose={() => { setAnnealingArrivalDialogOpen(false); setAnnealingEditId(null); }} maxWidth="sm" fullWidth>
         <DialogTitle>{annealingEditId ? 'Edit Annealing Arrival' : 'Arrival from Annealing'}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             If you know the party, choose its pending pool. For combined bundles
             whose owner is unknown, choose <strong>Unknown / mixed parties</strong>;
@@ -3990,11 +4009,11 @@ export default function DailyBook() {
           <Button onClick={() => { setAnnealingArrivalDialogOpen(false); setAnnealingEditId(null); }}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveAnnealingArrival}>{annealingEditId ? 'Update' : 'Save Arrival'}</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={jobWorkDialogOpen} onClose={() => { setJobWorkDialogOpen(false); setJobWorkEditId(null); }} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={jobWorkDialogOpen} onClose={() => { setJobWorkDialogOpen(false); setJobWorkEditId(null); }} maxWidth="sm" fullWidth>
         <DialogTitle>{jobWorkEditId ? 'Edit Processing Work Record' : 'Processing Work — Coil Arrival'}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             Customer&apos;s own coil arrives for manufacturing. Labour rate is entered later when wire is delivered (rate varies by wire).
           </Alert>
@@ -4022,9 +4041,9 @@ export default function DailyBook() {
           <Button onClick={() => { setJobWorkDialogOpen(false); setJobWorkEditId(null); }}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveJobWork}>{jobWorkEditId ? 'Update' : 'Save'}</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog
+      <ResponsiveDialog
         open={jobWorkDeliveryDialogOpen}
         onClose={() => {
           setJobWorkDeliveryDialogOpen(false);
@@ -4036,7 +4055,7 @@ export default function DailyBook() {
         <DialogTitle>
           Processing Work — {jobWorkDeliveryEdit ? 'Edit Wire Delivery' : 'Record Wire Delivery'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             {jobWorkDeliveryEdit
               ? 'Changing weight or labour rate will recalculate stock, labour charges, status, and customer balance.'
@@ -4135,11 +4154,11 @@ export default function DailyBook() {
             {jobWorkDeliveryEdit ? 'Update Delivery' : 'Save Delivery'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={returnDialogOpen} onClose={() => setReturnDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={returnDialogOpen} onClose={() => setReturnDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Return Defect Wire</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             Credits the customer ledger and adds the weight back to Ready Stock by wire number. Does not change the original sale row.
           </Alert>
@@ -4188,17 +4207,17 @@ export default function DailyBook() {
           <Button onClick={() => setReturnDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="warning" onClick={handleSaveWireReturn}>Save Return</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* ───────── Bank Transfer Dialog ───────── */}
-      <Dialog
+      <ResponsiveDialog
         open={bankTransferDialogOpen}
         onClose={() => { setBankTransferDialogOpen(false); setBankTransferEditingId(null); }}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>{bankTransferEditingId ? 'Edit Bank Transfer' : 'Bank Transfer'}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 2 }}>
             Bank transfers do <strong>not</strong> affect cash in hand — choose which bank account ledger to update.
           </Alert>
@@ -4369,12 +4388,12 @@ export default function DailyBook() {
               : (bankTransferForm.transactionType === 'Money In' ? 'Record Received' : 'Record Sent')}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       <ConfirmDialog open={deleteConfirm.open} title="Delete Transaction" message="Are you sure?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />
       <ConfirmDialog open={deleteAnnealingConfirm.open} title="Delete Annealing Entry" message="Delete this annealing entry? Pool totals will be recalculated." onConfirm={handleDeleteAnnealing} onCancel={() => setDeleteAnnealingConfirm({ open: false, id: null })} />
 
-      <Dialog
+      <ResponsiveDialog
         open={annealingPoolDialog.open}
         onClose={() => setAnnealingPoolDialog({ open: false, pool: null })}
         maxWidth="md"
@@ -4383,7 +4402,7 @@ export default function DailyBook() {
         <DialogTitle>
           Pending pool — {annealingPoolDialog.pool?.partyName || 'Own stock'} ({annealingPoolDialog.pool?.materialType})
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           {annealingPoolDialog.pool && (
             <Alert severity="warning" sx={{ mb: 1.5 }}>
               Remaining:{' '}
@@ -4442,7 +4461,7 @@ export default function DailyBook() {
           {annealingPoolLoading ? (
             <Box display="flex" justifyContent="center" py={3}><CircularProgress size={28} /></Box>
           ) : (
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
               <Table size="small" sx={{ '& td, & th': { py: 0.6, px: 1, fontSize: '0.8rem' } }}>
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'grey.100' }}>
@@ -4510,7 +4529,7 @@ export default function DailyBook() {
         <DialogActions>
           <Button onClick={() => setAnnealingPoolDialog({ open: false, pool: null })}>Close</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       <ConfirmDialog open={deleteJobWorkConfirm.open} title="Delete Job Work Record" message="Delete this job work record? Any labour charged will be reversed from the customer's due." onConfirm={handleDeleteJobWork} onCancel={() => setDeleteJobWorkConfirm({ open: false, id: null })} />
       <ConfirmDialog
         open={deleteJobWorkDeliveryConfirm.open}
@@ -4532,9 +4551,9 @@ export default function DailyBook() {
         onCancel={() => setPartyDeleteConfirm({ open: false, id: null })}
       />
 
-      <Dialog open={partyDialogOpen} onClose={() => setPartyDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={partyDialogOpen} onClose={() => setPartyDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{partyEditingId ? `Edit ${getPartyTypeLabel()}` : `Add ${getPartyTypeLabel()}`}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <TextField fullWidth label="Name" value={partyForm.name} onChange={(e) => setPartyForm((f) => ({ ...f, name: e.target.value }))} margin="dense" required />
           <TextField fullWidth label="Contact Number" value={partyForm.contactNumber} onChange={(e) => setPartyForm((f) => ({ ...f, contactNumber: e.target.value }))} margin="dense" />
           {mainTab === 3 ? (
@@ -4709,12 +4728,12 @@ export default function DailyBook() {
           <Button onClick={() => setPartyDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveParty}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* ATM Withdrawal Dialog */}
-      <Dialog open={atmDialogOpen} onClose={() => setAtmDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={atmDialogOpen} onClose={() => setAtmDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>ATM Withdrawal</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
             Amount is always deducted from the selected bank account. Choose where the withdrawn cash should go.
           </Alert>
@@ -4809,7 +4828,7 @@ export default function DailyBook() {
           <Button onClick={() => setAtmDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="warning" onClick={handleSaveAtmWithdrawal}>Record ATM Withdrawal</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Daily Book Report Dialog */}
       <DailyBookReportDialog

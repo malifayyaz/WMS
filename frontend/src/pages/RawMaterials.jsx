@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
+  IconButton, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, Tabs, Tab, Card, CardContent, Typography, Grid, Chip,
   TablePagination,
+  Stack,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -12,6 +13,9 @@ import { rawMaterialsAPI, suppliersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
@@ -20,6 +24,7 @@ const toInputDate = (value) => (value ? new Date(value).toISOString().slice(0, 1
 
 export default function RawMaterials() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [summary, setSummary] = useState([]);
@@ -146,16 +151,24 @@ export default function RawMaterials() {
         ))}
       </Grid>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ mb: 2 }}
+      >
         <Tab label="All Coils" />
         <Tab label="Shiplet Coil (#1–#19)" />
         <Tab label="Patri Coil (#20 Binding)" />
       </Tabs>
 
-      <Box display="flex" justifyContent="flex-end" gap={1} mb={2}>
+      <PageToolbar sx={{ justifyContent: 'flex-end' }}>
         <Button
           variant="outlined"
           color="warning"
+          fullWidth={isMobile}
           onClick={async () => {
             if (isViewer) { setAccessDenied(true); return; }
             try {
@@ -179,6 +192,7 @@ export default function RawMaterials() {
         </Button>
         <Button
           variant="contained"
+          fullWidth={isMobile}
           startIcon={<AddIcon />}
           onClick={() => {
             if (isViewer) { setAccessDenied(true); return; }
@@ -187,10 +201,41 @@ export default function RawMaterials() {
         >
           Add Purchase
         </Button>
-      </Box>
+      </PageToolbar>
 
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
+      ) : isMobile ? (
+        <Stack spacing={1.5}>
+          {list.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No coil purchases found.</Typography>
+          )}
+          {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+            <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
+              <Typography fontWeight={700}>{row.supplierName || row.supplierId?.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{formatDate(row.purchaseDate)} · {row.coilCategory}</Typography>
+              <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
+                <Typography variant="caption">Weight: <strong>{row.weightInKg} kg</strong></Typography>
+                <Typography variant="caption">Rate: <strong>{formatCurrency(row.ratePerKg)}</strong></Typography>
+                <Typography variant="caption">Total: <strong>{formatCurrency(row.totalAmount)}</strong></Typography>
+                <Typography variant="caption">Stock: <strong>{row.currentStock}</strong></Typography>
+              </Box>
+              <Stack direction="row" spacing={0.5} justifyContent="flex-end" mt={1}>
+                <IconButton size="small" onClick={() => { if (isViewer) { setAccessDenied(true); return; } handleOpenEdit(row); }}><EditIcon /></IconButton>
+                <IconButton size="small" color="error" onClick={() => { if (isViewer) { setAccessDenied(true); return; } setDeleteConfirm({ open: true, id: row._id }); }}><DeleteIcon /></IconButton>
+              </Stack>
+            </Paper>
+          ))}
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
+        </Stack>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -260,7 +305,7 @@ export default function RawMaterials() {
         </TableContainer>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Purchase' : 'Record Coil Purchase'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -295,7 +340,7 @@ export default function RawMaterials() {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       <ConfirmDialog open={deleteConfirm.open} title="Delete Purchase" message="Are you sure?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>

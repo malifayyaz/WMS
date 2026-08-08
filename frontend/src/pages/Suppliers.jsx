@@ -11,7 +11,6 @@ import {
   TableRow,
   Paper,
   IconButton,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -24,6 +23,7 @@ import {
   MenuItem,
   Typography,
   TablePagination,
+  Stack,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -35,7 +35,10 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import ExportButtons from '../components/Common/ExportButtons';
 import LedgerDialog from '../components/Common/LedgerDialog';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
 import { usePermissions } from '../hooks/usePermissions';
+import { useIsMobile } from '../hooks/useBreakpoint';
 
 const supplierExportColumns = [
   { id: 'Name', label: 'Name' },
@@ -72,6 +75,7 @@ const defaultSupplier = {
 
 export default function Suppliers() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,9 +179,15 @@ export default function Suppliers() {
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
-        <TextField size="small" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 200 }} />
-        <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+      <PageToolbar>
+        <TextField
+          size="small"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 200 } }}
+        />
+        <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           {list.length > 0 && (
             <ExportButtons
               data={toSupplierExportRows(list)}
@@ -188,6 +198,7 @@ export default function Suppliers() {
           )}
           <Button
             variant="contained"
+            fullWidth={isMobile}
             startIcon={<AddIcon />}
             onClick={() => {
               if (isViewer) { setAccessDenied(true); return; }
@@ -197,9 +208,58 @@ export default function Suppliers() {
             Add Supplier
           </Button>
         </Box>
-      </Box>
+      </PageToolbar>
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
+      ) : isMobile ? (
+        <Stack spacing={1.5}>
+          {list.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No suppliers found.</Typography>
+          )}
+          {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+            <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
+              <Typography fontWeight={700}>{row.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{row.contactNumber || '—'}</Typography>
+              {row.companyName && <Typography variant="body2">{row.companyName}</Typography>}
+              <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
+                <Typography variant="caption">Purchased: <strong>{formatCurrency(row.totalAmountPurchased)}</strong></Typography>
+                <Typography variant="caption">Paid: <strong>{formatCurrency(row.totalAmountPaid)}</strong></Typography>
+                <Typography variant="caption">Due: <strong>{formatCurrency(row.totalAmountDue)}</strong></Typography>
+              </Box>
+              <Stack direction="row" spacing={0.5} justifyContent="flex-end" mt={1}>
+                <IconButton size="small" onClick={() => handleOpenLedger(row)} title="View Ledger"><MenuBookIcon /></IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    if (isViewer) { setAccessDenied(true); return; }
+                    handleOpenEdit(row);
+                  }}
+                >
+                  <EditIcon />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => {
+                    if (isViewer) { setAccessDenied(true); return; }
+                    setDeleteConfirm({ open: true, id: row._id });
+                  }}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Stack>
+            </Paper>
+          ))}
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
+        </Stack>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -267,7 +327,7 @@ export default function Suppliers() {
           />
         </TableContainer>
       )}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} margin="dense" required />
@@ -313,7 +373,7 @@ export default function Suppliers() {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       {ledgerSupplier && (
         <LedgerDialog
           open={ledgerOpen}

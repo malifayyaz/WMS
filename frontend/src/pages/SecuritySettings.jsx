@@ -16,6 +16,7 @@ import { format, parseISO, subDays } from 'date-fns';
 import { usePermissions } from '../hooks/usePermissions';
 import { activityAPI, usersAPI } from '../services/api';
 import DateRangePicker from '../components/Common/DateRangePicker';
+import PageToolbar from '../components/Common/PageToolbar';
 import { formatDateTime } from '../utils/formatters';
 
 const MODULES = [
@@ -202,21 +203,28 @@ export default function SecuritySettings() {
         <Typography variant="h5" fontWeight={700}>Security & Logs</Typography>
       </Box>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+      >
         <Tab label="Activity Log" />
         <Tab label="Login History" />
         <Tab label="Stats" />
       </Tabs>
 
       <TabPanel value={tab} index={0}>
-        <Box display="flex" flexWrap="wrap" gap={2} alignItems="center" mb={2}>
+        <PageToolbar>
           <DateRangePicker
             startDate={startDate}
             endDate={endDate}
             onStartChange={setStartDate}
             onEndChange={setEndDate}
           />
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 140 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>Module</InputLabel>
             <Select
               label="Module"
@@ -229,7 +237,7 @@ export default function SecuritySettings() {
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 150 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>Action</InputLabel>
             <Select
               label="Action"
@@ -242,7 +250,7 @@ export default function SecuritySettings() {
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 160 }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 160 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>User</InputLabel>
             <Select
               label="User"
@@ -255,18 +263,18 @@ export default function SecuritySettings() {
               ))}
             </Select>
           </FormControl>
-          <Button variant="contained" onClick={applyFilters}>Apply Filters</Button>
-          <Box flexGrow={1} />
+          <Button variant="contained" onClick={applyFilters} sx={{ width: { xs: '100%', sm: 'auto' } }}>Apply Filters</Button>
           <Button
             variant="outlined"
             size="small"
             startIcon={<TableChartIcon />}
             onClick={exportExcel}
             disabled={!logs.length}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
           >
             Export to Excel
           </Button>
-        </Box>
+        </PageToolbar>
 
         {logsLoading ? (
           <Box display="flex" justifyContent="center" py={4}><CircularProgress /></Box>
@@ -277,10 +285,10 @@ export default function SecuritySettings() {
                 <TableRow>
                   <TableCell>Date/Time</TableCell>
                   <TableCell>User</TableCell>
-                  <TableCell>Role</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Role</TableCell>
                   <TableCell>Action</TableCell>
                   <TableCell>Module</TableCell>
-                  <TableCell>Description</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Description</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -293,10 +301,10 @@ export default function SecuritySettings() {
                     <TableRow key={row._id} hover>
                       <TableCell>{formatDateTime(row.createdAt)}</TableCell>
                       <TableCell>{row.userName}</TableCell>
-                      <TableCell>{row.userRole}</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{row.userRole}</TableCell>
                       <TableCell><ActionChip action={row.action} /></TableCell>
                       <TableCell>{row.module}</TableCell>
-                      <TableCell>{row.description}</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{row.description}</TableCell>
                     </TableRow>
                   ))
                 )}

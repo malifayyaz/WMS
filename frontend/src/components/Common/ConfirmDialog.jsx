@@ -1,17 +1,20 @@
 import React from 'react';
-import { Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
+import { DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
+import ResponsiveDialog from './ResponsiveDialog';
+import { useIsMobile } from '../../hooks/useBreakpoint';
 
 export default function ConfirmDialog({ open, title, message, onConfirm, onCancel, confirmText = 'Delete', confirmColor = 'error' }) {
+  const isMobile = useIsMobile();
   return (
-    <Dialog open={open} onClose={onCancel}>
+    <ResponsiveDialog open={open} onClose={onCancel} maxWidth="xs" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <DialogContentText>{message}</DialogContentText>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button onClick={onConfirm} color={confirmColor} variant="contained">{confirmText}</Button>
+      <DialogActions sx={{ flexDirection: { xs: 'column-reverse', sm: 'row' }, gap: 1, px: 2, pb: 2 }}>
+        <Button onClick={onCancel} fullWidth={isMobile}>Cancel</Button>
+        <Button onClick={onConfirm} color={confirmColor} variant="contained" fullWidth={isMobile}>{confirmText}</Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell, TableRow, TableHead,
-  Alert, CircularProgress, Snackbar,
+  Alert, CircularProgress, Snackbar, Stack, Paper,
 } from '@mui/material';
 import { rawMaterialsAPI } from '../services/api';
+import { useIsMobile } from '../hooks/useBreakpoint';
 
 export default function LowStockAlerts() {
+  const isMobile = useIsMobile();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,6 +56,16 @@ export default function LowStockAlerts() {
             <Typography color="text.secondary">No low stock at the moment.</Typography>
           ) : data.length === 0 && error ? (
             <Typography color="text.secondary">Could not load stock alerts.</Typography>
+          ) : isMobile ? (
+            <Stack spacing={1.5}>
+              {data.map((row) => (
+                <Paper key={row.coilCategory} variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography fontWeight={700}>{row.coilCategory}</Typography>
+                  <Typography variant="body2" color="text.secondary">Wires: {row.wiresServed}</Typography>
+                  <Typography variant="h6" color="warning.main">{row.totalStock} kg</Typography>
+                </Paper>
+              ))}
+            </Stack>
           ) : (
             <Table size="small">
               <TableHead>

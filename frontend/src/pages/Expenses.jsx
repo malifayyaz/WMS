@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
+  IconButton, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, TextField, Tabs, Tab, Typography, Card, CardContent,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -15,6 +15,9 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
@@ -60,6 +63,7 @@ const defaultForm = {
 
 export default function Expenses() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const monthDefaults = useMemo(() => currentMonthRange(), []);
   const [rawList, setRawList] = useState([]);
@@ -387,13 +391,20 @@ export default function Expenses() {
 
   return (
     <Box>
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ mb: 2 }}
+      >
         <Tab label="Factory Expenses" />
         {groups.map((group) => <Tab key={group} label={group} />)}
       </Tabs>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
-        <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+      <PageToolbar>
+        <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
           <TextField
             size="small"
@@ -402,10 +413,11 @@ export default function Expenses() {
             value={entryDate}
             onChange={(e) => setEntryDate(e.target.value)}
             InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: { xs: '100%', sm: 140 }, width: { xs: '100%', sm: 'auto' } }}
           />
         </Box>
-        <Box display="flex" gap={1}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
+        <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 120 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>View</InputLabel>
             <Select value={period} label="View" onChange={(e) => setPeriod(e.target.value)}>
               <MenuItem value="day">Daily</MenuItem>
@@ -413,10 +425,11 @@ export default function Expenses() {
               <MenuItem value="week">Weekly</MenuItem>
             </Select>
           </FormControl>
-          <Button variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={exportPdf}>Export PDF</Button>
+          <Button variant="outlined" fullWidth={isMobile} startIcon={<PictureAsPdfIcon />} onClick={exportPdf}>Export PDF</Button>
           {isProcessMaterialTab ? (
             <Button
               variant="contained"
+              fullWidth={isMobile}
               startIcon={<AddIcon />}
               onClick={() => {
                 if (isViewer) { setAccessDenied(true); return; }
@@ -428,6 +441,7 @@ export default function Expenses() {
           ) : (
             <Button
               variant="contained"
+              fullWidth={isMobile}
               startIcon={<AddIcon />}
               onClick={() => {
                 if (isViewer) { setAccessDenied(true); return; }
@@ -438,7 +452,7 @@ export default function Expenses() {
             </Button>
           )}
         </Box>
-      </Box>
+      </PageToolbar>
 
       {isProcessMaterialTab && (
         <Tabs value={processSubTab} onChange={(_, v) => setProcessSubTab(v)} sx={{ mb: 2 }}>
@@ -594,8 +608,8 @@ export default function Expenses() {
                 <TableCell>Date</TableCell>
                 <TableCell>Main Category</TableCell>
                 <TableCell>Subcategory</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>Details</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Description</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Details</TableCell>
                 <TableCell align="right">Amount</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -606,8 +620,8 @@ export default function Expenses() {
                   <TableCell>{formatDate(row.expenseDate)}</TableCell>
                   <TableCell>{row.expenseGroup || getGroupForCategory(row.expenseCategory || row.expenseType)}</TableCell>
                   <TableCell>{row.expenseCategory || row.expenseType}</TableCell>
-                  <TableCell>{row.description}</TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{row.description}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                     {row.coilType && `${row.coilType}`}
                     {row.rentalRoute && ` → ${row.rentalRoute}`}
                     {row.labourName && ` (${row.labourName})`}
@@ -756,7 +770,7 @@ export default function Expenses() {
         </Box>
       )}
 
-      <Dialog open={processDialogOpen} onClose={() => setProcessDialogOpen(false)} maxWidth="xs" fullWidth>
+      <ResponsiveDialog open={processDialogOpen} onClose={() => setProcessDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>{processEditingId ? 'Edit Process Material' : 'Add Process Material'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -811,9 +825,9 @@ export default function Expenses() {
           <Button onClick={() => setProcessDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleProcessSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -883,7 +897,7 @@ export default function Expenses() {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       <ConfirmDialog open={deleteConfirm.open} title="Delete Expense" message="Are you sure?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />
       <ConfirmDialog open={processDeleteConfirm.open} title="Delete Process Material" message="Are you sure you want to delete this entry?" onConfirm={handleProcessDelete} onCancel={() => setProcessDeleteConfirm({ open: false, id: null })} />
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>

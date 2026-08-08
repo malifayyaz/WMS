@@ -1,15 +1,18 @@
 import React from 'react';
-import { Button, ButtonGroup } from '@mui/material';
+import { Button, ButtonGroup, Stack } from '@mui/material';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { useIsMobile } from '../../hooks/useBreakpoint';
 
 /**
  * data: array of objects, columns: [{ id, label }], filename: string, title: string
  */
 export default function ExportButtons({ data = [], columns = [], filename = 'report', title = 'Report' }) {
+  const isMobile = useIsMobile();
+
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -26,6 +29,19 @@ export default function ExportButtons({ data = [], columns = [], filename = 'rep
     doc.autoTable({ head: [head], body, startY: 28 });
     doc.save(`${filename}.pdf`);
   };
+
+  if (isMobile) {
+    return (
+      <Stack spacing={1} sx={{ width: '100%' }}>
+        <Button fullWidth size="small" variant="outlined" startIcon={<TableChartIcon />} onClick={exportExcel}>
+          Export Excel
+        </Button>
+        <Button fullWidth size="small" variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={exportPdf}>
+          Export PDF
+        </Button>
+      </Stack>
+    );
+  }
 
   return (
     <ButtonGroup size="small">

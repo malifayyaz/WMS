@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Button, Card, CardContent, Typography, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Paper, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
+  TableHead, TableRow, Paper, IconButton, DialogTitle, DialogContent, DialogActions,
   Snackbar, Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem, TextField,
-  Chip, Grid, FormControlLabel, Switch,
+  Chip, Grid, FormControlLabel, Switch, Stack,
 } from '@mui/material';
 import PersonAdd from '@mui/icons-material/PersonAdd';
 import EditIcon from '@mui/icons-material/Edit';
@@ -15,6 +15,9 @@ import { usersAPI, authAPI } from '../services/api';
 import { formatDateTime } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 
 const defaultAddForm = { name: '', username: '', password: '', confirmPassword: '', role: 'viewer' };
 const defaultEditForm = { name: '', username: '', role: 'viewer', isActive: true };
@@ -30,6 +33,7 @@ const statCards = [
 export default function UserManagement() {
   const { user: currentUser } = useAuth();
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({ totalUsers: 0, totalAdmins: 0, totalViewers: 0, activeUsers: 0 });
@@ -193,6 +197,24 @@ export default function UserManagement() {
     }
   };
 
+  const renderUserActions = (row) => {
+    const isSelf = row._id === currentUser?._id;
+    if (isSelf) {
+      return (
+        <IconButton size="small" onClick={() => openReset(row)} title="Change Password">
+          <KeyIcon />
+        </IconButton>
+      );
+    }
+    return (
+      <>
+        <IconButton size="small" onClick={() => openEdit(row)} title="Edit"><EditIcon /></IconButton>
+        <IconButton size="small" onClick={() => openReset(row)} title="Reset Password"><KeyIcon /></IconButton>
+        <IconButton size="small" color="error" onClick={() => openDeactivate(row)} title="Deactivate"><DeleteIcon /></IconButton>
+      </>
+    );
+  };
+
   return (
     <Box>
       {isViewer && (
@@ -201,10 +223,12 @@ export default function UserManagement() {
         </Alert>
       )}
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
+      <PageToolbar>
         <Typography variant="h5">User Management</Typography>
-        <Button variant="contained" startIcon={<PersonAdd />} onClick={openAdd}>Add New User</Button>
-      </Box>
+        <Button variant="contained" fullWidth={isMobile} startIcon={<PersonAdd />} onClick={openAdd}>
+          Add New User
+        </Button>
+      </PageToolbar>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {statCards.map((card) => (
@@ -223,6 +247,40 @@ export default function UserManagement() {
 
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
+      ) : isMobile ? (
+        <Stack spacing={1.5}>
+          {!users.length && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No users found.</Typography>
+          )}
+          {users.map((row) => (
+            <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                <Box>
+                  <Typography fontWeight={700}>{row.name}</Typography>
+                  <Typography variant="body2" color="text.secondary">@{row.username}</Typography>
+                </Box>
+                <Stack direction="row" spacing={0.5}>
+                  <Chip
+                    size="small"
+                    label={row.role === 'admin' ? 'Admin' : 'Viewer'}
+                    color={row.role === 'admin' ? 'primary' : 'default'}
+                  />
+                  <Chip
+                    size="small"
+                    label={row.isActive ? 'Active' : 'Inactive'}
+                    color={row.isActive ? 'success' : 'error'}
+                  />
+                </Stack>
+              </Box>
+              <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                Last login: {row.lastLogin ? formatDateTime(row.lastLogin) : '—'}
+              </Typography>
+              <Stack direction="row" spacing={0.5} justifyContent="flex-end" mt={1}>
+                {renderUserActions(row)}
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -238,44 +296,29 @@ export default function UserManagement() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {users.map((row) => {
-                const isSelf = row._id === currentUser?._id;
-                return (
-                  <TableRow key={row._id}>
-                    <TableCell>{row.name}</TableCell>
-                    <TableCell>{row.username}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={row.role === 'admin' ? 'Admin' : 'Viewer'}
-                        color={row.role === 'admin' ? 'primary' : 'default'}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={row.isActive ? 'Active' : 'Inactive'}
-                        color={row.isActive ? 'success' : 'error'}
-                      />
-                    </TableCell>
-                    <TableCell>{row.lastLogin ? formatDateTime(row.lastLogin) : '—'}</TableCell>
-                    <TableCell>{row.createdBy || '—'}</TableCell>
-                    <TableCell align="right">
-                      {isSelf ? (
-                        <IconButton size="small" onClick={() => openReset(row)} title="Change Password">
-                          <KeyIcon />
-                        </IconButton>
-                      ) : (
-                        <>
-                          <IconButton size="small" onClick={() => openEdit(row)} title="Edit"><EditIcon /></IconButton>
-                          <IconButton size="small" onClick={() => openReset(row)} title="Reset Password"><KeyIcon /></IconButton>
-                          <IconButton size="small" color="error" onClick={() => openDeactivate(row)} title="Deactivate"><DeleteIcon /></IconButton>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {users.map((row) => (
+                <TableRow key={row._id}>
+                  <TableCell>{row.name}</TableCell>
+                  <TableCell>{row.username}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={row.role === 'admin' ? 'Admin' : 'Viewer'}
+                      color={row.role === 'admin' ? 'primary' : 'default'}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={row.isActive ? 'Active' : 'Inactive'}
+                      color={row.isActive ? 'success' : 'error'}
+                    />
+                  </TableCell>
+                  <TableCell>{row.lastLogin ? formatDateTime(row.lastLogin) : '—'}</TableCell>
+                  <TableCell>{row.createdBy || '—'}</TableCell>
+                  <TableCell align="right">{renderUserActions(row)}</TableCell>
+                </TableRow>
+              ))}
               {!users.length && (
                 <TableRow>
                   <TableCell colSpan={7}>
@@ -288,8 +331,7 @@ export default function UserManagement() {
         </TableContainer>
       )}
 
-      {/* Add User Dialog */}
-      <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add New User</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Full Name" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} margin="dense" required />
@@ -308,10 +350,9 @@ export default function UserManagement() {
           <Button onClick={() => setAddOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleAddSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      {/* Edit User Dialog */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Edit User</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Full Name" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} margin="dense" required />
@@ -333,10 +374,9 @@ export default function UserManagement() {
           <Button onClick={() => setEditOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleEditSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      {/* Reset / Change Password Dialog */}
-      <Dialog open={resetOpen} onClose={() => setResetOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={resetOpen} onClose={() => setResetOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           {String(resettingUser?._id) === String(currentUser?._id)
             ? 'Change Your Password'
@@ -372,9 +412,8 @@ export default function UserManagement() {
             {String(resettingUser?._id) === String(currentUser?._id) ? 'Change Password' : 'Reset Password'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      {/* Deactivate Confirm Dialog */}
       <ConfirmDialog
         open={!!deactivateTarget}
         title="Deactivate User"

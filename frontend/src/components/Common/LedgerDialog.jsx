@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -24,6 +23,8 @@ import TableChartIcon from '@mui/icons-material/TableChart';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../../utils/ledgerExport';
 import DateRangePicker from './DateRangePicker';
+import ResponsiveDialog from './ResponsiveDialog';
+import { useIsMobile } from '../../hooks/useBreakpoint';
 
 const denseCell = {
   py: 0.45,
@@ -71,6 +72,7 @@ export default function LedgerDialog({
   linked = false,
   primaryRole = 'customer',
 }) {
+  const isMobile = useIsMobile();
   const [ledger, setLedger] = useState(null);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -221,20 +223,22 @@ export default function LedgerDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: 1.5 } }}>
+    <ResponsiveDialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ py: 1.5, px: 2, fontSize: '1.05rem', fontWeight: 700, borderBottom: 1, borderColor: 'divider' }}>
         {title || (isDaily ? 'Daily Purchases' : 'Ledger')}
         {linked && (
-          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1.5, fontWeight: 500 }}>
+          <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 500, display: { xs: 'block', sm: 'inline' }, ml: { xs: 0, sm: 1.5 } }}>
             Linked supplier + processing
           </Typography>
         )}
       </DialogTitle>
-      <DialogContent sx={{ px: 2, pt: 1.5, pb: 1 }}>
+      <DialogContent sx={{ px: { xs: 1.5, sm: 2 }, pt: 1.5, pb: 1, overflowX: 'hidden' }}>
         {linked && !isDaily && (
           <Tabs
             value={scopeTab}
             onChange={(_, v) => setScopeTab(v)}
+            variant="scrollable"
+            allowScrollButtonsMobile
             sx={{
               minHeight: 36,
               mb: 1,
@@ -251,6 +255,8 @@ export default function LedgerDialog({
           <Tabs
             value={viewTab}
             onChange={(_, v) => setViewTab(v)}
+            variant="scrollable"
+            allowScrollButtonsMobile
             sx={{
               minHeight: 32,
               mb: 1.5,
@@ -262,21 +268,31 @@ export default function LedgerDialog({
           </Tabs>
         )}
 
-        <Box display="flex" gap={1} mb={1.5} flexWrap="wrap" alignItems="center" justifyContent="space-between">
+        <Box
+          display="flex"
+          gap={1}
+          mb={1.5}
+          flexWrap="wrap"
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent="space-between"
+          flexDirection={{ xs: 'column', sm: 'row' }}
+        >
           <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
           {ledger && !loading && (
-            <Box display="flex" gap={1}>
+            <Box display="flex" gap={1} flexDirection={{ xs: 'column', sm: 'row' }} sx={{ width: { xs: '100%', sm: 'auto' } }}>
               <Button
-                size="small"
+                size={isMobile ? 'medium' : 'small'}
                 variant="outlined"
+                fullWidth={isMobile}
                 startIcon={<TableChartIcon />}
                 onClick={() => exportLedgerExcel(ledger, { title, partyType })}
               >
                 Export Excel
               </Button>
               <Button
-                size="small"
+                size={isMobile ? 'medium' : 'small'}
                 variant="outlined"
+                fullWidth={isMobile}
                 startIcon={<PictureAsPdfIcon />}
                 onClick={() => exportLedgerPdf(ledger, { title, partyType })}
               >
@@ -356,8 +372,8 @@ export default function LedgerDialog({
             </Box>
 
             {isDateWise ? (
-              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 480 }}>
-                <Table size="small" stickyHeader>
+              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: { xs: '60vh', sm: 480 }, overflowX: 'auto' }}>
+                <Table size="small" stickyHeader sx={{ minWidth: { xs: 720, sm: 900 } }}>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={headCell}>Date</TableCell>
@@ -401,8 +417,8 @@ export default function LedgerDialog({
                 </Table>
               </TableContainer>
             ) : (
-              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 480, overflowX: 'auto' }}>
-                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', minWidth: isCombined ? 1080 : 1000 }}>
+              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: { xs: '60vh', sm: 480 }, overflowX: 'auto' }}>
+                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', minWidth: { xs: 720, sm: isCombined ? 1080 : 1000 } }}>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ ...headCell, width: 96 }}>Date</TableCell>
@@ -478,8 +494,8 @@ export default function LedgerDialog({
         )}
       </DialogContent>
       <DialogActions sx={{ px: 2, py: 1 }}>
-        <Button size="small" onClick={onClose}>Close</Button>
+        <Button size={isMobile ? 'medium' : 'small'} onClick={onClose} fullWidth={isMobile}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

@@ -161,6 +161,7 @@ export const jobWorkAPI = {
 export const dashboardAPI = {
   getStats: () => api.get('/dashboard/stats'),
   getCharts: () => api.get('/dashboard/charts'),
+  getActivity: (params) => api.get('/dashboard/activity', { params }),
 };
 
 // Reports

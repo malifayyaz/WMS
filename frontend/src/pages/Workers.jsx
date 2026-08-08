@@ -5,7 +5,6 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -24,6 +23,7 @@ import {
   TextField,
   Typography,
   IconButton,
+  Stack,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -33,6 +33,9 @@ import { workersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
 const defaultWorkerForm = {
@@ -57,6 +60,7 @@ const defaultEntryForm = {
 
 export default function Workers() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [workers, setWorkers] = useState([]);
   const [search, setSearch] = useState('');
@@ -242,10 +246,11 @@ export default function Workers() {
         Workers use a running ledger. Salary payments and advances create linked Labour expenses automatically, while old Labour expense rows stay unchanged.
       </Alert>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
-        <TextField size="small" placeholder="Search workers..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 220 }} />
+      <PageToolbar>
+        <TextField size="small" placeholder="Search workers..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 220 } }} />
         <Button
           variant="contained"
+          fullWidth={isMobile}
           startIcon={<AddIcon />}
           onClick={() => {
             if (isViewer) { setAccessDenied(true); return; }
@@ -254,7 +259,7 @@ export default function Workers() {
         >
           Add Worker
         </Button>
-      </Box>
+      </PageToolbar>
 
       <Box display="grid" gridTemplateColumns={{ xs: '1fr', lg: '380px 1fr' }} gap={2}>
         <Paper sx={{ p: 2 }}>
@@ -267,7 +272,7 @@ export default function Workers() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Name</TableCell>
-                    <TableCell>Role</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Role</TableCell>
                     <TableCell align="right">Remaining</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
@@ -285,7 +290,7 @@ export default function Workers() {
                         <Typography fontWeight={600}>{worker.name}</Typography>
                         <Typography variant="caption" color="text.secondary">{worker.phone || '—'}</Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                         <Typography variant="body2">{worker.role || '—'}</Typography>
                         <Chip size="small" sx={{ mt: 0.5 }} label={worker.active ? 'Active' : 'Inactive'} color={worker.active ? 'success' : 'default'} variant="outlined" />
                       </TableCell>
@@ -294,10 +299,10 @@ export default function Workers() {
                           {formatCurrency(worker.summary?.remaining || 0)}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setSelectedWorkerId(worker._id); }}><MenuBookIcon fontSize="small" /></IconButton>
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        <IconButton size={isMobile ? 'medium' : 'small'} onClick={(e) => { e.stopPropagation(); setSelectedWorkerId(worker._id); }}><MenuBookIcon fontSize="small" /></IconButton>
                         <IconButton
-                          size="small"
+                          size={isMobile ? 'medium' : 'small'}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (isViewer) { setAccessDenied(true); return; }
@@ -307,7 +312,7 @@ export default function Workers() {
                           <EditIcon fontSize="small" />
                         </IconButton>
                         <IconButton
-                          size="small"
+                          size={isMobile ? 'medium' : 'small'}
                           color="error"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -340,7 +345,14 @@ export default function Workers() {
             <Box display="flex" justifyContent="center" py={6}><CircularProgress /></Box>
           ) : (
             <>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
+              <Box
+                display="flex"
+                flexDirection={{ xs: 'column', sm: 'row' }}
+                justifyContent="space-between"
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+                mb={2}
+                gap={1}
+              >
                 <Box>
                   <Typography variant="h6">{selectedWorker.name}</Typography>
                   <Typography variant="body2" color="text.secondary">
@@ -349,6 +361,7 @@ export default function Workers() {
                 </Box>
                 <Button
                   variant="contained"
+                  fullWidth={isMobile}
                   startIcon={<AddIcon />}
                   onClick={() => {
                     if (isViewer) { setAccessDenied(true); return; }
@@ -359,24 +372,24 @@ export default function Workers() {
                 </Button>
               </Box>
 
-              <Box display="flex" gap={2} flexWrap="wrap" mb={2}>
-                <Paper sx={{ p: 1.5, minWidth: 150 }} variant="outlined">
+              <Box display="flex" gap={1.5} flexWrap="wrap" mb={2}>
+                <Paper sx={{ p: 1.5, minWidth: { xs: 'calc(50% - 6px)', sm: 150 }, flex: { xs: '1 1 40%', sm: '0 0 auto' } }} variant="outlined">
                   <Typography variant="caption" color="text.secondary">Opening</Typography>
                   <Typography fontWeight={700}>{formatCurrency(ledger?.openingBalance || 0)}</Typography>
                 </Paper>
-                <Paper sx={{ p: 1.5, minWidth: 150 }} variant="outlined">
+                <Paper sx={{ p: 1.5, minWidth: { xs: 'calc(50% - 6px)', sm: 150 }, flex: { xs: '1 1 40%', sm: '0 0 auto' } }} variant="outlined">
                   <Typography variant="caption" color="text.secondary">Salary Due</Typography>
                   <Typography fontWeight={700}>{formatCurrency(ledger?.summary?.salaryDue || 0)}</Typography>
                 </Paper>
-                <Paper sx={{ p: 1.5, minWidth: 150 }} variant="outlined">
+                <Paper sx={{ p: 1.5, minWidth: { xs: 'calc(50% - 6px)', sm: 150 }, flex: { xs: '1 1 40%', sm: '0 0 auto' } }} variant="outlined">
                   <Typography variant="caption" color="text.secondary">Payments</Typography>
                   <Typography fontWeight={700}>{formatCurrency(ledger?.summary?.payments || 0)}</Typography>
                 </Paper>
-                <Paper sx={{ p: 1.5, minWidth: 150 }} variant="outlined">
+                <Paper sx={{ p: 1.5, minWidth: { xs: 'calc(50% - 6px)', sm: 150 }, flex: { xs: '1 1 40%', sm: '0 0 auto' } }} variant="outlined">
                   <Typography variant="caption" color="text.secondary">Advances</Typography>
                   <Typography fontWeight={700}>{formatCurrency(ledger?.summary?.advances || 0)}</Typography>
                 </Paper>
-                <Paper sx={{ p: 1.5, minWidth: 150 }} variant="outlined">
+                <Paper sx={{ p: 1.5, minWidth: { xs: '100%', sm: 150 }, flex: { xs: '1 1 100%', sm: '0 0 auto' } }} variant="outlined">
                   <Typography variant="caption" color="text.secondary">Remaining</Typography>
                   <Typography fontWeight={700} color={(ledger?.summary?.remaining || 0) > 0 ? 'error.main' : 'success.main'}>
                     {formatCurrency(ledger?.summary?.remaining || 0)}
@@ -390,8 +403,8 @@ export default function Workers() {
                     <TableRow>
                       <TableCell>Date</TableCell>
                       <TableCell>Entry</TableCell>
-                      <TableCell>Notes</TableCell>
-                      <TableCell>Payment</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Notes</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Payment</TableCell>
                       <TableCell align="right">Amount</TableCell>
                       <TableCell align="right">Balance After</TableCell>
                       <TableCell align="right">Actions</TableCell>
@@ -415,8 +428,8 @@ export default function Workers() {
                             variant="outlined"
                           />
                         </TableCell>
-                        <TableCell>{entry.notes || '—'}</TableCell>
-                        <TableCell>{entry.paymentMethod || '—'}</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{entry.notes || '—'}</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{entry.paymentMethod || '—'}</TableCell>
                         <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
                         <TableCell align="right">{formatCurrency(entry.balanceAfter)}</TableCell>
                         <TableCell align="right">
@@ -457,7 +470,7 @@ export default function Workers() {
         </Paper>
       </Box>
 
-      <Dialog open={workerDialogOpen} onClose={() => setWorkerDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={workerDialogOpen} onClose={() => setWorkerDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingWorkerId ? 'Edit Worker' : 'Add Worker'}</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Name" value={workerForm.name} onChange={(e) => setWorkerForm((f) => ({ ...f, name: e.target.value }))} margin="dense" required />
@@ -477,9 +490,9 @@ export default function Workers() {
           <Button onClick={() => setWorkerDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveWorker}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={entryDialogOpen} onClose={() => setEntryDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={entryDialogOpen} onClose={() => setEntryDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingEntryId ? 'Edit Worker Ledger Entry' : 'Add Worker Ledger Entry'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -542,7 +555,7 @@ export default function Workers() {
           <Button onClick={() => setEntryDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveEntry}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       <ConfirmDialog
         open={deleteWorkerConfirm.open}

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -30,7 +29,9 @@ import TableChartIcon from '@mui/icons-material/TableChart';
 import { reportsAPI } from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import DateRangePicker from '../Common/DateRangePicker';
+import ResponsiveDialog from '../Common/ResponsiveDialog';
 import { exportDailyBookReportExcel, exportDailyBookReportPdf } from '../../utils/dailyBookReportExport';
+import { useIsMobile } from '../../hooks/useBreakpoint';
 
 const dense = { py: 0.4, px: 1, fontSize: '0.75rem' };
 const head = { ...dense, fontWeight: 700, bgcolor: 'grey.100' };
@@ -41,7 +42,7 @@ function MoneyColumn({ title, rows, total, color }) {
       <Typography variant="subtitle2" fontWeight={700} color={color} gutterBottom>
         {title}
       </Typography>
-      <TableContainer sx={{ maxHeight: 220 }}>
+      <TableContainer sx={{ maxHeight: 220, overflowX: 'auto' }}>
         <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
@@ -87,7 +88,7 @@ function SimpleList({ title, headers, rows, empty = 'None' }) {
   return (
     <Paper variant="outlined" sx={{ p: 1.5, height: '100%' }}>
       <Typography variant="subtitle2" fontWeight={700} gutterBottom>{title}</Typography>
-      <TableContainer sx={{ maxHeight: 200 }}>
+      <TableContainer sx={{ maxHeight: 200, overflowX: 'auto' }}>
         <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
@@ -168,7 +169,7 @@ function DayReportBody({ day }) {
 
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>Bank Transfers (incl. ATM)</Typography>
-        <TableContainer sx={{ maxHeight: 180 }}>
+        <TableContainer sx={{ maxHeight: 180, overflowX: 'auto' }}>
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
@@ -358,7 +359,7 @@ function DayReportBody({ day }) {
           <Typography variant="body2">Coil in: <strong>{Number(sm.coilInKg || 0).toFixed(1)} kg</strong></Typography>
           <Typography variant="body2">Coil out: <strong>{Number(sm.coilOutKg || 0).toFixed(1)} kg</strong></Typography>
         </Box>
-        <TableContainer sx={{ maxHeight: 280 }}>
+        <TableContainer sx={{ maxHeight: 280, overflowX: 'auto' }}>
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
@@ -401,6 +402,7 @@ function DayReportBody({ day }) {
 }
 
 export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
+  const isMobile = useIsMobile();
   const [mode, setMode] = useState('single');
   const [singleDate, setSingleDate] = useState(defaultDate || '');
   const [startDate, setStartDate] = useState('');
@@ -446,17 +448,25 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: 1.5 } }}>
+    <ResponsiveDialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ py: 1.5, px: 2, fontWeight: 700, borderBottom: 1, borderColor: 'divider' }}>
         Daily Book Report
       </DialogTitle>
-      <DialogContent sx={{ px: 2, pt: 2, pb: 1 }}>
-        <Box display="flex" gap={1.5} flexWrap="wrap" alignItems="center" mb={2}>
+      <DialogContent sx={{ px: { xs: 1.5, sm: 2 }, pt: 2, pb: 1 }}>
+        <Box
+          display="flex"
+          gap={1.5}
+          flexWrap="wrap"
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          mb={2}
+          flexDirection={{ xs: 'column', sm: 'row' }}
+        >
           <ToggleButtonGroup
             size="small"
             exclusive
             value={mode}
             onChange={(_, v) => v && setMode(v)}
+            sx={{ width: { xs: '100%', sm: 'auto' }, '& .MuiToggleButton-root': { flex: { xs: 1, sm: 'none' } } }}
           >
             <ToggleButton value="single">Single Date</ToggleButton>
             <ToggleButton value="range">Date Range</ToggleButton>
@@ -469,6 +479,8 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
               value={singleDate}
               onChange={(e) => setSingleDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
+              fullWidth={isMobile}
+              sx={{ maxWidth: { sm: 200 } }}
             />
           ) : (
             <DateRangePicker
@@ -478,28 +490,30 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
               onEndChange={setEndDate}
             />
           )}
-          <Button variant="contained" size="small" onClick={loadReport} disabled={loading}>
+          <Button variant="contained" size={isMobile ? 'medium' : 'small'} onClick={loadReport} disabled={loading} fullWidth={isMobile}>
             Generate
           </Button>
           {report && (
-            <>
+            <Box display="flex" gap={1} flexDirection={{ xs: 'column', sm: 'row' }} sx={{ width: { xs: '100%', sm: 'auto' } }}>
               <Button
-                size="small"
+                size={isMobile ? 'medium' : 'small'}
                 variant="outlined"
+                fullWidth={isMobile}
                 startIcon={<TableChartIcon />}
                 onClick={() => exportDailyBookReportExcel(report)}
               >
                 Export Excel
               </Button>
               <Button
-                size="small"
+                size={isMobile ? 'medium' : 'small'}
                 variant="outlined"
+                fullWidth={isMobile}
                 startIcon={<PictureAsPdfIcon />}
                 onClick={() => exportDailyBookReportPdf(report)}
               >
                 Export PDF
               </Button>
-            </>
+            </Box>
           )}
         </Box>
 
@@ -541,7 +555,7 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
                   ])}
                   empty="No cash-paid factory expenses in this range"
                 />
-                <TableContainer>
+                <TableContainer sx={{ overflowX: 'auto' }}>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
@@ -594,6 +608,6 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
       <DialogActions sx={{ px: 2, py: 1 }}>
         <Button size="small" onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

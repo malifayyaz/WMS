@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
+  Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, TextField, Typography, Card, CardContent, Grid, IconButton,
   TablePagination,
+  Stack,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -11,12 +11,16 @@ import { readyStockAPI, configAPI } from '../services/api';
 import { formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
 const defaultCoilCategoryForWire = (wireNumber) => (Number(wireNumber) === 20 ? 'Patri Coil' : 'Shiplet Coil');
 
 export default function ReadyStock() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [summary, setSummary] = useState([]);
   const [list, setList] = useState([]);
@@ -110,9 +114,10 @@ export default function ReadyStock() {
         ))}
       </Grid>
 
-      <Box display="flex" justifyContent="flex-end" mb={2}>
+      <PageToolbar sx={{ justifyContent: 'flex-end' }}>
         <Button
           variant="contained"
+          fullWidth={isMobile}
           startIcon={<AddIcon />}
           onClick={() => {
             if (isViewer) { setAccessDenied(true); return; }
@@ -121,12 +126,47 @@ export default function ReadyStock() {
         >
           Add Production
         </Button>
-      </Box>
+      </PageToolbar>
 
       {loading ? (
         <Box display="flex" justifyContent="center" alignItems="center" minHeight={240} p={4}>
           <CircularProgress />
         </Box>
+      ) : isMobile ? (
+        <Stack spacing={1.5}>
+          {list.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No ready stock records found.</Typography>
+          )}
+          {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+            <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
+              <Typography fontWeight={700}>{row.wireLabel}</Typography>
+              <Typography variant="body2" color="text.secondary">{formatDate(row.productionDate)} · {row.coilCategory}</Typography>
+              <Typography variant="body2" mt={0.5}><strong>{row.weightKg} kg</strong> · {row.source}</Typography>
+              {row.notes && <Typography variant="caption" color="text.secondary">{row.notes}</Typography>}
+              <Stack direction="row" justifyContent="flex-end" mt={1}>
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => {
+                    if (isViewer) { setAccessDenied(true); return; }
+                    setDeleteConfirm({ open: true, id: row._id });
+                  }}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Stack>
+            </Paper>
+          ))}
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
+        </Stack>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -185,7 +225,7 @@ export default function ReadyStock() {
         </TableContainer>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Record Direct Production</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -221,7 +261,7 @@ export default function ReadyStock() {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       <ConfirmDialog open={deleteConfirm.open} title="Delete" message="Remove this production record?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>

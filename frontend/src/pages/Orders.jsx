@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Chip, Typography, TablePagination,
+  IconButton, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
+  FormControl, InputLabel, Select, MenuItem, Chip, Typography, TablePagination, Stack,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -13,7 +13,10 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import StatusBadge from '../components/Common/StatusBadge';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
 import { usePermissions } from '../hooks/usePermissions';
+import { useIsMobile } from '../hooks/useBreakpoint';
 
 const statuses = ['Outer', 'In Process', 'Done'];
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
@@ -22,6 +25,7 @@ const defaultCoilCategoryForWire = (wireNumber) => (Number(wireNumber) === 20 ? 
 
 export default function Orders() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -224,21 +228,66 @@ export default function Orders() {
     }
   };
 
+  const renderOrderActions = (row) => (
+    <>
+      {row.orderStatus === 'Outer' && (
+        <Button size="small" fullWidth={isMobile} onClick={() => handleStatusChange(row._id, 'In Process')}>In Process</Button>
+      )}
+      {row.orderStatus === 'In Process' && (
+        <>
+          <Button
+            size="small"
+            fullWidth={isMobile}
+            onClick={() => {
+              if (isViewer) { setAccessDenied(true); return; }
+              setWeightDialog({ open: true, order: row, finalWeightKg: row.initialWeightKg });
+            }}
+          >
+            Set Final Weight
+          </Button>
+          <Button size="small" fullWidth={isMobile} onClick={() => handleStatusChange(row._id, 'Done')}>Done</Button>
+        </>
+      )}
+      <Stack direction="row" spacing={0.5} justifyContent={isMobile ? 'stretch' : 'flex-end'} sx={{ width: isMobile ? '100%' : 'auto' }}>
+        <IconButton
+          size="small"
+          onClick={() => {
+            if (isViewer) { setAccessDenied(true); return; }
+            handleOpenEdit(row);
+          }}
+        >
+          <EditIcon />
+        </IconButton>
+        <IconButton
+          size="small"
+          color="error"
+          onClick={() => {
+            if (isViewer) { setAccessDenied(true); return; }
+            setDeleteConfirm({ open: true, id: row._id });
+          }}
+        >
+          <DeleteIcon />
+        </IconButton>
+      </Stack>
+    </>
+  );
+
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
-        <FormControl size="small" sx={{ minWidth: 160 }}>
+      <PageToolbar>
+        <FormControl size="small" sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 160 } }}>
           <InputLabel>Status</InputLabel>
           <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="Status">
             <MenuItem value="">All</MenuItem>
             {statuses.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
           </Select>
         </FormControl>
-        <Box display="flex" gap={1}>
+        <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <Button
             variant="outlined"
             color="warning"
             size="small"
+            fullWidth={isMobile}
             startIcon={<WarningAmberIcon />}
             title="Deduct pending order weights from available coil stock and clear stale alerts"
             onClick={async () => {
@@ -256,6 +305,7 @@ export default function Orders() {
           </Button>
           <Button
             variant="contained"
+            fullWidth={isMobile}
             startIcon={<AddIcon />}
             onClick={() => {
               if (isViewer) { setAccessDenied(true); return; }
@@ -265,9 +315,43 @@ export default function Orders() {
             Add Order
           </Button>
         </Box>
-      </Box>
+      </PageToolbar>
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
+      ) : isMobile ? (
+        <Stack spacing={1.5}>
+          {list.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No orders found.</Typography>
+          )}
+          {pagedList.map((row) => (
+            <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
+              <Typography fontWeight={700}>{row.customerName || row.customerId?.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{formatDate(row.orderDate)} · {row.wireType} {row.wireSize ? `(${row.wireSize})` : ''}</Typography>
+              <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
+                <Typography variant="caption">Weight: <strong>{row.finalWeightKg ?? row.initialWeightKg} kg</strong></Typography>
+                <Typography variant="caption">Total: <strong>{formatCurrency(row.totalAmount)}</strong></Typography>
+              </Box>
+              <Box mt={1} mb={1} display="flex" gap={1} flexWrap="wrap" alignItems="center">
+                <StatusBadge status={row.orderStatus} />
+                {row.lowStockAlert && (
+                  <Chip icon={<WarningAmberIcon />} label={row.stockPendingKg > 0 ? `${row.stockPendingKg} kg pending` : 'Low stock'} color="warning" size="small" />
+                )}
+              </Box>
+              <Stack spacing={1}>
+                {renderOrderActions(row)}
+              </Stack>
+            </Paper>
+          ))}
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
+        </Stack>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -362,7 +446,7 @@ export default function Orders() {
           />
         </TableContainer>
       )}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Order' : 'Add Order'}</DialogTitle>
         <DialogContent>
           {!editingId && (
@@ -463,8 +547,8 @@ export default function Orders() {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
         </DialogActions>
-      </Dialog>
-      <Dialog open={weightDialog.open} onClose={() => setWeightDialog({ open: false, order: null, finalWeightKg: '' })}>
+      </ResponsiveDialog>
+      <ResponsiveDialog open={weightDialog.open} onClose={() => setWeightDialog({ open: false, order: null, finalWeightKg: '' })}>
         <DialogTitle>Update Final Weight (after heating)</DialogTitle>
         <DialogContent>
           <TextField fullWidth type="number" label="Final Weight (kg)" value={weightDialog.finalWeightKg} onChange={(e) => setWeightDialog((p) => ({ ...p, finalWeightKg: e.target.value }))} margin="dense" />
@@ -473,7 +557,7 @@ export default function Orders() {
           <Button onClick={() => setWeightDialog({ open: false, order: null, finalWeightKg: '' })}>Cancel</Button>
           <Button variant="contained" onClick={handleFinalWeight}>Update</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
       <ConfirmDialog open={deleteConfirm.open} title="Delete Order" message="Are you sure?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />
       <Snackbar open={snack.open} autoHideDuration={8000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>

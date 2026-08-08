@@ -5,9 +5,72 @@ const Supplier = require('../models/Supplier');
 const RawMaterial = require('../models/RawMaterial');
 const JobWork = require('../models/JobWork');
 const AnnealingRecord = require('../models/AnnealingRecord');
-const { startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay } = require('date-fns');
+const {
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  format,
+  parseISO,
+  isValid,
+} = require('date-fns');
 const { getCashBookForDate } = require('../utils/cashBookService');
 const { buildProfitReport } = require('../utils/profitReportService');
+
+function dayKey(d) {
+  return format(d, 'yyyy-MM-dd');
+}
+
+function resolveActivityRange(period, dateParam) {
+  let anchor = new Date();
+  if (dateParam) {
+    const parsed = typeof dateParam === 'string' ? parseISO(dateParam.slice(0, 10)) : new Date(dateParam);
+    if (isValid(parsed)) anchor = parsed;
+  }
+
+  const mode = period === 'month' ? 'month' : 'week';
+  let start;
+  let end;
+  let label;
+
+  if (mode === 'month') {
+    start = startOfMonth(anchor);
+    end = endOfMonth(anchor);
+    label = format(start, 'MMMM yyyy');
+  } else {
+    start = startOfWeek(anchor, { weekStartsOn: 1 });
+    end = endOfWeek(anchor, { weekStartsOn: 1 });
+    label = `${format(start, 'dd MMM')} – ${format(end, 'dd MMM yyyy')}`;
+  }
+
+  return {
+    period: mode,
+    start: startOfDay(start),
+    end: endOfDay(end),
+    label,
+    anchor: dayKey(anchor),
+  };
+}
+
+function emptyDayBucket(date) {
+  return {
+    date: dayKey(date),
+    label: format(date, 'dd MMM'),
+    weekday: format(date, 'EEE'),
+    salesKg: 0,
+    salesBundles: 0,
+    salesAmount: 0,
+    purchaseKg: 0,
+    purchaseBundles: 0,
+    purchaseAmount: 0,
+    moneyIn: 0,
+    moneyOut: 0,
+  };
+}
 
 async function currentBankBalance() {
   const { currentBankBalance: calc } = require('../utils/bankBalanceService');
@@ -198,4 +261,172 @@ const getCharts = async (req, res, next) => {
   }
 };
 
-module.exports = { getStats, getCharts };
+/**
+ * Week/month activity series for dashboard analytics widgets.
+ * Query: period=week|month, date=YYYY-MM-DD (any day inside the desired period)
+ */
+const getActivity = async (req, res, next) => {
+  try {
+    const { period = 'week', date } = req.query;
+    const range = resolveActivityRange(period, date);
+    const { start, end } = range;
+
+    const days = eachDayOfInterval({ start, end });
+    const buckets = new Map(days.map((d) => [dayKey(d), emptyDayBucket(d)]));
+
+    const [orders, purchases, transactions] = await Promise.all([
+      Order.find({
+        orderDate: { $gte: start, $lte: end },
+        isReturn: { $ne: true },
+      })
+        .select('orderDate finalWeightKg initialWeightKg bundles totalAmount ratePerKg customerName')
+        .populate('customerId', 'name')
+        .lean(),
+      RawMaterial.find({
+        purchaseDate: { $gte: start, $lte: end },
+        isReturn: { $ne: true },
+      })
+        .select('purchaseDate weightInKg bundles totalAmount ratePerKg supplierName')
+        .lean(),
+      Transaction.find({
+        transactionDate: { $gte: start, $lte: end },
+      })
+        .sort({ transactionDate: -1 })
+        .select('transactionDate transactionType amount relatedName description paymentMethod sourceType')
+        .lean(),
+    ]);
+
+    orders.forEach((order) => {
+      const key = dayKey(order.orderDate);
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+      const kg = order.finalWeightKg ?? order.initialWeightKg ?? 0;
+      const amount =
+        order.totalAmount != null
+          ? Number(order.totalAmount) || 0
+          : kg * (Number(order.ratePerKg) || 0);
+      bucket.salesKg += kg;
+      bucket.salesBundles += order.bundles || 0;
+      bucket.salesAmount += amount;
+    });
+
+    purchases.forEach((raw) => {
+      const key = dayKey(raw.purchaseDate);
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+      bucket.purchaseKg += raw.weightInKg || 0;
+      bucket.purchaseBundles += raw.bundles || 0;
+      const purchaseAmount =
+        raw.totalAmount != null
+          ? Number(raw.totalAmount) || 0
+          : (raw.weightInKg || 0) * (Number(raw.ratePerKg) || 0);
+      bucket.purchaseAmount = (bucket.purchaseAmount || 0) + purchaseAmount;
+    });
+
+    transactions.forEach((tx) => {
+      const key = dayKey(tx.transactionDate);
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+      if (tx.transactionType === 'Money In') bucket.moneyIn += tx.amount || 0;
+      else if (tx.transactionType === 'Money Out') bucket.moneyOut += tx.amount || 0;
+    });
+
+    const series = days.map((d) => buckets.get(dayKey(d)));
+
+    const totals = series.reduce(
+      (acc, day) => {
+        acc.salesKg += day.salesKg;
+        acc.salesBundles += day.salesBundles;
+        acc.salesAmount += day.salesAmount;
+        acc.purchaseKg += day.purchaseKg;
+        acc.purchaseBundles += day.purchaseBundles;
+        acc.purchaseAmount += day.purchaseAmount || 0;
+        acc.moneyIn += day.moneyIn;
+        acc.moneyOut += day.moneyOut;
+        return acc;
+      },
+      {
+        salesKg: 0,
+        salesBundles: 0,
+        salesAmount: 0,
+        purchaseKg: 0,
+        purchaseBundles: 0,
+        purchaseAmount: 0,
+        moneyIn: 0,
+        moneyOut: 0,
+      }
+    );
+    totals.netCash = totals.moneyIn - totals.moneyOut;
+
+    const activityMix = [
+      { name: 'Sales', value: Math.round(totals.salesAmount * 100) / 100 },
+      { name: 'Purchases', value: Math.round(totals.purchaseAmount * 100) / 100 },
+      { name: 'Money In', value: Math.round(totals.moneyIn * 100) / 100 },
+      { name: 'Money Out', value: Math.round(totals.moneyOut * 100) / 100 },
+    ].filter((item) => item.value > 0);
+
+    const latestFromOrders = orders.slice(0, 12).map((order) => {
+      const kg = order.finalWeightKg ?? order.initialWeightKg ?? 0;
+      const amount =
+        order.totalAmount != null
+          ? Number(order.totalAmount) || 0
+          : kg * (Number(order.ratePerKg) || 0);
+      const party = order.customerId?.name || order.customerName || 'Customer';
+      return {
+        id: String(order._id),
+        kind: 'Sale',
+        date: order.orderDate,
+        title: party,
+        detail: `${Number(kg).toFixed(1)} kg${order.bundles ? ` / ${order.bundles} bundles` : ''}`,
+        amount,
+      };
+    });
+
+    const latestFromTx = transactions.slice(0, 12).map((tx) => ({
+      id: String(tx._id),
+      kind: tx.transactionType === 'Money In' ? 'Money In' : 'Money Out',
+      date: tx.transactionDate,
+      title: tx.relatedName || tx.description || tx.paymentMethod || 'Transaction',
+      detail: tx.description || tx.paymentMethod || '',
+      amount: tx.amount || 0,
+    }));
+
+    const latestFromPurchases = purchases.slice(0, 8).map((raw) => {
+      const amount =
+        raw.totalAmount != null
+          ? Number(raw.totalAmount) || 0
+          : (raw.weightInKg || 0) * (Number(raw.ratePerKg) || 0);
+      return {
+        id: String(raw._id),
+        kind: 'Purchase',
+        date: raw.purchaseDate,
+        title: raw.supplierName || 'Supplier',
+        detail: `${Number(raw.weightInKg || 0).toFixed(1)} kg`,
+        amount,
+      };
+    });
+
+    const latestActivity = [...latestFromOrders, ...latestFromTx, ...latestFromPurchases]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 8);
+
+    res.json({
+      success: true,
+      data: {
+        period: range.period,
+        startDate: dayKey(start),
+        endDate: dayKey(end),
+        label: range.label,
+        anchor: range.anchor,
+        series,
+        totals,
+        activityMix,
+        latestActivity,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getStats, getCharts, getActivity };

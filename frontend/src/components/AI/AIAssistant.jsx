@@ -561,7 +561,12 @@ export default function AIAssistant() {
       <Fab
         color="primary"
         onClick={() => setOpen(true)}
-        sx={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1300 }}
+        sx={{
+          position: 'fixed',
+          bottom: { xs: 'calc(16px + env(safe-area-inset-bottom))', sm: 24 },
+          right: { xs: 16, sm: 24 },
+          zIndex: 1300,
+        }}
         aria-label="Open AI Assistant"
       >
         <Badge

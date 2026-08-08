@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Button, Paper, Typography, Table, TableHead, TableBody,
-  TableRow, TableCell, TableContainer, Tabs, Tab, Chip, Dialog,
+  TableRow, TableCell, TableContainer, Tabs, Tab, Chip,
   DialogTitle, DialogContent, DialogActions, TextField, FormControl,
   InputLabel, Select, MenuItem, Alert, Snackbar, CircularProgress,
   Divider, IconButton, Tooltip, Checkbox, FormControlLabel,
@@ -16,6 +16,9 @@ import { transactionsAPI, customersAPI, suppliersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import ResponsiveDialog from '../components/Common/ResponsiveDialog';
+import PageToolbar from '../components/Common/PageToolbar';
+import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
 const BANK_ACCOUNTS = ['MBL', 'UBL', 'Faisal Bank', 'Other'];
@@ -60,6 +63,7 @@ function accountDisplayName(bankAccount, otherName) {
 
 export default function BankAccounts() {
   const { isViewer } = usePermissions();
+  const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [tab, setTab] = useState(0);
   const [persons, setPersons] = useState([]);
@@ -275,13 +279,13 @@ export default function BankAccounts() {
 
   return (
     <Box>
-      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3} flexWrap="wrap" gap={2}>
+      <PageToolbar sx={{ mb: 3 }}>
         <Box display="flex" alignItems="center" gap={1}>
           <AccountBalanceIcon color="primary" sx={{ fontSize: 32 }} />
           <Typography variant="h5" fontWeight={700}>Bank Accounts</Typography>
         </Box>
-        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 150 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>Account</InputLabel>
             <Select value={filterAccount} label="Account" onChange={(e) => setFilterAccount(e.target.value)}>
               <MenuItem value="">All Accounts</MenuItem>
@@ -290,14 +294,14 @@ export default function BankAccounts() {
               ))}
             </Select>
           </FormControl>
-          <TextField size="small" type="date" label="From" value={startDate} onChange={(e) => setStartDate(e.target.value)} InputLabelProps={{ shrink: true }} />
-          <TextField size="small" type="date" label="To" value={endDate} onChange={(e) => setEndDate(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField size="small" type="date" label="From" value={startDate} onChange={(e) => setStartDate(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { xs: '100%', sm: 140 }, width: { xs: '100%', sm: 'auto' } }} />
+          <TextField size="small" type="date" label="To" value={endDate} onChange={(e) => setEndDate(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { xs: '100%', sm: 140 }, width: { xs: '100%', sm: 'auto' } }} />
           {(startDate || endDate || filterAccount) && (
-            <Button size="small" variant="outlined" onClick={() => { setStartDate(''); setEndDate(''); setFilterAccount(''); }}>Clear</Button>
+            <Button size="small" variant="outlined" fullWidth={isMobile} onClick={() => { setStartDate(''); setEndDate(''); setFilterAccount(''); }}>Clear</Button>
           )}
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>Add Bank Transfer</Button>
+          <Button variant="contained" fullWidth={isMobile} startIcon={<AddIcon />} onClick={openAdd}>Add Bank Transfer</Button>
         </Box>
-      </Box>
+      </PageToolbar>
 
       {loading ? (
         <Box display="flex" justifyContent="center" py={6}><CircularProgress /></Box>
@@ -309,7 +313,7 @@ export default function BankAccounts() {
                 key={a.bankAccount}
                 sx={{
                   flex: 1,
-                  minWidth: 160,
+                  minWidth: { xs: '100%', sm: 160 },
                   p: 2,
                   borderTop: 4,
                   borderColor: a.balance >= 0 ? 'primary.main' : 'error.main',
@@ -343,7 +347,7 @@ export default function BankAccounts() {
                 </Button>
               </Paper>
             ))}
-            <Paper sx={{ flex: 1, minWidth: 160, p: 2, borderTop: 4, borderColor: 'grey.500' }}>
+            <Paper sx={{ flex: 1, minWidth: { xs: '100%', sm: 160 }, p: 2, borderTop: 4, borderColor: 'grey.500' }}>
               <Typography variant="subtitle2" fontWeight={700}>All Accounts</Typography>
               <Typography variant="h5" fontWeight={700} color={allTimeBalance >= 0 ? 'primary.main' : 'error.main'}>
                 {formatCurrency(allTimeBalance)}
@@ -365,14 +369,14 @@ export default function BankAccounts() {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>#</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>#</TableCell>
                       <TableCell>Person / Party</TableCell>
                       <TableCell>Type</TableCell>
-                      <TableCell align="right" sx={{ color: 'success.main' }}>Total In</TableCell>
-                      <TableCell align="right" sx={{ color: 'error.main' }}>Total Out</TableCell>
+                      <TableCell align="right" sx={{ color: 'success.main', display: { xs: 'none', sm: 'table-cell' } }}>Total In</TableCell>
+                      <TableCell align="right" sx={{ color: 'error.main', display: { xs: 'none', sm: 'table-cell' } }}>Total Out</TableCell>
                       <TableCell align="right">Net</TableCell>
-                      <TableCell>Txns</TableCell>
-                      <TableCell>Last Date</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Txns</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Last Date</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -385,7 +389,7 @@ export default function BankAccounts() {
                     )}
                     {persons.map((p, i) => (
                       <TableRow key={p.key} hover>
-                        <TableCell>{i + 1}</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{i + 1}</TableCell>
                         <TableCell><strong>{p.name}</strong></TableCell>
                         <TableCell>
                           <Chip
@@ -395,15 +399,15 @@ export default function BankAccounts() {
                             color={p.relatedTo === 'Customer' ? 'primary' : p.relatedTo === 'Supplier' ? 'secondary' : 'default'}
                           />
                         </TableCell>
-                        <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>{formatCurrency(p.totalIn)}</TableCell>
-                        <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>{formatCurrency(p.totalOut)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600, display: { xs: 'none', sm: 'table-cell' } }}>{formatCurrency(p.totalIn)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600, display: { xs: 'none', sm: 'table-cell' } }}>{formatCurrency(p.totalOut)}</TableCell>
                         <TableCell align="right">
                           <Typography fontWeight={700} color={p.net > 0 ? 'success.main' : p.net < 0 ? 'error.main' : 'text.secondary'}>
                             {formatCurrency(Math.abs(p.net))}
                           </Typography>
                         </TableCell>
-                        <TableCell>{p.txCount}</TableCell>
-                        <TableCell>{p.lastDate ? formatDate(p.lastDate) : '—'}</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{p.txCount}</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{p.lastDate ? formatDate(p.lastDate) : '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -414,7 +418,7 @@ export default function BankAccounts() {
             {tab === 1 && (
               <>
                 <Box px={2} pt={2} pb={1} display="flex" gap={1} alignItems="center">
-                  <TextField size="small" label="Filter by person" value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} sx={{ width: 220 }} />
+                  <TextField size="small" label="Filter by person" value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} sx={{ width: { xs: '100%', sm: 220 }, minWidth: { xs: '100%', sm: 140 } }} />
                   {filterAccount && (
                     <Chip size="small" color="info" label={filterAccount === 'Other' ? 'Any Other' : `${filterAccount} Account`} onDelete={() => setFilterAccount('')} />
                   )}
@@ -439,8 +443,8 @@ export default function BankAccounts() {
                         <TableCell>Direction</TableCell>
                         <TableCell align="right">Amount</TableCell>
                         <TableCell>Person / Party</TableCell>
-                        <TableCell>Description</TableCell>
-                        <TableCell>Expense</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Description</TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Expense</TableCell>
                         <TableCell align="right">Balance</TableCell>
                         <TableCell align="right">Actions</TableCell>
                       </TableRow>
@@ -479,8 +483,8 @@ export default function BankAccounts() {
                                 <Typography variant="caption" color="text.secondary">{t.relatedTo}</Typography>
                               )}
                             </TableCell>
-                            <TableCell>{t.description || '—'}</TableCell>
-                            <TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t.description || '—'}</TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                               {t.expenseCategory
                                 ? <Chip size="small" label={`${t.expenseGroup || 'Expense'} / ${t.expenseCategory}`} color="warning" variant="outlined" />
                                 : '—'}
@@ -528,7 +532,7 @@ export default function BankAccounts() {
         </>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Bank Transfer' : 'Add Bank Transfer'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense" required>
@@ -640,9 +644,9 @@ export default function BankAccounts() {
             {editingId ? 'Update' : form.transactionType === 'Money In' ? 'Record Received' : 'Record Sent'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
-      <Dialog open={openingDialogOpen} onClose={() => setOpeningDialogOpen(false)} maxWidth="sm" fullWidth>
+      <ResponsiveDialog open={openingDialogOpen} onClose={() => setOpeningDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Set Bank Opening Balance</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 1 }}>
@@ -699,7 +703,7 @@ export default function BankAccounts() {
           <Button onClick={() => setOpeningDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveOpening}>Save Opening</Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       <ConfirmDialog
         open={deleteConfirm.open}
