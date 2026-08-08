@@ -3,6 +3,7 @@ import { Box } from '@mui/material';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
 import AIAssistant from '../AI/AIAssistant';
+import SessionTimeoutWarning from '../Auth/SessionTimeoutWarning';
 
 /**
  * Wrapper for authenticated pages: persistent navbar + collapsible sidebar + main content.
@@ -27,6 +28,7 @@ export default function AppLayout({ title, children }) {
         {children}
       </Box>
       <AIAssistant />
+      <SessionTimeoutWarning />
     </Box>
   );
 }

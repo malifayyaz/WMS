@@ -2,16 +2,18 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Chip,
+  FormControl, InputLabel, Select, MenuItem, Chip, Typography, TablePagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { ordersAPI, customersAPI, configAPI, rawMaterialsAPI } from '../services/api';
+import { ordersAPI, customersAPI, configAPI, rawMaterialsAPI, aiAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import StatusBadge from '../components/Common/StatusBadge';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const statuses = ['Outer', 'In Process', 'Done'];
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
@@ -19,6 +21,8 @@ const toInputDate = (value) => (value ? new Date(value).toISOString().slice(0, 1
 const defaultCoilCategoryForWire = (wireNumber) => (Number(wireNumber) === 20 ? 'Patri Coil' : 'Shiplet Coil');
 
 export default function Orders() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [wires, setWires] = useState([]);
@@ -34,6 +38,10 @@ export default function Orders() {
   const [weightDialog, setWeightDialog] = useState({ open: false, order: null, finalWeightKg: '' });
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [parseText, setParseText] = useState('');
+  const [parsing, setParsing] = useState(false);
 
   const fetchList = async () => {
     setLoading(true);
@@ -52,7 +60,9 @@ export default function Orders() {
     }
   };
 
-  useEffect(() => { fetchList(); }, [statusFilter]);
+  useEffect(() => { setPage(0); fetchList(); }, [statusFilter]);
+
+  const pagedList = list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const loadStockPreview = async (wireNumber, weightKg, coilCategory) => {
     if (!wireNumber || !weightKg) { setStockPreview(null); return; }
@@ -83,6 +93,7 @@ export default function Orders() {
     });
     setStockPreview(null);
     setEditingId(null);
+    setParseText('');
     setDialogOpen(true);
   };
 
@@ -103,6 +114,40 @@ export default function Orders() {
     setStockPreview(null);
     setEditingId(row._id);
     setDialogOpen(true);
+  };
+
+  const handleParseOrder = async () => {
+    if (!parseText.trim()) return;
+    setParsing(true);
+    try {
+      const res = await aiAPI.parseOrder(parseText.trim());
+      const parsed = res.data.data || {};
+      setForm((f) => ({
+        ...f,
+        ...(parsed.customerName
+          ? {
+              customerId:
+                customers.find((c) => c.name?.toLowerCase() === String(parsed.customerName).toLowerCase())?._id
+                || f.customerId,
+            }
+          : {}),
+        wireNumber: parsed.wireNumber != null ? String(parsed.wireNumber) : f.wireNumber,
+        coilCategory: parsed.wireNumber != null
+          ? defaultCoilCategoryForWire(parsed.wireNumber)
+          : f.coilCategory,
+        initialWeightKg: parsed.weightKg != null ? String(parsed.weightKg) : f.initialWeightKg,
+        ratePerKg: parsed.ratePerKg != null ? String(parsed.ratePerKg) : f.ratePerKg,
+      }));
+      setSnack({
+        open: true,
+        message: res.data.message || 'Parsed order details — review before saving',
+        severity: 'success',
+      });
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Could not parse order text', severity: 'error' });
+    } finally {
+      setParsing(false);
+    }
   };
 
   const handleSave = async () => {
@@ -144,6 +189,7 @@ export default function Orders() {
   };
 
   const handleStatusChange = async (orderId, status) => {
+    if (isViewer) { setAccessDenied(true); return; }
     try {
       await ordersAPI.updateStatus(orderId, status);
       setSnack({ open: true, message: 'Status updated', severity: 'success' });
@@ -154,6 +200,7 @@ export default function Orders() {
   };
 
   const handleFinalWeight = async () => {
+    if (isViewer) { setAccessDenied(true); return; }
     if (!weightDialog.order || !weightDialog.finalWeightKg) return;
     try {
       await ordersAPI.updateFinalWeight(weightDialog.order._id, { finalWeightKg: Number(weightDialog.finalWeightKg) });
@@ -195,6 +242,7 @@ export default function Orders() {
             startIcon={<WarningAmberIcon />}
             title="Deduct pending order weights from available coil stock and clear stale alerts"
             onClick={async () => {
+              if (isViewer) { setAccessDenied(true); return; }
               try {
                 const res = await rawMaterialsAPI.reconcilePending();
                 setSnack({ open: true, message: res.data.message, severity: 'success' });
@@ -206,7 +254,16 @@ export default function Orders() {
           >
             Fix Stock Alerts
           </Button>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAdd}>Add Order</Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              if (isViewer) { setAccessDenied(true); return; }
+              handleOpenAdd();
+            }}
+          >
+            Add Order
+          </Button>
         </Box>
       </Box>
       {loading ? (
@@ -228,7 +285,14 @@ export default function Orders() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.map((row) => (
+              {list.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9}>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No orders found.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {pagedList.map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{formatDate(row.orderDate)}</TableCell>
                   <TableCell>{row.customerName || row.customerId?.name}</TableCell>
@@ -248,24 +312,80 @@ export default function Orders() {
                     )}
                     {row.orderStatus === 'In Process' && (
                       <>
-                        <Button size="small" sx={{ ml: 1 }} onClick={() => setWeightDialog({ open: true, order: row, finalWeightKg: row.initialWeightKg })}>Set Final Weight</Button>
+                        <Button
+                          size="small"
+                          sx={{ ml: 1 }}
+                          onClick={() => {
+                            if (isViewer) { setAccessDenied(true); return; }
+                            setWeightDialog({ open: true, order: row, finalWeightKg: row.initialWeightKg });
+                          }}
+                        >
+                          Set Final Weight
+                        </Button>
                         <Button size="small" onClick={() => handleStatusChange(row._id, 'Done')}>Done</Button>
                       </>
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        handleOpenEdit(row);
+                      }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        setDeleteConfirm({ open: true, id: row._id });
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
         </TableContainer>
       )}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Order' : 'Add Order'}</DialogTitle>
         <DialogContent>
+          {!editingId && (
+            <Box display="flex" gap={1} alignItems="flex-start" mb={1}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Parse from text (optional)"
+                placeholder="e.g. sell 500kg wire 12 to Ali @ 280"
+                value={parseText}
+                onChange={(e) => setParseText(e.target.value)}
+                margin="dense"
+              />
+              <Button
+                variant="outlined"
+                sx={{ mt: 1, whiteSpace: 'nowrap' }}
+                disabled={parsing || !parseText.trim()}
+                onClick={handleParseOrder}
+              >
+                {parsing ? '…' : 'Parse'}
+              </Button>
+            </Box>
+          )}
           <FormControl fullWidth margin="dense">
             <InputLabel>Customer</InputLabel>
             <Select value={form.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value }))} label="Customer">
@@ -358,6 +478,11 @@ export default function Orders() {
       <Snackbar open={snack.open} autoHideDuration={8000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

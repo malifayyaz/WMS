@@ -11,14 +11,15 @@ const {
   checkStockForOrder,
   createWireReturn,
 } = require('../controllers/orderController');
+const { blockViewer } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 router.get('/check-stock', checkStockForOrder);
 router.get('/by-status/:status', getOrdersByStatus);
-router.post('/return', createWireReturn);
-router.route('/').get(getOrders).post(createOrder);
-router.put('/:id/status', updateOrderStatus);
-router.put('/:id/final-weight', updateFinalWeight);
-router.route('/:id').get(getOrderById).put(updateOrder).delete(deleteOrder);
+router.post('/return', blockViewer, createWireReturn);
+router.route('/').get(getOrders).post(blockViewer, createOrder);
+router.put('/:id/status', blockViewer, updateOrderStatus);
+router.put('/:id/final-weight', blockViewer, updateFinalWeight);
+router.route('/:id').get(getOrderById).put(blockViewer, updateOrder).delete(blockViewer, deleteOrder);
 
 module.exports = router;

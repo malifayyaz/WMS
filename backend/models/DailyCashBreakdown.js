@@ -17,6 +17,4 @@ const dailyCashBreakdownSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-dailyCashBreakdownSchema.index({ bookDate: 1 });
-
 module.exports = mongoose.model('DailyCashBreakdown', dailyCashBreakdownSchema);

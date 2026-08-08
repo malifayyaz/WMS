@@ -32,6 +32,8 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { workersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const defaultWorkerForm = {
   name: '',
@@ -46,12 +48,16 @@ const defaultEntryForm = {
   entryType: 'SalaryDue',
   amount: '',
   paymentMethod: 'Cash',
+  bankAccount: 'MBL',
+  bankAccountOtherName: '',
   date: new Date().toISOString().slice(0, 10),
   notes: '',
   addedBy: '',
 };
 
 export default function Workers() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [workers, setWorkers] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -143,6 +149,8 @@ export default function Workers() {
       entryType: entry.entryType,
       amount: entry.amount != null ? String(entry.amount) : '',
       paymentMethod: entry.paymentMethod || 'Cash',
+      bankAccount: 'MBL',
+      bankAccountOtherName: '',
       date: entry.date ? new Date(entry.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       notes: entry.notes || '',
       addedBy: entry.addedBy || '',
@@ -184,6 +192,11 @@ export default function Workers() {
         ...entryForm,
         amount: Number(entryForm.amount),
         paymentMethod: ['Payment', 'Advance'].includes(entryForm.entryType) ? entryForm.paymentMethod : undefined,
+        bankAccount: entryForm.paymentMethod === 'Bank Transfer' ? entryForm.bankAccount : undefined,
+        bankAccountOtherName:
+          entryForm.paymentMethod === 'Bank Transfer' && entryForm.bankAccount === 'Other'
+            ? entryForm.bankAccountOtherName
+            : undefined,
       };
       if (editingEntryId) {
         await workersAPI.updateEntry(selectedWorkerId, editingEntryId, payload);
@@ -231,7 +244,16 @@ export default function Workers() {
 
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
         <TextField size="small" placeholder="Search workers..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 220 }} />
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openAddWorker}>Add Worker</Button>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            if (isViewer) { setAccessDenied(true); return; }
+            openAddWorker();
+          }}
+        >
+          Add Worker
+        </Button>
       </Box>
 
       <Box display="grid" gridTemplateColumns={{ xs: '1fr', lg: '380px 1fr' }} gap={2}>
@@ -274,8 +296,27 @@ export default function Workers() {
                       </TableCell>
                       <TableCell align="right">
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); setSelectedWorkerId(worker._id); }}><MenuBookIcon fontSize="small" /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); openEditWorker(worker); }}><EditIcon fontSize="small" /></IconButton>
-                        <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setDeleteWorkerConfirm({ open: true, id: worker._id }); }}><DeleteIcon fontSize="small" /></IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isViewer) { setAccessDenied(true); return; }
+                            openEditWorker(worker);
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isViewer) { setAccessDenied(true); return; }
+                            setDeleteWorkerConfirm({ open: true, id: worker._id });
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -306,7 +347,16 @@ export default function Workers() {
                     {selectedWorker.role || 'No role'}{selectedWorker.phone ? ` · ${selectedWorker.phone}` : ''}
                   </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={openAddEntry}>Add Ledger Entry</Button>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => {
+                    if (isViewer) { setAccessDenied(true); return; }
+                    openAddEntry();
+                  }}
+                >
+                  Add Ledger Entry
+                </Button>
               </Box>
 
               <Box display="flex" gap={2} flexWrap="wrap" mb={2}>
@@ -370,8 +420,25 @@ export default function Workers() {
                         <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
                         <TableCell align="right">{formatCurrency(entry.balanceAfter)}</TableCell>
                         <TableCell align="right">
-                          <IconButton size="small" onClick={() => openEditEntry(entry)}><EditIcon fontSize="small" /></IconButton>
-                          <IconButton size="small" color="error" onClick={() => setDeleteEntryConfirm({ open: true, id: entry._id })}><DeleteIcon fontSize="small" /></IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              if (isViewer) { setAccessDenied(true); return; }
+                              openEditEntry(entry);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => {
+                              if (isViewer) { setAccessDenied(true); return; }
+                              setDeleteEntryConfirm({ open: true, id: entry._id });
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -426,7 +493,7 @@ export default function Workers() {
           </FormControl>
           {['Payment', 'Advance'].includes(entryForm.entryType) && (
             <Alert severity="info" sx={{ my: 1 }}>
-              This entry will create a linked Labour expense automatically.
+              Cash/Cheque creates a Labour expense (cash book). Bank Transfer also deducts from the selected bank account.
             </Alert>
           )}
           <TextField fullWidth type="number" label="Amount" value={entryForm.amount} onChange={(e) => setEntryForm((f) => ({ ...f, amount: e.target.value }))} margin="dense" required />
@@ -439,6 +506,33 @@ export default function Workers() {
                 <MenuItem value="Cheque">Cheque</MenuItem>
               </Select>
             </FormControl>
+          )}
+          {['Payment', 'Advance'].includes(entryForm.entryType) && entryForm.paymentMethod === 'Bank Transfer' && (
+            <>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Bank Account</InputLabel>
+                <Select
+                  value={entryForm.bankAccount}
+                  label="Bank Account"
+                  onChange={(e) => setEntryForm((f) => ({ ...f, bankAccount: e.target.value }))}
+                >
+                  <MenuItem value="MBL">MBL</MenuItem>
+                  <MenuItem value="UBL">UBL</MenuItem>
+                  <MenuItem value="Faisal Bank">Faisal Bank</MenuItem>
+                  <MenuItem value="Other">Other</MenuItem>
+                </Select>
+              </FormControl>
+              {entryForm.bankAccount === 'Other' && (
+                <TextField
+                  fullWidth
+                  label="Bank / Account Name"
+                  value={entryForm.bankAccountOtherName}
+                  onChange={(e) => setEntryForm((f) => ({ ...f, bankAccountOtherName: e.target.value }))}
+                  margin="dense"
+                  required
+                />
+              )}
+            </>
           )}
           <TextField fullWidth type="date" label="Date" value={entryForm.date} onChange={(e) => setEntryForm((f) => ({ ...f, date: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <TextField fullWidth label="Added By" value={entryForm.addedBy} onChange={(e) => setEntryForm((f) => ({ ...f, addedBy: e.target.value }))} margin="dense" />
@@ -467,6 +561,11 @@ export default function Workers() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

@@ -146,35 +146,50 @@ const getStats = async (req, res, next) => {
  */
 const getCharts = async (req, res, next) => {
   try {
-    const monthlyData = [];
+    const monthSpecs = [];
     for (let i = 5; i >= 0; i--) {
       const d = subMonths(new Date(), i);
       const start = startOfMonth(d);
       const end = endOfMonth(d);
-      const profit = await buildProfitReport({
-        startDate: start.toISOString(),
-        endDate: end.toISOString(),
-        scope: 'combined',
-      });
-      monthlyData.push({
+      monthSpecs.push({ start, end });
+    }
+
+    const [profitReports, orderStatusCounts, recentTransactions, topCustomers] = await Promise.all([
+      Promise.all(
+        monthSpecs.map(({ start, end }) =>
+          buildProfitReport({
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            scope: 'combined',
+          })
+        )
+      ),
+      Order.aggregate([{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }]),
+      Transaction.find().sort({ transactionDate: -1 }).limit(10).lean(),
+      Customer.find().sort({ totalAmountPurchased: -1 }).limit(5).select('name totalAmountPurchased totalAmountDue'),
+    ]);
+
+    const monthlyData = monthSpecs.map(({ start }, idx) => {
+      const profit = profitReports[idx];
+      return {
         month: start.toISOString().slice(0, 7),
         label: start.toLocaleString('default', { month: 'short', year: '2-digit' }),
         mainGross: profit.main.grossProfit,
         processingLabour: profit.processing.labourEarned,
         expenses: profit.combined.factoryExpenses + profit.combined.selfExpenses,
         netProfit: profit.combined.finalNetProfit,
-      });
-    }
-    const orderStatusCounts = await Order.aggregate([{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }]);
+      };
+    });
+
     const statusMap = { Outer: 0, 'In Process': 0, Done: 0 };
     orderStatusCounts.forEach((s) => (statusMap[s._id] = s.count));
-    const recentTransactions = await Transaction.find().sort({ transactionDate: -1 }).limit(10).lean();
+
     res.json({
       success: true,
       data: {
         monthlyRevenueVsExpenses: monthlyData,
         ordersByStatus: statusMap,
-        topCustomers: await Customer.find().sort({ totalAmountPurchased: -1 }).limit(5).select('name totalAmountPurchased totalAmountDue'),
+        topCustomers,
         recentTransactions,
       },
     });

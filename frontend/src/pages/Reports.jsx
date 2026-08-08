@@ -7,8 +7,12 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  FormControl,
   Grid,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Tab,
   Table,
   TableBody,
@@ -25,7 +29,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { reportsAPI } from '../services/api';
+import { reportsAPI, customersAPI } from '../services/api';
 import {
   exportFinancialExcel,
   exportInventoryExcel,
@@ -464,10 +468,10 @@ function ProfitLossPanel() {
       {loading && <CircularProgress />}
       {data && !data.hasActivity && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          No sales, purchases, deliveries or expenses were recorded between {startDate} and {endDate}, so every
+          No sales, purchases, deliveries or expenses were recorded between {formatDate(startDate)} and {formatDate(endDate)}, so every
           profit figure is zero.
           {data.availableDataRange
-            ? ` Your recorded activity runs from ${data.availableDataRange.firstEntry} to ${data.availableDataRange.lastEntry} — pick a range inside those dates.`
+            ? ` Your recorded activity runs from ${formatDate(data.availableDataRange.firstEntry)} to ${formatDate(data.availableDataRange.lastEntry)} — pick a range inside those dates.`
             : ''}
         </Alert>
       )}
@@ -582,6 +586,119 @@ function InventoryPanel() {
   );
 }
 
+function CustomerReportPanel() {
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState('');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    customersAPI.getAll()
+      .then((res) => setCustomers(res.data.data || []))
+      .catch(() => setError('Failed to load customers'))
+      .finally(() => setListLoading(false));
+  }, []);
+
+  const fetchReport = async () => {
+    if (!customerId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await reportsAPI.getCustomerReport(customerId);
+      setData(res.data.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load customer report');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const customer = data?.customer;
+  const orders = data?.orders || [];
+
+  return (
+    <Box>
+      <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
+        <FormControl size="small" sx={{ minWidth: 260 }}>
+          <InputLabel>Customer</InputLabel>
+          <Select
+            value={customerId}
+            label="Customer"
+            onChange={(e) => setCustomerId(e.target.value)}
+            disabled={listLoading}
+          >
+            {customers.map((c) => (
+              <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Button variant="contained" onClick={fetchReport} disabled={!customerId || loading}>
+          Generate Report
+        </Button>
+      </Box>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {loading && <CircularProgress />}
+      {customer && (
+        <>
+          <Grid container spacing={1.5} mb={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard title="Customer" value={customer.name} helper={customer.customerType || 'Ledger'} />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard title="Total Purchased" value={formatCurrency(customer.totalAmountPurchased)} />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard title="Total Paid" value={formatCurrency(customer.totalAmountPaid)} color="success.main" />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard title="Amount Due" value={formatCurrency(customer.totalAmountDue)} color="error.main" />
+            </Grid>
+          </Grid>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Orders ({orders.length})</Typography>
+          <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 480 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={head}>Date</TableCell>
+                  <TableCell sx={head}>Wire</TableCell>
+                  <TableCell sx={head} align="right">Weight</TableCell>
+                  <TableCell sx={head} align="right">Total</TableCell>
+                  <TableCell sx={head} align="right">Paid</TableCell>
+                  <TableCell sx={head} align="right">Due</TableCell>
+                  <TableCell sx={head}>Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {orders.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7}>
+                      <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No orders for this customer.</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {orders.map((row) => (
+                  <TableRow key={row._id}>
+                    <TableCell sx={dense}>{formatDate(row.orderDate)}</TableCell>
+                    <TableCell sx={dense}>{row.wireType || `Wire #${row.wireNumber}`}</TableCell>
+                    <TableCell sx={dense} align="right">{row.finalWeightKg ?? row.initialWeightKg}</TableCell>
+                    <TableCell sx={dense} align="right">{formatCurrency(row.totalAmount)}</TableCell>
+                    <TableCell sx={dense} align="right">{formatCurrency(row.amountPaid)}</TableCell>
+                    <TableCell sx={dense} align="right">{formatCurrency(row.amountDue)}</TableCell>
+                    <TableCell sx={dense}>{row.orderStatus}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>
+      )}
+    </Box>
+  );
+}
+
 export default function Reports() {
   const location = useLocation();
   const initialTab = location.state?.tab ?? 0;
@@ -597,11 +714,13 @@ export default function Reports() {
         <Tab label="Profit & Loss" />
         <Tab label="Cash & Bank" />
         <Tab label="Inventory" />
+        <Tab label="Customer" />
       </Tabs>
       <Box sx={{ pt: 2 }}>
         {tab === 0 && <ProfitLossPanel />}
         {tab === 1 && <FinancialPanel />}
         {tab === 2 && <InventoryPanel />}
+        {tab === 3 && <CustomerReportPanel />}
       </Box>
     </Box>
   );

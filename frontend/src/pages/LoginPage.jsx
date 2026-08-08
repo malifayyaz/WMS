@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import FactoryIcon from '@mui/icons-material/Factory';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
@@ -28,30 +29,87 @@ const features = [
   { icon: <TrendingUpOutlinedIcon />, title: 'Reports', desc: 'Profit/loss and business analytics' },
 ];
 
+function extractLockMinutes(message) {
+  if (!message) return null;
+  const match = message.match(/(\d+)\s*minute/i);
+  return match ? match[1] : null;
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [lockMessage, setLockMessage] = useState('');
+  const [attemptWarning, setAttemptWarning] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+  const cooldownTimerRef = useRef(null);
+  const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
 
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate(from, { replace: true });
+    }
+  }, [authLoading, user, navigate, from]);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    };
+  }, []);
+
+  const startCooldown = useCallback(() => {
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    setCooldown(3);
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLockMessage('');
+    setAttemptWarning('');
     setLoading(true);
     try {
       await login(username, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid username or password');
+      const status = err.response?.status;
+      const message = err.response?.data?.message || 'Invalid username or password';
+
+      if (status === 423) {
+        const minutes = extractLockMinutes(message) || '5';
+        setLockMessage(`Account temporarily locked. Try again in ${minutes} minutes.`);
+      } else if (message.includes('attempt(s) remaining')) {
+        setAttemptWarning(message);
+      } else {
+        setError(message);
+      }
+      startCooldown();
     } finally {
       setLoading(false);
     }
   };
+
+  const buttonDisabled = loading || cooldown > 0;
+  const buttonLabel = loading
+    ? null
+    : cooldown > 0
+      ? `Try again in ${cooldown}...`
+      : 'Sign in to dashboard';
 
   return (
     <Box sx={{ minHeight: '100vh', position: 'relative', overflow: 'hidden' }}>
@@ -260,6 +318,18 @@ export default function LoginPage() {
               />
             </Box>
 
+            {lockMessage && (
+              <Alert severity="error" icon={<LockOutlinedIcon fontSize="inherit" />} sx={{ mt: 2 }}>
+                {lockMessage}
+              </Alert>
+            )}
+
+            {attemptWarning && (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                {attemptWarning}
+              </Alert>
+            )}
+
             {error && (
               <Alert severity="error" sx={{ mt: 2 }}>
                 {error}
@@ -271,10 +341,10 @@ export default function LoginPage() {
               fullWidth
               variant="contained"
               size="large"
-              disabled={loading}
+              disabled={buttonDisabled}
               sx={{ mt: 3, py: 1.4 }}
             >
-              {loading ? <CircularProgress size={22} color="inherit" /> : 'Sign in to dashboard'}
+              {loading ? <CircularProgress size={22} color="inherit" /> : buttonLabel}
             </Button>
 
             <Typography variant="caption" display="block" textAlign="center" sx={{ mt: 3, opacity: 0.55 }}>

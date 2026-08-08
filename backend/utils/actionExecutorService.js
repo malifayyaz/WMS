@@ -24,6 +24,7 @@ const {
   refreshLowStockAlerts,
 } = require("./stockService");
 const { applyOpeningBalanceToTotals } = require("./ledgerService");
+const { syncExpenseForEntry } = require("../controllers/workerController");
 const {
   getCoilCategoryForWire,
   getWireLabel,
@@ -1494,32 +1495,27 @@ async function executeAction(intent, extractedData = {}, userId) {
           parseOptionalDate(data.weekEndDate, data.weekStartDate, data.date) ||
           defaultEntryDate(data);
         const notes = cleanOptionalNote(data.notes || "");
+        const paymentMethod = ["Payment", "Advance"].includes(entryType)
+          ? normalizePaymentMethod(data.paymentMethod)
+          : undefined;
 
         const entry = await WorkerLedgerEntry.create({
           workerId: worker._id,
           entryType,
           amount,
-          paymentMethod: ["Payment", "Advance"].includes(entryType)
-            ? normalizePaymentMethod(data.paymentMethod)
-            : undefined,
+          paymentMethod,
           notes,
           date: entryDate,
         });
 
         if (["Payment", "Advance"].includes(entryType)) {
-          const expense = await Expense.create({
-            expenseGroup: "Labour",
-            expenseCategory:
-              entryType === "Payment" ? "Labour Salary" : "Labour Advance",
-            description:
-              notes ||
-              `${entryType === "Payment" ? "Salary payment" : "Advance paid"} to ${worker.name}`,
-            amount,
-            paymentMethod: normalizePaymentMethod(data.paymentMethod),
-            expenseDate: entryDate,
-            labourName: worker.name,
-          });
-          entry.expenseId = expense._id;
+          // Attach bank helpers for syncExpenseForEntry (not persisted on schema)
+          entry.bankAccount = ["MBL", "UBL", "Faisal Bank", "Other"].includes(data.bankAccount)
+            ? data.bankAccount
+            : "MBL";
+          entry.bankAccountOtherName =
+            entry.bankAccount === "Other" ? String(data.bankAccountOtherName || "").trim() : "";
+          await syncExpenseForEntry(worker, entry);
           await entry.save();
         }
 

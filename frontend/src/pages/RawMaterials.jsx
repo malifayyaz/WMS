@@ -3,6 +3,7 @@ import {
   Box, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, Tabs, Tab, Card, CardContent, Typography, Grid, Chip,
+  TablePagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -10,12 +11,16 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { rawMaterialsAPI, suppliersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const COIL_CATEGORIES = ['Shiplet Coil', 'Patri Coil'];
 const toInputDate = (value) => (value ? new Date(value).toISOString().slice(0, 10) : '');
 
 export default function RawMaterials() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [summary, setSummary] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -29,6 +34,8 @@ export default function RawMaterials() {
   const [editingId, setEditingId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const categoryFilter = tab === 1 ? 'Shiplet Coil' : tab === 2 ? 'Patri Coil' : '';
 
@@ -49,7 +56,7 @@ export default function RawMaterials() {
     }
   };
 
-  useEffect(() => { fetchList(); }, [tab]);
+  useEffect(() => { setPage(0); fetchList(); }, [tab]);
 
   const handleOpenAdd = (coilCategory = 'Shiplet Coil') => {
     setForm({
@@ -150,6 +157,7 @@ export default function RawMaterials() {
           variant="outlined"
           color="warning"
           onClick={async () => {
+            if (isViewer) { setAccessDenied(true); return; }
             try {
               const res = await rawMaterialsAPI.reconcilePending();
               const d = res.data.data;
@@ -169,7 +177,14 @@ export default function RawMaterials() {
         >
           Reconcile Pending Orders
         </Button>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenAdd(categoryFilter || 'Shiplet Coil')}>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            if (isViewer) { setAccessDenied(true); return; }
+            handleOpenAdd(categoryFilter || 'Shiplet Coil');
+          }}
+        >
           Add Purchase
         </Button>
       </Box>
@@ -192,7 +207,14 @@ export default function RawMaterials() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.map((row) => (
+              {list.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8}>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No coil purchases found.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{formatDate(row.purchaseDate)}</TableCell>
                   <TableCell>{row.supplierName || row.supplierId?.name}</TableCell>
@@ -202,13 +224,39 @@ export default function RawMaterials() {
                   <TableCell align="right">{formatCurrency(row.totalAmount)}</TableCell>
                   <TableCell align="right">{row.currentStock}</TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        handleOpenEdit(row);
+                      }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        setDeleteConfirm({ open: true, id: row._id });
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
         </TableContainer>
       )}
 
@@ -252,6 +300,11 @@ export default function RawMaterials() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

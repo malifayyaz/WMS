@@ -2,6 +2,7 @@ const Supplier = require('../models/Supplier');
 const RawMaterial = require('../models/RawMaterial');
 const { buildScopedLedger, applyOpeningBalanceToTotals } = require('../utils/ledgerService');
 const { handleSupplierLinkOnSave, unlinkSupplier } = require('../utils/partyLinkService');
+const { logActivity } = require('../utils/activityLogService');
 
 function withOpeningBalance(body) {
   const data = { ...body };
@@ -32,6 +33,14 @@ const createSupplier = async (req, res, next) => {
       alsoProcessingCustomer,
       linkedCustomerId,
       unlinkCustomer,
+    });
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Supplier',
+      description: `Created supplier ${supplier.name}`,
+      documentId: supplier._id,
+      newValue: supplier,
     });
     res.status(201).json({ success: true, data: supplier, message: 'Supplier created successfully' });
   } catch (error) {
@@ -101,12 +110,22 @@ const updateSupplier = async (req, res, next) => {
       }
     }
 
+    const previousValue = existing.toObject();
     const { alsoProcessingCustomer, linkedCustomerId, unlinkCustomer, ...updateBody } = body;
     let supplier = await Supplier.findByIdAndUpdate(req.params.id, updateBody, { new: true, runValidators: true });
     supplier = await handleSupplierLinkOnSave(supplier, {
       alsoProcessingCustomer,
       linkedCustomerId,
       unlinkCustomer,
+    });
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Supplier',
+      description: `Updated supplier ${supplier.name}`,
+      documentId: supplier._id,
+      previousValue,
+      newValue: supplier,
     });
     res.json({ success: true, data: supplier, message: 'Supplier updated successfully' });
   } catch (error) {
@@ -144,6 +163,14 @@ const deleteSupplier = async (req, res, next) => {
 
     await unlinkSupplier(supplier._id);
     await Supplier.findByIdAndDelete(req.params.id);
+    await logActivity({
+      req,
+      action: 'DELETE',
+      module: 'Supplier',
+      description: `Deleted supplier ${supplier.name}`,
+      documentId: supplier._id,
+      previousValue: supplier,
+    });
     res.json({ success: true, message: 'Supplier deleted successfully' });
   } catch (error) {
     next(error);

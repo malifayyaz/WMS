@@ -107,7 +107,7 @@ const getCustomerReport = async (req, res, next) => {
     const customer = await Customer.findById(req.params.id);
     if (!customer) return res.status(404).json({ success: false, error: 'Customer not found', message: 'Customer not found' });
     const orders = await Order.find({ customerId: req.params.id }).sort({ orderDate: -1 });
-    res.json({ success: true, data  : { customer, orders, paymentHistory: customer.paymentHistory || [] } });
+    res.json({ success: true, data: { customer, orders, paymentHistory: customer.paymentHistory || [] } });
   } catch (error) {
     next(error);
   }

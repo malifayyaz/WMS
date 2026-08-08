@@ -21,6 +21,9 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FactoryIcon from '@mui/icons-material/Factory';
 import WarehouseIcon from '@mui/icons-material/Warehouse';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import SecurityIcon from '@mui/icons-material/Security';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const drawerWidth = 260;
 
@@ -62,9 +65,23 @@ const menuGroups = [
   },
 ];
 
+const settingsGroup = {
+  title: 'Settings',
+  items: [
+    { label: 'User Management', path: '/users', icon: <ManageAccountsIcon /> },
+    { label: 'Security & Logs', path: '/security', icon: <SecurityIcon />, adminOnly: true },
+  ],
+};
+
 export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAdmin } = usePermissions();
+  const filteredSettings = {
+    ...settingsGroup,
+    items: settingsGroup.items.filter((item) => !item.adminOnly || isAdmin),
+  };
+  const groups = [...menuGroups, filteredSettings];
 
   const drawer = (
     <Box sx={{ pt: 2 }}>
@@ -73,7 +90,7 @@ export default function Sidebar({ open, onClose }) {
         <Typography variant="h6" sx={{ color: '#E8EDF3', fontWeight: 700 }}>WMS</Typography>
       </Box>
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
-      {menuGroups.map((group) => (
+      {groups.map((group) => (
         <Box key={group.title}>
           <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'rgba(203,213,225,0.65)', fontWeight: 600, letterSpacing: 0.6 }}>
             {group.title}
@@ -103,7 +120,13 @@ export default function Sidebar({ open, onClose }) {
       sx={{
         width: drawerWidth,
         flexShrink: 0,
-        '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box', mt: 7 },
+        '& .MuiDrawer-paper': {
+          width: drawerWidth,
+          boxSizing: 'border-box',
+          mt: 7,
+          height: 'calc(100% - 56px)',
+          overflowY: 'auto',
+        },
       }}
     >
       {drawer}

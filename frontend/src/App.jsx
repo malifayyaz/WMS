@@ -15,6 +15,8 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import ReadyStock from './pages/ReadyStock';
 import Workers from './pages/Workers';
+import UserManagement from './pages/UserManagement';
+import SecuritySettings from './pages/SecuritySettings';
 
 export default function App() {
   return (
@@ -137,6 +139,26 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="Reports">
               <Reports />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="User Management">
+              <UserManagement />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/security"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Security & Logs">
+              <SecuritySettings />
             </AppLayout>
           </ProtectedRoute>
         }

@@ -14,6 +14,7 @@ const {
   deductStockByCategory,
   restoreStockByCategory,
 } = require('../utils/stockService');
+const { logActivity } = require('../utils/activityLogService');
 
 const createRawMaterial = async (req, res, next) => {
   try {
@@ -46,6 +47,15 @@ const createRawMaterial = async (req, res, next) => {
     const responseMsg = fulfillResult.fulfilled > 0
       ? `Raw material purchase recorded — ${fulfillResult.fulfilled} pending order(s) fulfilled from new stock`
       : 'Raw material purchase recorded';
+
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'RawMaterial',
+      description: `Purchased ${raw.weightInKg}kg ${raw.coilCategory} from ${raw.supplierName || 'supplier'} — Rs.${raw.totalAmount}`,
+      documentId: raw._id,
+      newValue: raw,
+    });
 
     res.status(201).json({
       success: true,
@@ -142,8 +152,13 @@ const getRawMaterials = async (req, res, next) => {
     if (req.query.supplierId) filter.supplierId = req.query.supplierId;
     if (req.query.coilCategory) filter.coilCategory = req.query.coilCategory;
     if (req.query.materialType) filter.materialType = req.query.materialType;
-    const list = await RawMaterial.find(filter).populate('supplierId', 'name').sort({ purchaseDate: -1 });
-    res.json({ success: true, data: list, total: list.length });
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
+    const [total, list] = await Promise.all([
+      RawMaterial.countDocuments(filter),
+      RawMaterial.find(filter).populate('supplierId', 'name').sort({ purchaseDate: -1 }).limit(limit).lean(),
+    ]);
+    res.json({ success: true, data: list, total, truncated: total > list.length });
   } catch (error) {
     next(error);
   }

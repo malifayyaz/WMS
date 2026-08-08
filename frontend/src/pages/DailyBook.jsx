@@ -50,10 +50,12 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import LedgerDialog from '../components/Common/LedgerDialog';
 import PartySearchSelect from '../components/Common/PartySearchSelect';
 import DailyBookReportDialog from '../components/DailyBook/DailyBookReportDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
+import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const cashChequeMethods = ['Cash', 'Cheque'];
@@ -226,6 +228,15 @@ function ToolbarSection({ label, children }) {
 const toolbarBtn = { textTransform: 'none', fontWeight: 600, borderRadius: 1.5, px: 1.5 };
 
 export default function DailyBook() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
+  const requireAdmin = (fn) => (...args) => {
+    if (isViewer) {
+      setAccessDenied(true);
+      return;
+    }
+    return fn(...args);
+  };
   const [list, setList] = useState([]);
   const [dailyOrders, setDailyOrders] = useState([]);
   const [wires, setWires] = useState([]);
@@ -669,7 +680,7 @@ export default function DailyBook() {
 
   useEffect(() => {
     fetchData();
-  }, [entryDate, startDate, endDate, selectedPartyId, mainTab, customers]);
+  }, [entryDate, startDate, endDate, selectedPartyId, mainTab]);
 
   // If an AI agent mutation happens in a separate dialog, the currently open tab
   // must refresh (otherwise you only see the change after manually switching tabs).
@@ -2143,7 +2154,7 @@ export default function DailyBook() {
               Report
             </Button>
             {mainTab !== 4 && mainTab !== 5 && (
-              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleOpenAdd} sx={toolbarBtn}>
+              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAdd)} sx={toolbarBtn}>
                 {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
               </Button>
             )}
@@ -2153,7 +2164,7 @@ export default function DailyBook() {
                 color="success"
                 size="small"
                 startIcon={<AddIcon />}
-                onClick={() => openJobWorkDeliveryDialog(selectedPartyId || null)}
+                onClick={requireAdmin(() => openJobWorkDeliveryDialog(selectedPartyId || null))}
                 sx={toolbarBtn}
               >
                 Record Delivery
@@ -2167,27 +2178,30 @@ export default function DailyBook() {
         {mainTab === 0 && (
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
             <ToolbarSection label="Cash book">
-              <Button variant="outlined" size="small" startIcon={<AccountBalanceWalletIcon />} onClick={openOpeningDialog} sx={toolbarBtn}>
+              <Button variant="outlined" size="small" startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
                 Opening Balance
               </Button>
-              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={openCashBreakdownDialog} sx={toolbarBtn}>
+              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
                 Cash Breakdown
               </Button>
               <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
-                <Button variant="outlined" size="small" startIcon={<SwapHorizIcon />} onClick={() => openGeneralCashDialog('Money In')} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
                   Cash / Cheque
                 </Button>
               </Tooltip>
             </ToolbarSection>
             <ToolbarSection label="Daily expense totals">
-              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={() => openExpenseDialog('FactoryExpense')} sx={toolbarBtn}>
+              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
                 Factory Total
               </Button>
               <Button
                 variant="outlined"
                 size="small"
                 endIcon={<ArrowDropDownIcon />}
-                onClick={(e) => setSelfExpenseMenuAnchor(e.currentTarget)}
+                onClick={(e) => {
+                  if (isViewer) { setAccessDenied(true); return; }
+                  setSelfExpenseMenuAnchor(e.currentTarget);
+                }}
                 sx={toolbarBtn}
               >
                 Self Expense
@@ -2211,10 +2225,10 @@ export default function DailyBook() {
               </Menu>
             </ToolbarSection>
             <ToolbarSection label="Bank (not cash in hand)">
-              <Button variant="outlined" size="small" startIcon={<AccountBalanceIcon />} onClick={openBankTransferDialog} sx={toolbarBtn}>
+              <Button variant="outlined" size="small" startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
                 Bank Transfer
               </Button>
-              <Button variant="outlined" size="small" startIcon={<LocalAtmIcon />} onClick={openAtmDialog} sx={toolbarBtn}>
+              <Button variant="outlined" size="small" startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
                 ATM Withdrawal
               </Button>
             </ToolbarSection>
@@ -2224,27 +2238,27 @@ export default function DailyBook() {
         {mainTab >= 1 && mainTab !== 4 && (
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
             <ToolbarSection label="Party">
-              <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={handleOpenAddParty} sx={toolbarBtn}>
-                Add {getPartyTypeLabel()}
-              </Button>
-              {selectedPartyId && (
-                <>
-                  <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={handleOpenEditParty} sx={toolbarBtn}>
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={() => setPartyDeleteConfirm({ open: true, id: selectedPartyId })}
-                    sx={toolbarBtn}
-                  >
-                    Drop
-                  </Button>
-                </>
-              )}
-            </ToolbarSection>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAddParty)} sx={toolbarBtn}>
+                  Add {getPartyTypeLabel()}
+                </Button>
+                {selectedPartyId && (
+                  <>
+                    <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={requireAdmin(handleOpenEditParty)} sx={toolbarBtn}>
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={requireAdmin(() => setPartyDeleteConfirm({ open: true, id: selectedPartyId }))}
+                      sx={toolbarBtn}
+                    >
+                      Drop
+                    </Button>
+                  </>
+                )}
+              </ToolbarSection>
             {selectedPartyId && (
               <ToolbarSection label="Ledger">
                 <Button
@@ -2262,7 +2276,7 @@ export default function DailyBook() {
                 <Button
                   variant="outlined"
                   size="small"
-                  onClick={() => {
+                  onClick={requireAdmin(() => {
                     setGeneralCashMode(false);
                     setEditingId(null);
                     setForm({
@@ -2279,7 +2293,7 @@ export default function DailyBook() {
                       handledBy: '',
                     });
                     setDialogOpen(true);
-                  }}
+                  })}
                   sx={toolbarBtn}
                 >
                   Add Transaction
@@ -2288,30 +2302,30 @@ export default function DailyBook() {
             )}
             {mainTab === 2 && (
               <ToolbarSection label="Sales & returns">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openLedgerSaleDialog} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
                   Add Sale
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
                   Return Wire
                 </Button>
               </ToolbarSection>
             )}
             {mainTab === 3 && (
               <ToolbarSection label="Stock">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openStockArrivalDialog} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
                   Stock Arrival
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openCoilReturnDialog} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
                   Return Coil
                 </Button>
               </ToolbarSection>
             )}
             {mainTab === 5 && (
               <ToolbarSection label="Processing">
-                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={() => openJobWorkDialog()} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
                   Coil Arrival
                 </Button>
-                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog} sx={toolbarBtn}>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
                   Return Wire
                 </Button>
               </ToolbarSection>
@@ -2321,10 +2335,10 @@ export default function DailyBook() {
 
         {mainTab === 4 && (
           <ToolbarSection label="Annealing">
-            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openAnnealingSendDialog} sx={toolbarBtn}>
+            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
               Send for Annealing
             </Button>
-            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openAnnealingArrivalDialog} sx={toolbarBtn}>
+            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
               Arrival from Annealing
             </Button>
           </ToolbarSection>
@@ -2603,7 +2617,9 @@ export default function DailyBook() {
                   <TableCell>{row.paymentMethod}</TableCell>
                   <TableCell>{row.soldBy}</TableCell>
                   <TableCell align="right">
-                    <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteOrderConfirm({ open: true, id: row._id })}>Delete</Button>
+                    {(
+                      <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row._id }))}>Delete</Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -2643,8 +2659,12 @@ export default function DailyBook() {
                   <TableCell>{row.paymentMethod}</TableCell>
                   <TableCell>{row.description}</TableCell>
                   <TableCell align="right">
-                        <Button size="small" startIcon={<EditIcon />} onClick={() => openEditTransaction(row)} sx={{ mr: 0.5 }}>Edit</Button>
-                    <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteConfirm({ open: true, id: row._id })}>Delete</Button>
+                    {(
+                      <>
+                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditTransaction(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row._id }))}>Delete</Button>
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -2753,8 +2773,8 @@ export default function DailyBook() {
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {canEditTxn ? (
                       <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={() => openEditLedgerEntry(row)} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteConfirm({ open: true, id: row.sourceId })}>Delete</Button>
+                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditLedgerEntry(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
                       </>
                     ) : '—'}
                   </TableCell>
@@ -2836,8 +2856,8 @@ export default function DailyBook() {
                     <TableCell align="right">
                       {!isReadOnlyRow && (
                         <>
-                          <Button size="small" startIcon={<EditIcon />} onClick={() => openEditTransaction(row)} sx={{ mr: 0.5 }}>Edit</Button>
-                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteConfirm({ open: true, id: row._id })}>Delete</Button>
+                          <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditTransaction(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row._id }))}>Delete</Button>
                         </>
                       )}
                     </TableCell>
@@ -2872,8 +2892,8 @@ export default function DailyBook() {
                       key={p.key}
                       color="warning"
                       variant="outlined"
-                      onClick={() => openAnnealingPoolManage(p)}
-                      onDelete={() => openAnnealingPoolManage(p)}
+                      onClick={requireAdmin(() => openAnnealingPoolManage(p))}
+                      onDelete={requireAdmin(() => openAnnealingPoolManage(p))}
                       deleteIcon={<EditIcon />}
                       label={`${p.partyName || 'Own stock'} — ${p.materialType}${p.coilCategory ? ` ${p.coilCategory}` : ''}${p.wireNumber ? ` #${p.wireNumber}` : ''}: ${p.remainingBundles > 0 ? `${p.remainingBundles} bundles / ` : ''}${p.remainingKg.toFixed(2)} kg pending`}
                       sx={{ cursor: 'pointer' }}
@@ -2924,8 +2944,12 @@ export default function DailyBook() {
                     <TableCell align="right">{row.entryType === 'Arrival' ? (row.weightLossKg || 0).toFixed(2) : '—'}</TableCell>
                     <TableCell>{row.notes || '—'}</TableCell>
                     <TableCell align="right">
-                      <Button size="small" startIcon={<EditIcon />} onClick={() => openAnnealingEdit(row)} sx={{ mr: 0.5 }}>Edit</Button>
-                      <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteAnnealingConfirm({ open: true, id: row._id })}>Delete</Button>
+                      {(
+                        <>
+                          <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openAnnealingEdit(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteAnnealingConfirm({ open: true, id: row._id }))}>Delete</Button>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -2973,7 +2997,7 @@ export default function DailyBook() {
                     label={`${pool.customerName}: ${pool.remainingKg.toFixed(1)} kg remaining`}
                     color={pool.remainingKg > 0 ? 'primary' : 'default'}
                     variant={pool.remainingKg > 0 ? 'filled' : 'outlined'}
-                    onClick={() => openJobWorkDeliveryDialog(pool.customerId)}
+                    onClick={requireAdmin(() => openJobWorkDeliveryDialog(pool.customerId))}
                     sx={{ cursor: pool.remainingKg > 0 ? 'pointer' : 'default' }}
                   />
                 ))}
@@ -3021,8 +3045,12 @@ export default function DailyBook() {
                           <Chip size="small" label={row.status} color={statusColor} variant="outlined" />
                         </TableCell>
                         <TableCell align="right">
-                          <Button size="small" startIcon={<EditIcon />} onClick={() => openJobWorkDialog(row)} sx={{ mr: 0.5 }}>Edit</Button>
-                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteJobWorkConfirm({ open: true, id: row._id })}>Delete</Button>
+                          {(
+                            <>
+                              <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openJobWorkDialog(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                              <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteJobWorkConfirm({ open: true, id: row._id }))}>Delete</Button>
+                            </>
+                          )}
                         </TableCell>
                       </TableRow>
                       {displayDeliveries.map((d, idx) => (
@@ -3048,25 +3076,29 @@ export default function DailyBook() {
                               {d.notes && (
                                 <Typography variant="caption" sx={{ mr: 'auto' }}>{d.notes}</Typography>
                               )}
-                              <Button
-                                size="small"
-                                startIcon={<EditIcon />}
-                                onClick={() => openJobWorkDeliveryEdit(row, d)}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                size="small"
-                                color="error"
-                                startIcon={<DeleteIcon />}
-                                onClick={() => setDeleteJobWorkDeliveryConfirm({
-                                  open: true,
-                                  jobWorkId: row._id,
-                                  deliveryId: d._id,
-                                })}
-                              >
-                                Delete
-                              </Button>
+                              {(
+                                <>
+                                  <Button
+                                    size="small"
+                                    startIcon={<EditIcon />}
+                                    onClick={requireAdmin(() => openJobWorkDeliveryEdit(row, d))}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={requireAdmin(() => setDeleteJobWorkDeliveryConfirm({
+                                      open: true,
+                                      jobWorkId: row._id,
+                                      deliveryId: d._id,
+                                    }))}
+                                  >
+                                    Delete
+                                  </Button>
+                                </>
+                              )}
                             </Box>
                           </TableCell>
                         </TableRow>
@@ -4364,49 +4396,49 @@ export default function DailyBook() {
             </Alert>
           )}
           <Box display="flex" gap={1} mb={1.5}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                const pool = annealingPoolDialog.pool;
-                if (!pool) return;
-                setAnnealingEditId(null);
-                setAnnealingEditType(null);
-                setAnnealingArrivalForm({
-                  ...defaultAnnealingArrivalForm,
-                  poolKey: pool.key,
-                  partyType: pool.partyType || 'None',
-                  partyId: pool.partyId || '',
-                  materialType: pool.materialType || 'Coil',
-                  date: entryDate,
-                });
-                setAnnealingArrivalDialogOpen(true);
-              }}
-            >
-              Record Arrival
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                const pool = annealingPoolDialog.pool;
-                setAnnealingEditId(null);
-                setAnnealingEditType(null);
-                setAnnealingSendForm({
-                  ...defaultAnnealingSendForm,
-                  partyType: pool?.partyType || 'None',
-                  partyId: pool?.partyId || '',
-                  materialType: pool?.materialType || 'Coil',
-                  date: entryDate,
-                });
-                setAnnealingSendDialogOpen(true);
-              }}
-            >
-              Add Send
-            </Button>
-          </Box>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={requireAdmin(() => {
+                  const pool = annealingPoolDialog.pool;
+                  if (!pool) return;
+                  setAnnealingEditId(null);
+                  setAnnealingEditType(null);
+                  setAnnealingArrivalForm({
+                    ...defaultAnnealingArrivalForm,
+                    poolKey: pool.key,
+                    partyType: pool.partyType || 'None',
+                    partyId: pool.partyId || '',
+                    materialType: pool.materialType || 'Coil',
+                    date: entryDate,
+                  });
+                  setAnnealingArrivalDialogOpen(true);
+                })}
+              >
+                Record Arrival
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={requireAdmin(() => {
+                  const pool = annealingPoolDialog.pool;
+                  setAnnealingEditId(null);
+                  setAnnealingEditType(null);
+                  setAnnealingSendForm({
+                    ...defaultAnnealingSendForm,
+                    partyType: pool?.partyType || 'None',
+                    partyId: pool?.partyId || '',
+                    materialType: pool?.materialType || 'Coil',
+                    date: entryDate,
+                  });
+                  setAnnealingSendDialogOpen(true);
+                })}
+              >
+                Add Send
+              </Button>
+            </Box>
           {annealingPoolLoading ? (
             <Box display="flex" justifyContent="center" py={3}><CircularProgress size={28} /></Box>
           ) : (
@@ -4440,22 +4472,26 @@ export default function DailyBook() {
                       <TableCell align="right">{row.entryType === 'Arrival' ? (row.finalWeightKg || 0).toFixed(2) : '—'}</TableCell>
                       <TableCell>{row.notes || '—'}</TableCell>
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          startIcon={<EditIcon />}
-                          onClick={() => openAnnealingEdit(row)}
-                          sx={{ mr: 0.5 }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          startIcon={<DeleteIcon />}
-                          onClick={() => setDeleteAnnealingConfirm({ open: true, id: row._id })}
-                        >
-                          Delete
-                        </Button>
+                        {(
+                          <>
+                            <Button
+                              size="small"
+                              startIcon={<EditIcon />}
+                              onClick={requireAdmin(() => openAnnealingEdit(row))}
+                              sx={{ mr: 0.5 }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              startIcon={<DeleteIcon />}
+                              onClick={requireAdmin(() => setDeleteAnnealingConfirm({ open: true, id: row._id }))}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -4785,6 +4821,11 @@ export default function DailyBook() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

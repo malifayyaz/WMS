@@ -8,9 +8,14 @@
  * @param {number} ratePerKg
  * @param {number} amountPaid
  */
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 function orderTotalAndDue(weightKg, ratePerKg, amountPaid = 0) {
-  const total = weightKg * ratePerKg;
-  return { totalAmount: total, amountDue: total - amountPaid };
+  const total = round2((Number(weightKg) || 0) * (Number(ratePerKg) || 0));
+  const paid = Number(amountPaid) || 0;
+  return { totalAmount: total, amountDue: Math.max(0, round2(total - paid)) };
 }
 
 /**

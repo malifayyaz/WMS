@@ -10,6 +10,7 @@ const {
   consumeAnnealingForSaleAuto,
   releaseAnnealingForSale,
 } = require('./annealingController');
+const { logActivity } = require('../utils/activityLogService');
 
 function applyWireFields(body) {
   if (body.wireNumber != null) {
@@ -101,6 +102,15 @@ const createOrder = async (req, res, next) => {
       warnings.push(`Low ${coilCategory} stock: ${stockCheck.availableKg} kg available`);
     }
 
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Order',
+      description: `Created order for ${order.customerName} — Rs.${order.totalAmount}`,
+      documentId: order._id,
+      newValue: order,
+    });
+
     res.status(201).json({
       success: true,
       data: order,
@@ -131,8 +141,17 @@ const getOrders = async (req, res, next) => {
       if (req.query.startDate) filter.orderDate.$gte = new Date(req.query.startDate);
       if (req.query.endDate) filter.orderDate.$lte = new Date(req.query.endDate);
     }
-    const orders = await Order.find(filter).populate('customerId', 'name contactNumber').sort({ orderDate: -1 });
-    res.json({ success: true, data: orders, total: orders.length });
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
+    const [total, orders] = await Promise.all([
+      Order.countDocuments(filter),
+      Order.find(filter)
+        .populate('customerId', 'name contactNumber')
+        .sort({ orderDate: -1 })
+        .limit(limit)
+        .lean(),
+    ]);
+    res.json({ success: true, data: orders, total, truncated: total > orders.length });
   } catch (error) {
     next(error);
   }
@@ -152,6 +171,7 @@ const updateOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, error: 'Order not found', message: 'Order not found' });
+    const previousValue = order.toObject();
     const body = applyWireFields({ ...req.body });
     const weight = body.finalWeightKg ?? order.finalWeightKg ?? order.initialWeightKg;
     const rate = body.ratePerKg ?? order.ratePerKg;
@@ -160,7 +180,20 @@ const updateOrder = async (req, res, next) => {
     body.totalAmount = totalAmount;
     body.amountDue = amountDue;
     const updated = await Order.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true });
+    const customer = await Customer.findById(order.customerId);
+    if (customer?.customerType === 'Daily') {
+      await syncTransactionFromOrder(updated, customer.name || updated.customerName);
+    }
     await recalcCustomerTotals(order.customerId);
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Order',
+      description: `Updated order for ${updated.customerName}`,
+      documentId: updated._id,
+      previousValue,
+      newValue: updated,
+    });
     res.json({ success: true, data: updated, message: 'Order updated successfully' });
   } catch (error) {
     next(error);
@@ -189,6 +222,14 @@ const updateOrderStatus = async (req, res, next) => {
     }
     order.orderStatus = status;
     await order.save();
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Order',
+      description: `Order status → ${status} for ${order.customerName}`,
+      documentId: order._id,
+      newValue: { orderStatus: status },
+    });
     res.json({ success: true, data: order, message: 'Status updated' });
   } catch (error) {
     next(error);
@@ -214,7 +255,18 @@ const updateFinalWeight = async (req, res, next) => {
       order.amountDue = amountDue;
     }
     await order.save();
+    if (customer?.customerType === 'Daily') {
+      await syncTransactionFromOrder(order, customer.name || order.customerName);
+    }
     await recalcCustomerTotals(order.customerId);
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Order',
+      description: `Final weight ${finalWeightKg} kg for ${order.customerName}`,
+      documentId: order._id,
+      newValue: order,
+    });
     res.json({ success: true, data: order, message: 'Final weight updated' });
   } catch (error) {
     next(error);
@@ -234,6 +286,13 @@ const deleteOrder = async (req, res, next) => {
     if (order.customerId) {
       await recalcCustomerTotals(order.customerId);
     }
+    await logActivity({
+      req,
+      action: 'DELETE',
+      module: 'Order',
+      description: `Deleted order for ${order.customerName}`,
+      documentId: order._id,
+    });
     res.json({ success: true, message: 'Order deleted successfully' });
   } catch (error) {
     next(error);
@@ -330,6 +389,15 @@ const createWireReturn = async (req, res, next) => {
     });
 
     await recalcCustomerTotals(body.customerId);
+
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Order',
+      description: `Wire return ${weightKg} kg for ${customer.name}`,
+      documentId: order._id,
+      newValue: order,
+    });
 
     res.status(201).json({
       success: true,

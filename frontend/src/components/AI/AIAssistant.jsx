@@ -42,6 +42,9 @@ import Undo from '@mui/icons-material/Undo';
 import SwapHoriz from '@mui/icons-material/SwapHoriz';
 import QuestionAnswer from '@mui/icons-material/QuestionAnswer';
 import { aiAPI } from '../../services/api';
+import { formatDateTime } from '../../utils/formatters';
+import { usePermissions } from '../../hooks/usePermissions';
+import AccessDeniedSnackbar from '../Common/AccessDeniedSnackbar';
 
 const EXAMPLE_CHIPS = [
   'Add order for Ali Traders',
@@ -132,16 +135,7 @@ function titleFromMessages(messages) {
 }
 
 function formatChatTime(ts) {
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
+  return formatDateTime(ts) || '';
 }
 
 function getInitialState() {
@@ -213,6 +207,8 @@ export default function AIAssistant() {
   const navigate = useNavigate();
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const { isViewer, canUseAgent } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const initial = getInitialState();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState('chat');
@@ -220,7 +216,7 @@ export default function AIAssistant() {
   const [activeChatId, setActiveChatId] = useState(initial.activeChatId);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState('agent'); // "agent" | "read"
+  const [mode, setMode] = useState(canUseAgent ? 'agent' : 'read'); // "agent" | "read"
   const [pendingAction, setPendingAction] = useState(null);
   const [lastSaved, setLastSaved] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -233,6 +229,10 @@ export default function AIAssistant() {
   useEffect(() => {
     if (!activeChat && chats.length) setActiveChatId(chats[0].id);
   }, [activeChat, chats]);
+
+  useEffect(() => {
+    if (!canUseAgent && mode === 'agent') setMode('read');
+  }, [canUseAgent, mode]);
 
   useEffect(() => {
     saveStore(chats, activeChatId);
@@ -640,7 +640,14 @@ export default function AIAssistant() {
             <ToggleButtonGroup
               value={mode}
               exclusive
-              onChange={(e, v) => v && setMode(v)}
+              onChange={(e, v) => {
+                if (!v) return;
+                if (v === 'agent' && isViewer) {
+                  setAccessDenied(true);
+                  return;
+                }
+                setMode(v);
+              }}
               size="small"
               sx={{ mr: 0.5 }}
               aria-label="Assistant mode"
@@ -1052,6 +1059,11 @@ export default function AIAssistant() {
           </DialogActions>
         )}
       </Dialog>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Agent mode is restricted to admins only. You can still ask questions in Ask mode."
+      />
     </>
   );
 }

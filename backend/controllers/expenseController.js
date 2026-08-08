@@ -5,6 +5,7 @@ const { startOfDay, endOfDay } = require('date-fns');
 const { CONSUMPTION_MATERIAL_TYPES, SELF_EXPENSE_GROUP, FACTORY_EXPENSE_GROUPS } = require('../utils/wireConfig');
 const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
 const { applyRelatedBalanceImpact } = require('./transactionController');
+const { logActivity } = require('../utils/activityLogService');
 
 const PROCESS_MATERIAL_GROUP = 'Process Material';
 
@@ -85,6 +86,14 @@ const createExpense = async (req, res, next) => {
   try {
     const body = normalizeExpensePayload(req.body);
     const expense = await Expense.create(body);
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Expense',
+      description: `Recorded expense ${expense.expenseCategory || expense.expenseType || 'Expense'} — Rs.${expense.amount}`,
+      documentId: expense._id,
+      newValue: expense,
+    });
     res.status(201).json({ success: true, data: expense, message: 'Expense recorded' });
   } catch (error) {
     if (error.statusCode === 400) {
@@ -373,6 +382,15 @@ const updateExpense = async (req, res, next) => {
       });
     }
 
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Expense',
+      description: `Updated expense ${expense.expenseCategory || 'Expense'} — Rs.${expense.amount}`,
+      documentId: expense._id,
+      newValue: expense,
+    });
+
     res.json({ success: true, data: expense, message: 'Expense updated' });
   } catch (error) {
     if (error.statusCode === 400) {
@@ -401,6 +419,14 @@ const deleteExpense = async (req, res, next) => {
     }
 
     await Expense.findByIdAndDelete(req.params.id);
+    await logActivity({
+      req,
+      action: 'DELETE',
+      module: 'Expense',
+      description: `Deleted expense ${expense.expenseCategory || 'Expense'} — Rs.${expense.amount}`,
+      documentId: expense._id,
+      previousValue: expense,
+    });
     res.json({ success: true, message: 'Expense deleted' });
   } catch (error) {
     next(error);

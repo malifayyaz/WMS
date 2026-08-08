@@ -22,6 +22,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Typography,
+  TablePagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -30,8 +32,10 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { suppliersAPI } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import ExportButtons from '../components/Common/ExportButtons';
 import LedgerDialog from '../components/Common/LedgerDialog';
+import { usePermissions } from '../hooks/usePermissions';
 
 const supplierExportColumns = [
   { id: 'Name', label: 'Name' },
@@ -67,6 +71,8 @@ const defaultSupplier = {
 };
 
 export default function Suppliers() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -77,6 +83,8 @@ export default function Suppliers() {
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [ledgerSupplier, setLedgerSupplier] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const fetchList = async () => {
     setLoading(true);
@@ -91,7 +99,11 @@ export default function Suppliers() {
   };
 
   useEffect(() => {
-    fetchList();
+    setPage(0);
+    const timer = setTimeout(() => {
+      fetchList();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const handleOpenAdd = () => {
@@ -174,7 +186,16 @@ export default function Suppliers() {
               title="Suppliers List"
             />
           )}
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAdd}>Add Supplier</Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              if (isViewer) { setAccessDenied(true); return; }
+              handleOpenAdd();
+            }}
+          >
+            Add Supplier
+          </Button>
         </Box>
       </Box>
       {loading ? (
@@ -194,7 +215,14 @@ export default function Suppliers() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.map((row) => (
+              {list.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No suppliers found.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{row.name}</TableCell>
                   <TableCell>{row.contactNumber}</TableCell>
@@ -204,13 +232,39 @@ export default function Suppliers() {
                   <TableCell align="right">{formatCurrency(row.totalAmountDue)}</TableCell>
                   <TableCell align="right">
                     <IconButton size="small" onClick={() => handleOpenLedger(row)} title="View Ledger"><MenuBookIcon /></IconButton>
-                    <IconButton size="small" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        handleOpenEdit(row);
+                      }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        setDeleteConfirm({ open: true, id: row._id });
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
         </TableContainer>
       )}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -275,6 +329,11 @@ export default function Suppliers() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

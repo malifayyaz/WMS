@@ -9,19 +9,22 @@ export function formatCurrency(amount) {
 }
 
 /**
- * Display date as DD/MM/YYYY
+ * Display date as DD/MM/YYYY (local timezone; date-only strings keep calendar day).
  */
 export function formatDate(date) {
   if (!date) return '';
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+    const [y, m, d] = date.slice(0, 10).split('-');
+    return `${d}/${m}/${y}`;
+  }
   const d = typeof date === 'string' ? parseISO(date) : date;
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const year = d.getUTCFullYear();
-  return `${day}/${month}/${year}`;
+  if (Number.isNaN(d?.getTime?.())) return '';
+  return format(d, 'dd/MM/yyyy');
 }
 
 export function formatDateTime(date) {
   if (!date) return '';
   const d = typeof date === 'string' ? parseISO(date) : date;
+  if (Number.isNaN(d?.getTime?.())) return '';
   return format(d, 'dd/MM/yyyy HH:mm');
 }

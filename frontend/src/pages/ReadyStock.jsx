@@ -3,16 +3,21 @@ import {
   Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, TextField, Typography, Card, CardContent, Grid, IconButton,
+  TablePagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { readyStockAPI, configAPI } from '../services/api';
 import { formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const defaultCoilCategoryForWire = (wireNumber) => (Number(wireNumber) === 20 ? 'Patri Coil' : 'Shiplet Coil');
 
 export default function ReadyStock() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [summary, setSummary] = useState([]);
   const [list, setList] = useState([]);
   const [wires, setWires] = useState([]);
@@ -21,6 +26,8 @@ export default function ReadyStock() {
   const [form, setForm] = useState({ wireNumber: '', coilCategory: '', weightKg: '', notes: '', productionDate: new Date().toISOString().slice(0, 10) });
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const fetchData = async () => {
     setLoading(true);
@@ -55,6 +62,13 @@ export default function ReadyStock() {
         source: 'Direct Production',
       });
       setSnack({ open: true, message: 'Production added to ready stock', severity: 'success' });
+      setForm({
+        wireNumber: '',
+        coilCategory: '',
+        weightKg: '',
+        notes: '',
+        productionDate: new Date().toISOString().slice(0, 10),
+      });
       setDialogOpen(false);
       fetchData();
     } catch (err) {
@@ -97,10 +111,23 @@ export default function ReadyStock() {
       </Grid>
 
       <Box display="flex" justifyContent="flex-end" mb={2}>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>Add Production</Button>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            if (isViewer) { setAccessDenied(true); return; }
+            setDialogOpen(true);
+          }}
+        >
+          Add Production
+        </Button>
       </Box>
 
-      {loading ? <CircularProgress /> : (
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight={240} p={4}>
+          <CircularProgress />
+        </Box>
+      ) : (
         <TableContainer component={Paper}>
           <Table size="small">
             <TableHead>
@@ -115,7 +142,14 @@ export default function ReadyStock() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.map((row) => (
+              {list.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No ready stock records found.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{formatDate(row.productionDate)}</TableCell>
                   <TableCell>{row.wireLabel}</TableCell>
@@ -124,12 +158,30 @@ export default function ReadyStock() {
                   <TableCell>{row.source}</TableCell>
                   <TableCell>{row.notes}</TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        setDeleteConfirm({ open: true, id: row._id });
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
         </TableContainer>
       )}
 
@@ -174,6 +226,11 @@ export default function ReadyStock() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

@@ -8,21 +8,25 @@ const {
   getWiresForCoilCategory,
 } = require('../utils/wireConfig');
 
-const getWireConfig = async (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      wires: WIRE_DEFINITIONS,
-      coilCategories: [
-        { name: COIL_CATEGORIES.SHIPLET, wires: getWiresForCoilCategory(COIL_CATEGORIES.SHIPLET).map((w) => w.number) },
-        { name: COIL_CATEGORIES.PATRI, wires: getWiresForCoilCategory(COIL_CATEGORIES.PATRI).map((w) => w.number) },
-      ],
-      consumptionMaterialTypes: CONSUMPTION_MATERIAL_TYPES,
-      rentalRoutes: RENTAL_ROUTES,
-      expenseCategoryTree: EXPENSE_CATEGORY_TREE,
-      expenseCategories: EXPENSE_CATEGORIES,
-    },
-  });
+const getWireConfig = async (req, res, next) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        wires: WIRE_DEFINITIONS,
+        coilCategories: [
+          { name: COIL_CATEGORIES.SHIPLET, wires: getWiresForCoilCategory(COIL_CATEGORIES.SHIPLET).map((w) => w.number) },
+          { name: COIL_CATEGORIES.PATRI, wires: getWiresForCoilCategory(COIL_CATEGORIES.PATRI).map((w) => w.number) },
+        ],
+        consumptionMaterialTypes: CONSUMPTION_MATERIAL_TYPES,
+        rentalRoutes: RENTAL_ROUTES,
+        expenseCategoryTree: EXPENSE_CATEGORY_TREE,
+        expenseCategories: EXPENSE_CATEGORIES,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = { getWireConfig };

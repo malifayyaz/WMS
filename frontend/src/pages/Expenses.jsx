@@ -14,6 +14,8 @@ import { expensesAPI, configAPI, consumptionAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const PROCESS_MATERIAL_GROUP = 'Process Material';
@@ -57,6 +59,8 @@ const defaultForm = {
 };
 
 export default function Expenses() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const monthDefaults = useMemo(() => currentMonthRange(), []);
   const [rawList, setRawList] = useState([]);
   const [listTruncated, setListTruncated] = useState(false);
@@ -411,9 +415,27 @@ export default function Expenses() {
           </FormControl>
           <Button variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={exportPdf}>Export PDF</Button>
           {isProcessMaterialTab ? (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => openProcessDialog()}>Add Process Material</Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                if (isViewer) { setAccessDenied(true); return; }
+                openProcessDialog();
+              }}
+            >
+              Add Process Material
+            </Button>
           ) : (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAdd}>Add Expense</Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                if (isViewer) { setAccessDenied(true); return; }
+                handleOpenAdd();
+              }}
+            >
+              Add Expense
+            </Button>
           )}
         </Box>
       </Box>
@@ -598,13 +620,47 @@ export default function Expenses() {
                   <TableCell align="right">
                     {row.isProcessPurchase ? (
                       <>
-                        <IconButton size="small" onClick={() => openProcessDialog(row)}><EditIcon /></IconButton>
-                        <IconButton size="small" color="error" onClick={() => setProcessDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            if (isViewer) { setAccessDenied(true); return; }
+                            openProcessDialog(row);
+                          }}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => {
+                            if (isViewer) { setAccessDenied(true); return; }
+                            setProcessDeleteConfirm({ open: true, id: row._id });
+                          }}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
                       </>
                     ) : (
                       <>
-                        <IconButton size="small" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                        <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            if (isViewer) { setAccessDenied(true); return; }
+                            handleOpenEdit(row);
+                          }}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => {
+                            if (isViewer) { setAccessDenied(true); return; }
+                            setDeleteConfirm({ open: true, id: row._id });
+                          }}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
                       </>
                     )}
                   </TableCell>
@@ -833,6 +889,11 @@ export default function Expenses() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

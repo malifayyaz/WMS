@@ -142,16 +142,74 @@ async function getCashBookForDate(targetDate) {
 }
 
 /**
- * Cash book rows for a date range (for summary table).
+ * Cash book rows for a date range (single walk — not N× full walks).
  */
 async function getCashBookRange(startDate, endDate) {
   const start = normalizeDate(startDate);
   const end = normalizeDate(endDate);
-  const rows = [];
 
-  for (let d = start; !isAfter(d, end); d = addDays(d, 1)) {
-    const day = await getCashBookForDate(d);
-    rows.push(day);
+  const [firstManual, firstTx, firstExpense] = await Promise.all([
+    DailyCashOpening.findOne().sort({ bookDate: 1 }),
+    Transaction.findOne().sort({ transactionDate: 1 }),
+    Expense.findOne().sort({ expenseDate: 1 }),
+  ]);
+
+  let anchor = start;
+  if (firstManual?.bookDate && normalizeDate(firstManual.bookDate) < anchor) {
+    anchor = normalizeDate(firstManual.bookDate);
+  }
+  if (firstTx?.transactionDate && normalizeDate(firstTx.transactionDate) < anchor) {
+    anchor = normalizeDate(firstTx.transactionDate);
+  }
+  if (firstExpense?.expenseDate && normalizeDate(firstExpense.expenseDate) < anchor) {
+    anchor = normalizeDate(firstExpense.expenseDate);
+  }
+
+  const [manuals, allTxs, allExpenses, allMaterials] = await Promise.all([
+    DailyCashOpening.find({ bookDate: { $gte: anchor, $lte: end } }),
+    Transaction.find({
+      transactionDate: { $gte: anchor, $lte: endOfDay(end) },
+      sourceType: { $nin: ['Expense', 'ConsumptionMaterial'] },
+    }).sort({ transactionDate: 1 }),
+    Expense.find({ expenseDate: { $gte: anchor, $lte: endOfDay(end) } }),
+    ConsumptionMaterial.find({ purchaseDate: { $gte: anchor, $lte: endOfDay(end) } }),
+  ]);
+  const manualMap = new Map(manuals.map((m) => [dayKey(m.bookDate), m]));
+
+  const rows = [];
+  let runningClosing = 0;
+
+  for (let d = anchor; !isAfter(d, end); d = addDays(d, 1)) {
+    const manual = manualMap.get(dayKey(d));
+    let opening;
+    let openingSource;
+
+    if (manual) {
+      opening = manual.openingBalance;
+      openingSource = 'manual';
+    } else if (dayKey(d) === dayKey(anchor)) {
+      opening = 0;
+      openingSource = 'auto';
+    } else {
+      opening = runningClosing;
+      openingSource = 'auto';
+    }
+
+    const dayResult = buildDayResult(
+      d,
+      manual,
+      opening,
+      openingSource,
+      filterForDay(allTxs, d, 'transactionDate'),
+      filterForDay(allExpenses, d, 'expenseDate'),
+      filterForDay(allMaterials, d, 'purchaseDate')
+    );
+
+    runningClosing = dayResult.closingBalance;
+
+    if (!isAfter(start, d) && !isAfter(d, end)) {
+      rows.push(dayResult);
+    }
   }
 
   return rows;

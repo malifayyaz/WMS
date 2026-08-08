@@ -27,6 +27,7 @@ const {
   recalcSupplierTotals,
   SELF_EXPENSE_GROUP,
 } = require('../utils/transactionSyncService');
+const { logActivity } = require('../utils/activityLogService');
 
 let phantomCleanupDone = false;
 
@@ -51,6 +52,14 @@ const createTransaction = async (req, res, next) => {
     const body = { ...req.body };
     if (['FactoryExpense', 'SelfExpense'].includes(body.entryKind)) {
       const expense = await createDailyBookExpenseTotal(body);
+      await logActivity({
+        req,
+        action: 'CREATE',
+        module: 'Transaction',
+        description: `Daily expense total Rs.${expense.amount || body.amount} — ${expense.expenseCategory || body.expenseCategory || 'Expense'}`,
+        documentId: expense._id,
+        newValue: expense,
+      });
       return res.status(201).json({ success: true, data: expense, message: 'Daily expense total recorded' });
     }
     // ATM cash withdrawal: deduct bank; add to cash in hand or record as expense
@@ -124,6 +133,14 @@ const createTransaction = async (req, res, next) => {
       }
 
       const data = await Transaction.findById(bankTxn._id);
+      await logActivity({
+        req,
+        action: 'CREATE',
+        module: 'Transaction',
+        description: `${data.transactionType} Rs.${data.amount} — ${data.relatedName}`,
+        documentId: data._id,
+        newValue: data,
+      });
       return res.status(201).json({ success: true, data, message });
     }
     if (['Customer', 'Supplier'].includes(body.relatedTo) && !body.relatedId) {
@@ -178,6 +195,14 @@ const createTransaction = async (req, res, next) => {
     }
 
     const data = await Transaction.findById(transaction._id);
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Transaction',
+      description: `${data.transactionType} Rs.${data.amount} — ${data.relatedName}`,
+      documentId: data._id,
+      newValue: data,
+    });
     res.status(201).json({ success: true, data, message });
   } catch (error) {
     next(error);
@@ -215,8 +240,13 @@ const getTransactions = async (req, res, next) => {
     if (req.query.type) filter.transactionType = req.query.type;
     if (req.query.relatedTo) filter.relatedTo = req.query.relatedTo;
     if (req.query.relatedId) filter.relatedId = req.query.relatedId;
-    const list = await Transaction.find(filter).sort({ transactionDate: -1 });
-    res.json({ success: true, data: list, total: list.length });
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
+    const [total, list] = await Promise.all([
+      Transaction.countDocuments(filter),
+      Transaction.find(filter).sort({ transactionDate: -1 }).limit(limit).lean(),
+    ]);
+    res.json({ success: true, data: list, total, truncated: total > list.length });
   } catch (error) {
     next(error);
   }

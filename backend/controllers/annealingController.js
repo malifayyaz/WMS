@@ -202,6 +202,7 @@ function round3(n) {
 const createSend = async (req, res, next) => {
   try {
     await migrateLegacyRecords();
+    await ensureSoldBackfillOnce();
     const body = req.body;
     const party = await resolveParty(body.partyType || 'None', body.partyId);
     const bundles = Number(body.bundles) || 0;
@@ -263,6 +264,7 @@ const createSend = async (req, res, next) => {
 const createArrival = async (req, res, next) => {
   try {
     await migrateLegacyRecords();
+    await ensureSoldBackfillOnce();
     const body = req.body;
     const autoAllocateAcrossParties = body.autoAllocateAcrossParties === true;
     const party = autoAllocateAcrossParties
@@ -507,6 +509,18 @@ const getAnnealingRecords = async (req, res, next) => {
 };
 
 /** Pool summary: remaining bundles/weight per party + material type. */
+let soldBackfillDone = false;
+async function ensureSoldBackfillOnce() {
+  if (soldBackfillDone) return;
+  soldBackfillDone = true;
+  try {
+    await backfillSoldFromLinkedOrders();
+  } catch (err) {
+    soldBackfillDone = false;
+    console.error('[Annealing] Sold backfill error:', err.message);
+  }
+}
+
 async function backfillSoldFromLinkedOrders() {
   const Order = require('../models/Order');
   const sends = await AnnealingRecord.find({
@@ -545,8 +559,8 @@ async function backfillSoldFromLinkedOrders() {
 
 const getAnnealingSummary = async (req, res, next) => {
   try {
+    // Read-only: do not mutate on GET. Legacy migration / sold backfill run once at process start elsewhere if needed.
     await migrateLegacyRecords();
-    await backfillSoldFromLinkedOrders();
     const filter = {};
     if (req.query.partyId) filter.partyId = req.query.partyId;
     if (req.query.supplierId) filter.partyId = req.query.supplierId;
@@ -592,8 +606,17 @@ const updateAnnealing = async (req, res, next) => {
 
 const deleteAnnealing = async (req, res, next) => {
   try {
-    const doc = await AnnealingRecord.findByIdAndDelete(req.params.id);
+    const doc = await AnnealingRecord.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Remove Patri factory stock created when this Arrival was recorded
+    if (doc.entryType === 'Arrival') {
+      await RawMaterial.deleteMany({
+        notes: new RegExp(`From annealing arrival ${doc._id}`),
+      });
+    }
+
+    await AnnealingRecord.findByIdAndDelete(doc._id);
     res.json({ success: true, message: 'Annealing entry deleted' });
   } catch (error) {
     next(error);

@@ -61,7 +61,10 @@ async function restoreStockByCategory(coilCategory, weightKg) {
 }
 
 async function getCategoryStockSummary(coilCategory) {
-  const match = categoryMatchFilter(coilCategory);
+  const match = {
+    ...categoryMatchFilter(coilCategory),
+    isReturn: { $ne: true },
+  };
   const result = await RawMaterial.aggregate([
     { $match: match },
     { $group: { _id: null, totalStock: { $sum: '$currentStock' } } },

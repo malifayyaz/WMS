@@ -13,7 +13,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -181,6 +182,20 @@ export const workersAPI = {
   createEntry: (id, data) => api.post(`/workers/${id}/entries`, data),
   updateEntry: (id, entryId, data) => api.put(`/workers/${id}/entries/${entryId}`, data),
   deleteEntry: (id, entryId) => api.delete(`/workers/${id}/entries/${entryId}`),
+};
+
+export const usersAPI = {
+  getAll: () => api.get('/users'),
+  getStats: () => api.get('/users/stats'),
+  create: (data) => api.post('/users', data),
+  update: (id, data) => api.put(`/users/${id}`, data),
+  resetPassword: (id, data) => api.put(`/users/${id}/reset-password`, data),
+  deactivate: (id) => api.delete(`/users/${id}`),
+};
+
+export const activityAPI = {
+  getLogs: (params) => api.get('/activity-logs', { params }),
+  getStats: () => api.get('/activity-logs/stats'),
 };
 
 export const aiAPI = {

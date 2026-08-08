@@ -57,6 +57,17 @@ async function undoAction(model, id, extra = {}) {
           await Expense.findByIdAndDelete(transaction.linkedExpenseId);
         }
 
+        // ATM cash-in-hand pairs: delete the linked cash Money In as well
+        if (transaction.linkedTransactionId) {
+          const linked = await Transaction.findById(transaction.linkedTransactionId);
+          if (linked) {
+            if (linked.linkedExpenseId) {
+              await Expense.findByIdAndDelete(linked.linkedExpenseId);
+            }
+            await Transaction.findByIdAndDelete(linked._id);
+          }
+        }
+
         await Transaction.findByIdAndDelete(transaction._id);
 
         if (relatedTo === "Customer" && relatedId) {
@@ -161,6 +172,10 @@ async function undoAction(model, id, extra = {}) {
         if (!entry) return { success: false, message: "Worker payment not found" };
 
         if (entry.expenseId) {
+          const expense = await Expense.findById(entry.expenseId);
+          if (expense?.bankTransactionId) {
+            await Transaction.findByIdAndDelete(expense.bankTransactionId);
+          }
           await Expense.findByIdAndDelete(entry.expenseId);
         }
         await WorkerLedgerEntry.findByIdAndDelete(entry._id);

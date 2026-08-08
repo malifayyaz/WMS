@@ -17,6 +17,7 @@ import Refresh from '@mui/icons-material/Refresh';
 import StatCards from '../components/Dashboard/StatCards';
 import DashboardCharts from '../components/Dashboard/DashboardCharts';
 import { dashboardAPI, aiAPI } from '../services/api';
+import { formatCurrency } from '../utils/formatters';
 
 function localDateKey(d = new Date()) {
   const y = d.getFullYear();
@@ -39,21 +40,10 @@ export default function Dashboard() {
   const [aiSummary, setAiSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryDate, setSummaryDate] = useState(localDateKey());
+  const [profitTrend, setProfitTrend] = useState(null);
 
   const todayKey = localDateKey();
   const isToday = summaryDate === todayKey;
-
-  const fetchDailySummary = async (date = summaryDate) => {
-    setSummaryLoading(true);
-    try {
-      const response = await aiAPI.getDailySummary(date);
-      setAiSummary(response.data.data);
-    } catch {
-      setAiSummary(null);
-    } finally {
-      setSummaryLoading(false);
-    }
-  };
 
   useEffect(() => {
     let mounted = true;
@@ -71,14 +61,31 @@ export default function Dashboard() {
     return () => { mounted = false; };
   }, [summaryDate]);
 
+  const refreshDailySummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const response = await aiAPI.getDailySummary(summaryDate);
+      setAiSummary(response.data.data);
+    } catch {
+      setAiSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [sRes, cRes] = await Promise.all([dashboardAPI.getStats(), dashboardAPI.getCharts()]);
+        const [sRes, cRes, pRes] = await Promise.all([
+          dashboardAPI.getStats(),
+          dashboardAPI.getCharts(),
+          aiAPI.predictProfit().catch(() => null),
+        ]);
         if (mounted) {
           setStats(sRes.data.data);
           setCharts(cRes.data.data);
+          if (pRes?.data?.data) setProfitTrend(pRes.data.data);
         }
       } catch (err) {
         if (mounted) setSnack({ open: true, message: err.response?.data?.message || 'Failed to load dashboard', severity: 'error' });
@@ -153,7 +160,7 @@ export default function Dashboard() {
               <Tooltip title="Refresh">
                 <IconButton
                   size="small"
-                  onClick={() => fetchDailySummary(summaryDate)}
+                  onClick={() => refreshDailySummary()}
                   disabled={summaryLoading}
                 >
                   <Refresh fontSize="small" />
@@ -185,6 +192,20 @@ export default function Dashboard() {
       <Typography variant="h6" gutterBottom>Overview</Typography>
       <StatCards stats={stats} />
       <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>Charts</Typography>
+      {profitTrend && (
+        <Alert
+          severity={(profitTrend.change || 0) >= 0 ? 'success' : 'warning'}
+          sx={{ mb: 2 }}
+        >
+          Month-over-month net profit ({profitTrend.trend || 'flat'}): current{' '}
+          {formatCurrency(profitTrend.currentMonth?.finalNetProfit)}
+          {' vs '}
+          previous {formatCurrency(profitTrend.previousMonth?.finalNetProfit)}
+          {' '}
+          ({(profitTrend.change || 0) >= 0 ? '+' : '−'}{formatCurrency(Math.abs(profitTrend.change || 0))}).
+          {profitTrend.note ? ` ${profitTrend.note}` : ''}
+        </Alert>
+      )}
       <Box sx={{ mt: 2 }}>
         <DashboardCharts charts={charts} />
       </Box>

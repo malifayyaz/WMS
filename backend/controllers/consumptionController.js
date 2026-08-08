@@ -133,7 +133,7 @@ const createMaterial = async (req, res, next) => {
 
     body.totalCost = costs.totalCost;
 
-    body.currentQuantity = 0;
+    body.currentQuantity = quantity;
 
 
 
@@ -217,7 +217,7 @@ const updateMaterial = async (req, res, next) => {
 
         totalCost: costs.totalCost,
 
-        currentQuantity: 0,
+        currentQuantity: quantity,
 
         purchaseDate: body.purchaseDate || existing.purchaseDate,
 
@@ -303,7 +303,35 @@ const getMaterialStock = async (req, res, next) => {
 
     const summary = await ConsumptionMaterial.aggregate([
 
-      { $group: { _id: '$materialType', totalQuantity: { $sum: '$currentQuantity' }, totalValue: { $sum: { $multiply: ['$currentQuantity', '$costPerUnit'] } } } },
+      {
+
+        $group: {
+
+          _id: '$materialType',
+
+          totalQuantity: { $sum: { $ifNull: ['$currentQuantity', '$quantity'] } },
+
+          purchasedQuantity: { $sum: '$quantity' },
+
+          totalValue: {
+
+            $sum: {
+
+              $multiply: [
+
+                { $ifNull: ['$currentQuantity', '$quantity'] },
+
+                { $ifNull: ['$costPerUnit', 0] },
+
+              ],
+
+            },
+
+          },
+
+        },
+
+      },
 
     ]);
 

@@ -18,7 +18,13 @@ const authMiddleware = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ success: false, error: 'Unauthorized', message: 'User not found' });
     }
-    req.user = user;
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated. Contact admin.',
+      });
+    }
+    req.user = user; // attach full user object including role
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {

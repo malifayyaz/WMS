@@ -1,7 +1,10 @@
 const Customer = require('../models/Customer');
 const Order = require('../models/Order');
+const Transaction = require('../models/Transaction');
 const { buildScopedLedger, applyOpeningBalanceToTotals } = require('../utils/ledgerService');
 const { handleCustomerLinkOnSave, unlinkCustomer } = require('../utils/partyLinkService');
+const { logActivity } = require('../utils/activityLogService');
+const { recalcCustomerTotals } = require('../utils/transactionSyncService');
 
 function withOpeningBalance(body) {
   const data = { ...body };
@@ -39,6 +42,14 @@ const createCustomer = async (req, res, next) => {
       linkedSupplierId,
       unlinkSupplier,
       companyName,
+    });
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Customer',
+      description: `Created customer ${customer.name}`,
+      documentId: customer._id,
+      newValue: customer,
     });
     res.status(201).json({ success: true, data: customer, message: 'Customer created successfully' });
   } catch (error) {
@@ -115,6 +126,7 @@ const updateCustomer = async (req, res, next) => {
       body.totalAmountDue = 0;
     }
 
+    const previousValue = existing.toObject();
     const { alsoSupplier, linkedSupplierId, unlinkSupplier, companyName, ...updateBody } = body;
     let customer = await Customer.findByIdAndUpdate(req.params.id, updateBody, { new: true, runValidators: true });
     customer = await handleCustomerLinkOnSave(customer, {
@@ -122,6 +134,15 @@ const updateCustomer = async (req, res, next) => {
       linkedSupplierId,
       unlinkSupplier,
       companyName,
+    });
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Customer',
+      description: `Updated customer ${customer.name}`,
+      documentId: customer._id,
+      previousValue,
+      newValue: customer,
     });
     res.json({ success: true, data: customer, message: 'Customer updated successfully' });
   } catch (error) {
@@ -161,6 +182,14 @@ const deleteCustomer = async (req, res, next) => {
 
     await unlinkCustomer(customer._id);
     await Customer.findByIdAndDelete(req.params.id);
+    await logActivity({
+      req,
+      action: 'DELETE',
+      module: 'Customer',
+      description: `Deleted customer ${customer.name}`,
+      documentId: customer._id,
+      previousValue: customer,
+    });
     res.json({ success: true, message: 'Customer deleted successfully' });
   } catch (error) {
     next(error);
@@ -180,41 +209,115 @@ const getCustomerOrders = async (req, res, next) => {
 };
 
 /**
- * Get payment history for a customer.
+ * Record a payment from customer.
+ * Creates a Daily Book Money In transaction and recalculates totals.
+ * When orderId is set, also updates that order's amountPaid (ledger uses order paid;
+ * the Manual txn with orderId is skipped in ledger to avoid double-count).
  */
-const getCustomerPaymentHistory = async (req, res, next) => {
+const addCustomerPayment = async (req, res, next) => {
   try {
-    const customer = await Customer.findById(req.params.id).select('paymentHistory');
-    if (!customer) return res.status(404).json({ success: false, error: 'Customer not found', message: 'Customer not found' });
-    res.json({ success: true, data: customer.paymentHistory || [] });
+    const { amount, paymentMethod, receivedBy, orderId, note, transactionDate } = req.body;
+    const paid = Number(amount);
+    if (!paid || paid <= 0) {
+      return res.status(400).json({ success: false, error: 'Amount required', message: 'Please provide a valid amount' });
+    }
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found', message: 'Customer not found' });
+    }
+
+    const method = paymentMethod || 'Cash';
+    const txnDate = transactionDate ? new Date(transactionDate) : new Date();
+
+    const transaction = await Transaction.create({
+      transactionType: 'Money In',
+      amount: paid,
+      paymentMethod: method,
+      relatedTo: 'Customer',
+      relatedId: customer._id,
+      relatedName: customer.name,
+      description: note || 'Payment received',
+      handledBy: receivedBy || '',
+      orderId: orderId || undefined,
+      sourceType: 'Manual',
+      transactionDate: txnDate,
+    });
+
+    if (orderId) {
+      const order = await Order.findById(orderId);
+      if (order) {
+        order.amountPaid = (order.amountPaid || 0) + paid;
+        order.amountDue = Math.max(0, (order.totalAmount || 0) - (order.amountPaid || 0));
+        if (!order.paymentMethod) order.paymentMethod = method;
+        await order.save();
+      }
+    }
+
+    await recalcCustomerTotals(customer._id);
+    const refreshed = await Customer.findById(customer._id);
+
+    await logActivity({
+      req,
+      action: 'CREATE',
+      module: 'Transaction',
+      description: `Customer payment Rs.${paid} from ${customer.name}`,
+      documentId: transaction._id,
+      newValue: transaction,
+    });
+
+    res.json({
+      success: true,
+      data: refreshed,
+      transaction,
+      message: 'Payment recorded successfully',
+    });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Record a payment from customer. Updates customer totals and adds to paymentHistory.
+ * Get payment history for a customer (legacy paymentHistory + Manual Money In txs).
  */
-const addCustomerPayment = async (req, res, next) => {
+const getCustomerPaymentHistory = async (req, res, next) => {
   try {
-    const { amount, paymentMethod, receivedBy, orderId, note } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ success: false, error: 'Amount required', message: 'Please provide a valid amount' });
-    const customer = await Customer.findById(req.params.id);
-    if (!customer) return res.status(404).json({ success: false, error: 'Customer not found', message: 'Customer not found' });
-    customer.paymentHistory.push({ date: new Date(), amount, paymentMethod, receivedBy, orderId, note });
-    customer.totalAmountPaid = (customer.totalAmountPaid || 0) + amount;
-    customer.totalAmountDue = (customer.totalAmountDue || 0) - amount;
-    if (customer.totalAmountDue < 0) customer.totalAmountDue = 0;
-    await customer.save();
-    if (orderId) {
-      await Order.findByIdAndUpdate(orderId, { $inc: { amountPaid: amount } });
-      const order = await Order.findById(orderId);
-      if (order) {
-        order.amountDue = (order.totalAmount || 0) - (order.amountPaid || 0);
-        await order.save();
-      }
+    const customer = await Customer.findById(req.params.id).select('paymentHistory name');
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found', message: 'Customer not found' });
     }
-    res.json({ success: true, data: customer, message: 'Payment recorded successfully' });
+
+    const txs = await Transaction.find({
+      relatedTo: 'Customer',
+      relatedId: customer._id,
+      transactionType: 'Money In',
+      sourceType: { $nin: ['Order'] },
+    })
+      .sort({ transactionDate: -1 })
+      .lean();
+
+    const fromTxs = txs.map((t) => ({
+      date: t.transactionDate,
+      amount: t.amount,
+      paymentMethod: t.paymentMethod,
+      receivedBy: t.handledBy || '',
+      orderId: t.orderId,
+      note: t.description || '',
+      source: 'Daily Book',
+      transactionId: t._id,
+    }));
+
+    const fromLegacy = (customer.paymentHistory || []).map((p) => ({
+      date: p.date,
+      amount: p.amount,
+      paymentMethod: p.paymentMethod,
+      receivedBy: p.receivedBy || '',
+      orderId: p.orderId,
+      note: p.note || '',
+      source: 'Legacy',
+    }));
+
+    const merged = [...fromTxs, ...fromLegacy].sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json({ success: true, data: merged });
   } catch (error) {
     next(error);
   }

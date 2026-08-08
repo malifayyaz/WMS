@@ -308,8 +308,8 @@ export default function LedgerDialog({
             >
               {isDaily ? (
                 <>
-                  <Typography variant="body2">Purchased: <strong>{formatCurrency(ledger.summary.totalPurchased)}</strong></Typography>
-                  <Typography variant="body2">Weight: <strong>{ledger.summary.totalWeight?.toFixed(2)} kg</strong></Typography>
+                  <Typography variant="body2">Purchased: <strong>{formatCurrency(ledger.summary?.totalPurchased || 0)}</strong></Typography>
+                  <Typography variant="body2">Weight: <strong>{(ledger.summary?.totalWeight || 0).toFixed(2)} kg</strong></Typography>
                 </>
               ) : isCombined && settlement ? (
                 <>
@@ -326,13 +326,13 @@ export default function LedgerDialog({
                     </Typography>
                   </Typography>
                   <Typography variant="body2">
-                    Combined Credit: <strong>{formatCurrency(ledger.summary.totalCredit)}</strong>
+                    Combined Credit: <strong>{formatCurrency(ledger.summary?.totalCredit || 0)}</strong>
                   </Typography>
                   <Typography variant="body2">
-                    Combined Debit: <strong>{formatCurrency(ledger.summary.totalDebit)}</strong>
+                    Combined Debit: <strong>{formatCurrency(ledger.summary?.totalDebit || 0)}</strong>
                   </Typography>
                   <Typography variant="body2">
-                    Final net: <strong>{formatCurrency(settlement.netAmount || 0)}</strong>
+                    Final net: <strong>{formatCurrency(settlement.netAmount ?? settlement.netBalance ?? 0)}</strong>
                     <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
                       {settlement.status}
                     </Typography>
@@ -340,16 +340,16 @@ export default function LedgerDialog({
                 </>
               ) : (
                 <>
-                  <Typography variant="body2">Credit: <strong>{formatCurrency(ledger.summary.totalCredit)}</strong></Typography>
-                  <Typography variant="body2">Debit: <strong>{formatCurrency(ledger.summary.totalDebit)}</strong></Typography>
+                  <Typography variant="body2">Credit: <strong>{formatCurrency(ledger.summary?.totalCredit || 0)}</strong></Typography>
+                  <Typography variant="body2">Debit: <strong>{formatCurrency(ledger.summary?.totalDebit || 0)}</strong></Typography>
                   <Typography variant="body2">
-                    Balance: <strong>{formatCurrency(Math.abs(ledger.summary.balance))}</strong>
+                    Balance: <strong>{formatCurrency(Math.abs(ledger.summary?.balance || 0))}</strong>
                     <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
-                      {balanceLabel(ledger.summary.balance)}
+                      {balanceLabel(ledger.summary?.balance || 0)}
                     </Typography>
                   </Typography>
-                  {ledger.summary.totalWeight > 0 && (
-                    <Typography variant="body2">Weight: <strong>{ledger.summary.totalWeight?.toFixed(2)} kg</strong></Typography>
+                  {(ledger.summary?.totalWeight || 0) > 0 && (
+                    <Typography variant="body2">Weight: <strong>{ledger.summary.totalWeight.toFixed(2)} kg</strong></Typography>
                   )}
                 </>
               )}

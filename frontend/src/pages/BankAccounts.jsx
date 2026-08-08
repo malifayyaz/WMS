@@ -15,6 +15,8 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { transactionsAPI, customersAPI, suppliersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
+import { usePermissions } from '../hooks/usePermissions';
 
 const BANK_ACCOUNTS = ['MBL', 'UBL', 'Faisal Bank', 'Other'];
 
@@ -57,6 +59,8 @@ function accountDisplayName(bankAccount, otherName) {
 }
 
 export default function BankAccounts() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [tab, setTab] = useState(0);
   const [persons, setPersons] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -104,12 +108,14 @@ export default function BankAccounts() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const openAdd = () => {
+    if (isViewer) { setAccessDenied(true); return; }
     setEditingId(null);
     setForm({ ...defaultForm, transactionDate: new Date().toISOString().slice(0, 10) });
     setDialogOpen(true);
   };
 
   const openOpeningDialog = (account) => {
+    if (isViewer) { setAccessDenied(true); return; }
     setOpeningForm({
       bankAccount: account.bankAccount || 'MBL',
       bankAccountOtherName: account.bankAccountOtherName || '',
@@ -121,6 +127,7 @@ export default function BankAccounts() {
   };
 
   const openEdit = (row) => {
+    if (isViewer) { setAccessDenied(true); return; }
     setEditingId(row._id);
     setForm({
       transactionType: row.transactionType,
@@ -141,6 +148,7 @@ export default function BankAccounts() {
   };
 
   const handleSave = async () => {
+    if (isViewer) { setAccessDenied(true); return; }
     if (!Number(form.amount) || Number(form.amount) <= 0) {
       setSnack({ open: true, message: 'Valid amount required', severity: 'error' });
       return;
@@ -207,6 +215,7 @@ export default function BankAccounts() {
   };
 
   const handleDelete = async () => {
+    if (isViewer) { setAccessDenied(true); return; }
     try {
       await transactionsAPI.delete(deleteConfirm.id);
       setSnack({ open: true, message: 'Transfer deleted', severity: 'success' });
@@ -218,6 +227,7 @@ export default function BankAccounts() {
   };
 
   const handleSaveOpening = async () => {
+    if (isViewer) { setAccessDenied(true); return; }
     if (openingForm.bankAccount === 'Other' && !openingForm.bankAccountOtherName.trim()) {
       setSnack({ open: true, message: 'Please write the bank / account name for Other', severity: 'error' });
       return;
@@ -482,10 +492,28 @@ export default function BankAccounts() {
                             </TableCell>
                             <TableCell align="right">
                               <Tooltip title="Edit">
-                                <IconButton size="small" onClick={() => openEdit(t)} sx={{ mr: 0.5 }}><EditIcon fontSize="small" /></IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    if (isViewer) { setAccessDenied(true); return; }
+                                    openEdit(t);
+                                  }}
+                                  sx={{ mr: 0.5 }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
                               </Tooltip>
                               <Tooltip title="Delete">
-                                <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: t._id })}><DeleteIcon fontSize="small" /></IconButton>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => {
+                                    if (isViewer) { setAccessDenied(true); return; }
+                                    setDeleteConfirm({ open: true, id: t._id });
+                                  }}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
                               </Tooltip>
                             </TableCell>
                           </TableRow>
@@ -683,6 +711,11 @@ export default function BankAccounts() {
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
         <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }

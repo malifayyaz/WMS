@@ -17,7 +17,24 @@ const { startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay } = require("d
 
 /** Bump when summary context/prompt logic changes so stale wrong text is not served. */
 const SUMMARY_CACHE_VERSION = 4;
+const SUMMARY_CACHE_TTL_MS = 60 * 60 * 1000;
+const SUMMARY_CACHE_MAX_ENTRIES = 48;
 const summaryCache = {};
+
+function pruneSummaryCache(now = Date.now()) {
+  const entries = Object.entries(summaryCache);
+  for (const [key, value] of entries) {
+    if (!value?.generatedAt || now - new Date(value.generatedAt).getTime() >= SUMMARY_CACHE_TTL_MS) {
+      delete summaryCache[key];
+    }
+  }
+  const remaining = Object.entries(summaryCache);
+  if (remaining.length <= SUMMARY_CACHE_MAX_ENTRIES) return;
+  remaining
+    .sort((a, b) => new Date(a[1].generatedAt) - new Date(b[1].generatedAt))
+    .slice(0, remaining.length - SUMMARY_CACHE_MAX_ENTRIES)
+    .forEach(([key]) => delete summaryCache[key]);
+}
 
 function formatUtcDMY(d) {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
@@ -185,20 +202,21 @@ exports.getDailySummary = async (req, res) => {
     }
 
     const cacheKey = `v${SUMMARY_CACHE_VERSION}:${day.dateKey}`;
+    pruneSummaryCache();
     const cached = summaryCache[cacheKey];
     if (
       cached &&
       cached.generatedAt &&
-      Date.now() - new Date(cached.generatedAt).getTime() < 60 * 60 * 1000
+      Date.now() - new Date(cached.generatedAt).getTime() < SUMMARY_CACHE_TTL_MS
     ) {
       return res.json({ success: true, data: cached });
     }
 
     const isToday = day.dateKey === todayKey;
 
-    // Same day window Daily Book / getCashBookForDate use for YYYY-MM-DD
-    const reportStart = startOfDay(new Date(day.dateKey));
-    const reportEnd = endOfDay(reportStart);
+    // Same UTC business-day window as Daily Book / resolveBusinessDay
+    const reportStart = day.utcStart || startOfDay(new Date(day.dateKey));
+    const reportEnd = day.utcEnd || endOfDay(reportStart);
 
     const [dayReport, dayOrders, rawStock, customerDueAgg, liveBankBalance] = await Promise.all([
       buildDayReport(day.cashDate),
@@ -419,25 +437,42 @@ exports.getDailySummary = async (req, res) => {
       " using these exact figures (prefer *Display fields): " +
       JSON.stringify(context);
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 400,
-      temperature: 0.3,
-    });
+    let answer;
+    try {
+      const response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 400,
+        temperature: 0.3,
+      });
+      answer = response.choices[0]?.message?.content;
+    } catch (modelErr) {
+      console.warn("Primary Groq model failed for daily summary, falling back to 8b:", modelErr.message);
+      const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 400,
+        temperature: 0.3,
+      });
+      answer = response.choices[0]?.message?.content;
+    }
 
-    const answer =
-      response.choices[0]?.message?.content ||
-      "No summary could be generated for this date.";
+    if (!answer) {
+      answer = "No summary could be generated for this date.";
+    }
 
     summaryCache[cacheKey] = {
       summary: answer,
       generatedAt: new Date(),
       date: day.dateKey,
     };
+    pruneSummaryCache();
     return res.json({ success: true, data: summaryCache[cacheKey] });
   } catch (error) {
     console.error("AI daily summary error:", error);

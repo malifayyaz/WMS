@@ -9,6 +9,4 @@ const dailyCashOpeningSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-dailyCashOpeningSchema.index({ bookDate: 1 });
-
 module.exports = mongoose.model('DailyCashOpening', dailyCashOpeningSchema);

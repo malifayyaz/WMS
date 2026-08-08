@@ -514,7 +514,7 @@ export default function DailyBookReportDialog({ open, onClose, defaultDate }) {
             {report.mode === 'range' && (
               <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
                 <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-                  Range Summary — {report.startDate} to {report.endDate}
+                  Range Summary — {formatDate(report.startDate)} to {formatDate(report.endDate)}
                 </Typography>
                 <Box display="flex" gap={2} flexWrap="wrap" mb={1}>
                   <Typography variant="body2">Open: <strong>{formatCurrency(report.rangeSummary?.openingBalance)}</strong></Typography>

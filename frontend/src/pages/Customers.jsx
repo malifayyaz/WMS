@@ -23,6 +23,8 @@ import {
   Select,
   MenuItem,
   Chip,
+  Typography,
+  TablePagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -31,8 +33,10 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { customersAPI } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import ExportButtons from '../components/Common/ExportButtons';
 import LedgerDialog from '../components/Common/LedgerDialog';
+import { usePermissions } from '../hooks/usePermissions';
 
 const customerExportColumns = [
   { id: 'Name', label: 'Name' },
@@ -65,6 +69,8 @@ const defaultCustomer = {
 };
 
 export default function Customers() {
+  const { isViewer } = usePermissions();
+  const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -75,6 +81,8 @@ export default function Customers() {
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [ledgerCustomer, setLedgerCustomer] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const fetchList = async () => {
     setLoading(true);
@@ -89,7 +97,11 @@ export default function Customers() {
   };
 
   useEffect(() => {
-    fetchList();
+    setPage(0);
+    const timer = setTimeout(() => {
+      fetchList();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const handleOpenAdd = () => {
@@ -132,7 +144,7 @@ export default function Customers() {
     try {
       const payload = {
         ...form,
-        openingBalance: form.customerType === 'Ledger' && form.openingBalanceType !== 'none' && form.openingBalance
+        openingBalance: form.customerType !== 'Daily' && form.openingBalanceType !== 'none' && form.openingBalance
           ? Number(form.openingBalance)
           : 0,
       };
@@ -171,7 +183,16 @@ export default function Customers() {
               title="Customers List"
             />
           )}
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAdd}>Add Customer</Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              if (isViewer) { setAccessDenied(true); return; }
+              handleOpenAdd();
+            }}
+          >
+            Add Customer
+          </Button>
         </Box>
       </Box>
       {loading ? (
@@ -192,14 +213,21 @@ export default function Customers() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.map((row) => (
+              {list.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8}>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No customers found.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{row.name}</TableCell>
                   <TableCell>
                     <Chip
                       size="small"
-                      label={row.customerType === 'Daily' ? 'Daily' : 'Ledger'}
-                      color={row.customerType === 'Daily' ? 'success' : 'default'}
+                      label={row.customerType === 'Daily' ? 'Daily' : row.customerType === 'Processing' ? 'Processing' : 'Ledger'}
+                      color={row.customerType === 'Daily' ? 'success' : row.customerType === 'Processing' ? 'info' : 'default'}
                       variant="outlined"
                     />
                   </TableCell>
@@ -218,13 +246,39 @@ export default function Customers() {
                     >
                       <MenuBookIcon />
                     </IconButton>
-                    <IconButton size="small" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm({ open: true, id: row._id })}><DeleteIcon /></IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        handleOpenEdit(row);
+                      }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => {
+                        if (isViewer) { setAccessDenied(true); return; }
+                        setDeleteConfirm({ open: true, id: row._id });
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={list.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            rowsPerPageOptions={[25, 50, 100]}
+          />
         </TableContainer>
       )}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -246,9 +300,10 @@ export default function Customers() {
             >
               <MenuItem value="Ledger">Ledger — Credit/debit account</MenuItem>
               <MenuItem value="Daily">Daily — Cash purchase, no credit/debit</MenuItem>
+              <MenuItem value="Processing">Processing — Job work / coil processing</MenuItem>
             </Select>
           </FormControl>
-          {form.customerType === 'Ledger' && (
+          {form.customerType !== 'Daily' && (
             <>
               <FormControl fullWidth margin="dense">
                 <InputLabel>Opening Balance Type</InputLabel>
@@ -307,6 +362,11 @@ export default function Customers() {
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>
         <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
+      <AccessDeniedSnackbar
+        open={accessDenied}
+        onClose={() => setAccessDenied(false)}
+        message="Access Denied: Viewers cannot perform this action. Please contact the admin."
+      />
     </Box>
   );
 }
