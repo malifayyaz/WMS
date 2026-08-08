@@ -48,10 +48,7 @@ const getSuppliers = async (req, res, next) => {
     const { search } = req.query;
     const filter = {};
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { companyName: new RegExp(search, 'i') }];
-    let suppliers = await Supplier.find(filter).sort({ createdAt: -1 });
-    const { recalcSupplierTotals } = require('../utils/transactionSyncService');
-    await Promise.all(suppliers.map((s) => recalcSupplierTotals(s._id)));
-    suppliers = await Supplier.find(filter).sort({ createdAt: -1 });
+    const suppliers = await Supplier.find(filter).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: suppliers, total: suppliers.length });
   } catch (error) {
     next(error);

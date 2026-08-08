@@ -7,6 +7,8 @@ const {
   getCashBookRange,
   setDailyOpening,
   getPreviousDayClosing,
+  getCashBreakdownForDate,
+  setCashBreakdown,
 } = require('../utils/cashBookService');
 const {
   createDailyBookExpenseTotal,
@@ -18,6 +20,9 @@ const {
   syncLinkedExpenseFromBankTransfer,
   deleteLinkedExpenseForBankTransfer,
   clearBankTransferExpenseLink,
+  isPollutedDailyTotalBankTransfer,
+  FACTORY_EXPENSE_TOTAL,
+  DAILY_TOTAL_CATEGORY,
   recalcCustomerTotals,
   recalcSupplierTotals,
   SELF_EXPENSE_GROUP,
@@ -48,7 +53,7 @@ const createTransaction = async (req, res, next) => {
       const expense = await createDailyBookExpenseTotal(body);
       return res.status(201).json({ success: true, data: expense, message: 'Daily expense total recorded' });
     }
-    // ATM cash withdrawal: deduct bank only (not cash in hand), track as self expense
+    // ATM cash withdrawal: deduct bank; add to cash in hand or record as expense
     if (body.entryKind === 'ATMWithdrawal') {
       const amount = Number(body.amount);
       if (!amount || amount <= 0) {
@@ -62,36 +67,64 @@ const createTransaction = async (req, res, next) => {
           message: 'Please write the bank / account name when selecting Other',
         });
       }
-      const category = body.expenseCategory || 'Fayyaz Expense';
+      const destination = body.destination === 'expense' ? 'expense' : 'cashInHand';
       const note = String(body.description || '').trim();
-      const transaction = await Transaction.create({
+      const txnDate = body.transactionDate || new Date();
+      const bankLabel = bankAccount === 'Other' ? body.bankAccountOtherName : bankAccount;
+
+      const bankTxn = await Transaction.create({
         transactionType: 'Money Out',
         amount,
         paymentMethod: 'Bank Transfer',
         relatedTo: 'Other',
         relatedName: 'ATM Withdrawal',
-        description: note ? `ATM — ${category}: ${note}` : `ATM — ${category}`,
+        description: note ? `ATM — ${note}` : 'ATM Withdrawal',
         handledBy: body.handledBy || '',
         sourceType: 'Manual',
         bankAccount,
         bankAccountOtherName: bankAccount === 'Other' ? body.bankAccountOtherName : undefined,
         bankAccountNumber: body.bankAccountNumber || undefined,
-        transactionDate: body.transactionDate || new Date(),
-        expenseGroup: SELF_EXPENSE_GROUP,
-        expenseCategory: category,
+        transactionDate: txnDate,
       });
-      await createLinkedExpenseForBankTransfer(transaction, {
-        expenseGroup: SELF_EXPENSE_GROUP,
-        expenseCategory: category,
-        description: transaction.description,
-        handledBy: body.handledBy,
-      });
-      const data = await Transaction.findById(transaction._id);
-      return res.status(201).json({
-        success: true,
-        data,
-        message: `ATM withdrawal recorded — deducted from ${bankAccount === 'Other' ? body.bankAccountOtherName : bankAccount}, added to ${category}`,
-      });
+
+      let message = `ATM withdrawal recorded — Rs.${amount} deducted from ${bankLabel}`;
+
+      if (destination === 'cashInHand') {
+        const cashTxn = await Transaction.create({
+          transactionType: 'Money In',
+          amount,
+          paymentMethod: 'Cash',
+          relatedTo: 'Other',
+          relatedName: 'ATM Withdrawal',
+          description: note ? `ATM — cash to hand: ${note}` : 'ATM — cash to hand',
+          handledBy: body.handledBy || '',
+          sourceType: 'Manual',
+          transactionDate: txnDate,
+          linkedTransactionId: bankTxn._id,
+        });
+        await Transaction.findByIdAndUpdate(bankTxn._id, { linkedTransactionId: cashTxn._id });
+        message += ', added to cash in hand';
+      } else {
+        const expenseGroup = body.expenseGroup || SELF_EXPENSE_GROUP;
+        const expenseCategory = body.expenseCategory || 'Fayyaz Expense';
+        if (!expenseGroup || !expenseCategory) {
+          await Transaction.findByIdAndDelete(bankTxn._id);
+          return res.status(400).json({ success: false, message: 'Expense group and category required' });
+        }
+        await Transaction.findByIdAndUpdate(bankTxn._id, { expenseGroup, expenseCategory });
+        await createLinkedExpenseForBankTransfer(bankTxn, {
+          expenseGroup,
+          expenseCategory,
+          description: note
+            ? `ATM — ${expenseGroup} / ${expenseCategory}: ${note}`
+            : `ATM — ${expenseGroup} / ${expenseCategory}`,
+          handledBy: body.handledBy,
+        });
+        message += `, recorded as ${expenseGroup} / ${expenseCategory}`;
+      }
+
+      const data = await Transaction.findById(bankTxn._id);
+      return res.status(201).json({ success: true, data, message });
     }
     if (['Customer', 'Supplier'].includes(body.relatedTo) && !body.relatedId) {
       return res.status(400).json({
@@ -240,7 +273,21 @@ const updateTransaction = async (req, res, next) => {
     await applyRelatedBalanceImpact(existing, -1);
 
     const updates = { ...req.body };
+    delete updates.entryKind;
     if (updates.amount !== undefined) updates.amount = Number(updates.amount);
+
+    if (existing.paymentMethod === 'Bank Transfer') {
+      updates.paymentMethod = 'Bank Transfer';
+      const pollutedDailyTotal = updates.expenseGroup === FACTORY_EXPENSE_TOTAL
+        && updates.expenseCategory === DAILY_TOTAL_CATEGORY;
+      if ((pollutedDailyTotal && updates.recordAsExpense !== true) || updates.recordAsExpense === false) {
+        delete updates.expenseGroup;
+        delete updates.expenseCategory;
+      }
+    } else if (updates.paymentMethod === 'Bank Transfer') {
+      delete updates.paymentMethod;
+    }
+
     const transaction = await Transaction.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
 
     await syncSourceFromTransaction(transaction, updates);
@@ -270,6 +317,10 @@ const updateTransaction = async (req, res, next) => {
       } else if (existingExpense) {
         await syncLinkedExpenseFromBankTransfer(transaction, updates);
       }
+
+      if (isPollutedDailyTotalBankTransfer(transaction)) {
+        await clearBankTransferExpenseLink(transaction._id);
+      }
     }
 
     await applyRelatedBalanceImpact(transaction, 1);
@@ -294,6 +345,15 @@ const deleteTransaction = async (req, res, next) => {
       await deleteLinkedExpenseForBankTransfer(t);
     } else {
       await cascadeDeleteSource(t);
+    }
+    if (t.linkedTransactionId) {
+      const linked = await Transaction.findById(t.linkedTransactionId);
+      if (linked) {
+        if (linked.paymentMethod === 'Bank Transfer') {
+          await deleteLinkedExpenseForBankTransfer(linked);
+        }
+        await Transaction.findByIdAndDelete(linked._id);
+      }
     }
     await Transaction.findByIdAndDelete(req.params.id);
     if (relatedTo === 'Customer' && relatedId) await recalcCustomerTotals(relatedId);
@@ -322,7 +382,8 @@ const getCashBook = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'date or startDate/endDate required' });
     }
     const data = await getCashBookForDate(date);
-    res.json({ success: true, data });
+    const cashBreakdown = await getCashBreakdownForDate(date);
+    res.json({ success: true, data: { ...data, cashBreakdown } });
   } catch (error) {
     next(error);
   }
@@ -344,6 +405,27 @@ const setCashOpening = async (req, res, next) => {
     const doc = await setDailyOpening(bookDate, amount, note);
     const cashBook = await getCashBookForDate(bookDate);
     res.json({ success: true, data: { opening: doc, cashBook }, message: 'Opening balance set' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Set manual cash-in-hand breakdown (who holds how much cash) for a day.
+ */
+const setCashBreakdownHandler = async (req, res, next) => {
+  try {
+    const { bookDate, lines, note } = req.body;
+    if (!bookDate) {
+      return res.status(400).json({ success: false, message: 'bookDate is required' });
+    }
+    const breakdown = await setCashBreakdown(bookDate, lines, note);
+    const cashBook = await getCashBookForDate(bookDate);
+    res.json({
+      success: true,
+      data: { breakdown, cashBook: { ...cashBook, cashBreakdown: breakdown } },
+      message: 'Cash breakdown saved',
+    });
   } catch (error) {
     next(error);
   }
@@ -498,6 +580,7 @@ module.exports = {
   setBankOpeningBalance,
   getBankOpeningBalances,
   setCashOpening,
+  setCashBreakdownHandler,
   getPrevClosing,
   applyRelatedBalanceImpact,
 };

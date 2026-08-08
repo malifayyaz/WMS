@@ -682,8 +682,14 @@ function buildPreviewMessage(intent, data = {}) {
         Number(data.initialWeightKg || 0) * Number(data.ratePerKg || 0);
       return `Create order for ${data.customerName || "customer"}: ${data.initialWeightKg}kg Wire #${data.wireNumber} at Rs.${formatPreviewRs(data.ratePerKg)}/kg\nTotal: Rs.${formatPreviewRs(total)}`;
     }
-    case "RECORD_CUSTOMER_PAYMENT":
-      return `Record payment of Rs.${formatPreviewRs(data.amount)} from ${data.customerName || "customer"} via ${data.paymentMethod || "Cash"}`;
+    case "RECORD_CUSTOMER_PAYMENT": {
+      const via = data.paymentMethod || "Cash";
+      const bankBit =
+        String(via).toLowerCase().includes("bank") && data.bankAccount
+          ? ` (${data.bankAccount})`
+          : "";
+      return `Record payment of Rs.${formatPreviewRs(data.amount)} from ${data.customerName || "customer"} via ${via}${bankBit}`;
+    }
     case "CREATE_RAW_MATERIAL_PURCHASE": {
       const total = Number(data.weightInKg || 0) * Number(data.ratePerKg || 0);
       return `Record purchase of ${data.weightInKg}kg ${data.coilCategory || "coil"} from ${data.supplierName || "supplier"} at Rs.${formatPreviewRs(data.ratePerKg)}/kg\nTotal: Rs.${formatPreviewRs(total)}`;
@@ -703,7 +709,12 @@ function buildPreviewMessage(intent, data = {}) {
     case "ADD_DAILY_TRANSACTION": {
       const dir = data.transactionType || "transaction";
       const party = data.relatedName || data.supplierName || data.customerName || "";
-      return `Record ${dir} of Rs.${formatPreviewRs(data.amount)}${party ? ` — ${party}` : ""} via ${data.paymentMethod || "Cash"}`;
+      const via = data.paymentMethod || "Cash";
+      const bankBit =
+        String(via).toLowerCase().includes("bank") && data.bankAccount
+          ? ` (${data.bankAccount})`
+          : "";
+      return `Record ${dir} of Rs.${formatPreviewRs(data.amount)}${party ? ` — ${party}` : ""} via ${via}${bankBit}`;
     }
     case "SEND_ANNEALING":
       return `Send ${data.weightKg || data.bundles || "?"}kg ${data.coilType || data.coilCategory || "coil"} to annealing`;
@@ -724,11 +735,28 @@ function buildPreviewMessage(intent, data = {}) {
     case "SHIFT_ENTRY_DATE": {
       const from = String(data.fromDate || "").slice(0, 10);
       const to = String(data.toDate || "").slice(0, 10);
-      const count = Array.isArray(data.ids) ? data.ids.length : 0;
+      const count = Array.isArray(data.items)
+        ? data.items.length
+        : Array.isArray(data.ids)
+          ? data.ids.length
+          : 0;
+      const kind =
+        data.entryType === "expense"
+          ? "expense(s)"
+          : data.entryType === "payment"
+            ? "payment(s)"
+            : data.entryType === "order"
+              ? "order(s)"
+              : data.entryType === "purchase"
+                ? "purchase(s)"
+                : data.entryType === "worker payment"
+                  ? "worker payment(s)"
+                  : "transaction(s)";
+      const amountNote = data.amount ? ` of Rs.${formatPreviewRs(data.amount)}` : "";
       const list = (data.labels || [])
         .map((label, i) => `${i + 1}. ${label}`)
         .join("\n");
-      return `Move ${count} expense(s) from ${from} → ${to} (cannot be undone):\n${list}`;
+      return `Move ${count} ${kind}${amountNote} from ${from} → ${to} (cannot be undone):\n${list}`;
     }
     default:
       return `Confirm action: ${intent}`;
@@ -784,26 +812,21 @@ function fieldPresent(data, fieldSpec) {
   });
 }
 
-const OPTIONAL_FIELDS_BY_INTENT = {
-  RECORD_CUSTOMER_PAYMENT: ["receivedBy", "orderId", "notes", "description"],
-  ADD_DAILY_TRANSACTION: ["handledBy", "description", "notes", "relatedId", "supplierId", "customerId"],
-};
-
-function collectRequiredMissing(intent, extractedData, reportedMissing = []) {
+/**
+ * Only fields in REQUIRED_FIELDS_BY_INTENT can block a preview.
+ * LLM-reported missingFields are ignored — the model often invents
+ * optional contact/address/soldBy/etc as "required".
+ */
+function collectRequiredMissing(intent, extractedData, _reportedMissing = []) {
   const required = REQUIRED_FIELDS_BY_INTENT[intent] || [];
   const data = extractedData || {};
-  const optional = OPTIONAL_FIELDS_BY_INTENT[intent] || [];
-  const missing = new Set(
-    (reportedMissing || [])
-      .filter((f) => typeof f === "string" && f.trim())
-      .filter((f) => !optional.includes(f))
-  );
+  const missing = [];
   required.forEach((spec) => {
     if (!fieldPresent(data, spec)) {
-      missing.add(spec.split("|")[0]);
+      missing.push(spec.split("|")[0]);
     }
   });
-  return [...missing];
+  return missing;
 }
 
 /** Reuse existing chat() without modifying it — capture its JSON response. */
@@ -828,20 +851,35 @@ async function handleShiftPreview(res, parsed) {
   const data = parsed.extractedData || {};
   const { matches } = await findShiftableEntries(data);
   const fromLabel = String(data.fromDate || "").slice(0, 10);
+  const kindLabel =
+    data.entryType === "expense"
+      ? "expenses"
+      : data.entryType === "payment"
+        ? "payments"
+        : data.entryType === "order"
+          ? "orders"
+          : data.entryType === "purchase"
+            ? "purchases"
+            : data.entryType === "worker payment"
+              ? "worker payments"
+              : "transactions";
 
   if (matches.length === 0) {
+    const amountNote = data.amount ? ` of Rs.${Number(data.amount).toLocaleString("en-PK")}` : "";
     return res.json({
       success: true,
       type: "clarification",
-      message: `No expenses found on ${fromLabel || "that date"}.`,
+      message: `No ${kindLabel}${amountNote} found on ${fromLabel || "that date"}.`,
     });
   }
 
   const extractedData = {
     fromDate: data.fromDate,
     toDate: data.toDate,
-    entryType: data.entryType || "expense",
+    entryType: data.entryType || "any",
+    amount: data.amount || undefined,
     shiftAll: Boolean(data.shiftAll),
+    items: matches.map((m) => ({ model: m.model, id: m.id })),
     ids: matches.map((m) => m.id),
     labels: matches.map((m) => m.label),
   };

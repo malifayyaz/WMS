@@ -47,6 +47,7 @@ const BANK_EXPENSE_TREE = {
   Rental: ['Coil Rental', 'Wire Rental', 'Miscellaneous'],
   Operations: ['Weight Scale Payment', 'Hardware Maintenance', 'Electricity', 'Office Expense', 'Miscellaneous'],
   Manufacturing: ['Annealing', 'Miscellaneous'],
+  'Process Material': ['Acid', 'Dye', 'Soap', 'Stationary', 'Miscellaneous'],
   'Self Expense': ['Fayyaz Expense', 'Faisal Expense', 'Mutual Expense'],
 };
 

@@ -63,7 +63,10 @@ function extractObjectId(value) {
 
 function cleanPartyName(name) {
   return String(name || "")
+    // Remove parenthetical suffixes like "(id:...)" or "(mil maal)"
     .replace(/\s*\([^)]*\)\s*/g, " ")
+    // Trim common trailing punctuation the LLM may include (e.g. "Sadiq:")
+    .replace(/[\s,;:.!?]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -75,6 +78,31 @@ function nameEqualsFilter(name) {
   const cleaned = trimmed.replace(/\s*\(id:[a-fA-F0-9]{24}\)\s*$/i, "").trim();
   if (!cleaned) return null;
   return { name: new RegExp(`^${escapeRegex(cleaned)}$`, "i") };
+}
+
+function normalizeLooseName(name) {
+  return cleanPartyName(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function levenshteinDistance(a, b) {
+  const s = String(a || "");
+  const t = String(b || "");
+  if (!s) return t.length;
+  if (!t) return s.length;
+  const dp = Array.from({ length: s.length + 1 }, () => new Array(t.length + 1).fill(0));
+  for (let i = 0; i <= s.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= t.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= s.length; i += 1) {
+    for (let j = 1; j <= t.length; j += 1) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[s.length][t.length];
 }
 
 function businessTodayUtc() {
@@ -122,8 +150,10 @@ function cleanOptionalNote(value, userMessageHint) {
 function normalizePaymentMethod(method) {
   if (!method) return "Cash";
   const m = String(method).toLowerCase();
-  if (m.includes("bank") || m === "transfer") return "Bank Transfer";
+  // Cheque must win over accidental "bank" words in mixed text
   if (m.includes("cheque") || m.includes("check")) return "Cheque";
+  if (m.includes("bank") || m === "transfer") return "Bank Transfer";
+  if (m.includes("cash")) return "Cash";
   return "Cash";
 }
 
@@ -182,7 +212,65 @@ const EXPENSE_CATEGORY_SYNONYMS = {
   office: "Office Expense",
   miscellaneous: "Miscellaneous",
   misc: "Miscellaneous",
+  // Daily Book "Factory Total" button → category Daily Total
+  "daily total": "Daily Total",
+  "factory total": "Daily Total",
+  "factory expense total": "Daily Total",
+  "daily total factory": "Daily Total",
+  "daily factory": "Daily Total",
+  "total factory": "Daily Total",
+  "factory daily": "Daily Total",
 };
+
+/** Map free-form / LLM category text onto a known EXPENSE_CATEGORIES value */
+function resolveExpenseCategoryLabel(rawCategory, rawGroup = "") {
+  let expenseCategory = String(rawCategory || "Miscellaneous").trim();
+  let expenseGroup = String(rawGroup || "").trim();
+  const key = expenseCategory.toLowerCase().replace(/\s+/g, " ");
+
+  // Factory daily total phrasing the LLM invents, e.g. "Daily Total Factory Expense"
+  if (
+    (/\bdaily\b/.test(key) && /\btotal\b/.test(key)) ||
+    (/\bfactory\b/.test(key) && /\btotal\b/.test(key)) ||
+    key === "factory expense" ||
+    key === "factory expenses"
+  ) {
+    return {
+      expenseCategory: "Daily Total",
+      expenseGroup: "Factory Expense Total",
+    };
+  }
+
+  if (EXPENSE_CATEGORY_SYNONYMS[key]) {
+    expenseCategory = EXPENSE_CATEGORY_SYNONYMS[key];
+  } else {
+    // Prefer longer synonym keys first (e.g. "daily total" before "tea")
+    const syn = Object.entries(EXPENSE_CATEGORY_SYNONYMS)
+      .sort((a, b) => b[0].length - a[0].length)
+      .find(([hint]) => key.includes(hint));
+    if (syn) expenseCategory = syn[1];
+  }
+
+  // Exact / case-insensitive match against known categories
+  if (!EXPENSE_CATEGORIES.includes(expenseCategory)) {
+    const exact = EXPENSE_CATEGORIES.find(
+      (c) => c.toLowerCase() === expenseCategory.toLowerCase()
+    );
+    if (exact) expenseCategory = exact;
+  }
+
+  if (CATEGORY_TO_GROUP[expenseCategory]) {
+    expenseGroup = CATEGORY_TO_GROUP[expenseCategory];
+  } else if (/factory\s*expense\s*total/i.test(expenseGroup)) {
+    expenseGroup = "Factory Expense Total";
+    if (!EXPENSE_CATEGORIES.includes(expenseCategory)) {
+      expenseCategory = "Daily Total";
+      expenseGroup = "Factory Expense Total";
+    }
+  }
+
+  return { expenseCategory, expenseGroup };
+}
 
 async function findCustomer(data) {
   const id = extractObjectId(data.customerId);
@@ -190,8 +278,28 @@ async function findCustomer(data) {
     const byId = await Customer.findById(id);
     if (byId) return byId;
   }
-  const filter = nameEqualsFilter(data.customerName || data.customerId);
-  return filter ? Customer.findOne(filter) : null;
+  const rawName = data.customerName || data.customerId;
+  const candidates = [rawName, cleanPartyName(rawName)].filter(Boolean);
+
+  // Try exact name match first (strict).
+  for (const candidate of candidates) {
+    const filter = nameEqualsFilter(candidate);
+    if (!filter) continue;
+    const found = await Customer.findOne(filter);
+    if (found) return found;
+  }
+
+  // Fallback to partial match (common when user types a short name like "Sadiq").
+  const cleaned = cleanPartyName(rawName);
+  if (cleaned) {
+    const escaped = escapeRegex(cleaned);
+    const partial = await Customer.findOne({
+      name: new RegExp(escaped, "i"),
+    });
+    if (partial) return partial;
+  }
+
+  return null;
 }
 
 async function findSupplier(data) {
@@ -220,7 +328,7 @@ async function findSupplier(data) {
     });
     if (partial) return partial;
   }
-  return null;
+  return fuzzyFindByName(Supplier, rawName);
 }
 
 async function findWorker(data) {
@@ -290,10 +398,43 @@ async function fuzzyFindByName(Model, name) {
     .replace(/\s*\(id:[a-fA-F0-9]{24}\)\s*$/i, "")
     .trim();
   if (!cleaned) return null;
-  return (
+  const exact =
     (await Model.findOne({ name: new RegExp(`^${escapeRegex(cleaned)}$`, "i") })) ||
-    (await Model.findOne({ name: new RegExp(escapeRegex(cleaned), "i") }))
-  );
+    (await Model.findOne({ name: new RegExp(escapeRegex(cleaned), "i") }));
+  if (exact) return exact;
+
+  const normalized = normalizeLooseName(cleaned);
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (!tokens.length) return null;
+
+  const searchTokens = [...new Set([tokens[0], tokens[tokens.length - 1]].filter(Boolean))];
+  const query = {
+    $or: [
+      ...searchTokens.map((token) => ({ name: new RegExp(escapeRegex(token), "i") })),
+      ...searchTokens.map((token) => ({ companyName: new RegExp(escapeRegex(token), "i") })),
+    ],
+  };
+  const candidates = await Model.find(query).select("name companyName").limit(50);
+
+  let best = null;
+  let bestScore = Infinity;
+  for (const doc of candidates) {
+    const variants = [doc.name, doc.companyName].filter(Boolean).map(normalizeLooseName);
+    for (const variant of variants) {
+      if (!variant) continue;
+      if (variant.includes(normalized) || normalized.includes(variant)) {
+        return doc;
+      }
+      const score = levenshteinDistance(normalized, variant);
+      if (score < bestScore) {
+        best = doc;
+        bestScore = score;
+      }
+    }
+  }
+
+  const maxAllowed = Math.max(1, Math.min(3, Math.floor(normalized.length * 0.18)));
+  return best && bestScore <= maxAllowed ? best : null;
 }
 
 /**
@@ -453,18 +594,27 @@ async function findDeletableEntries(data = {}) {
 }
 
 /**
- * Find records whose date can be shifted (expenses v1).
+ * Find records whose date can be shifted.
+ * Supports expenses, payments/transactions, orders, purchases, worker payments.
+ * Optional amount filter narrows to a specific rupee amount.
  */
 async function findShiftableEntries(data = {}) {
-  const entryType = normalizeDeleteType(data.entryType || "expense");
+  const entryType = normalizeDeleteType(data.entryType || "any");
   const fromDate = parseOptionalDate(data.fromDate);
   if (!fromDate) return { matches: [] };
 
   const range = dayRangeFilter(fromDate);
+  const amount = Number(data.amount) > 0 ? Number(data.amount) : null;
   const matches = [];
+  const wanted =
+    entryType === "any"
+      ? ["expense", "payment", "order", "purchase", "worker payment"]
+      : [entryType];
 
-  if (entryType === "expense" || entryType === "any") {
-    const rows = await Expense.find({ expenseDate: range })
+  if (wanted.includes("expense")) {
+    const filter = { expenseDate: range };
+    if (amount) filter.amount = amount;
+    const rows = await Expense.find(filter)
       .sort({ expenseCategory: 1, amount: -1 })
       .limit(50)
       .lean();
@@ -473,6 +623,7 @@ async function findShiftableEntries(data = {}) {
         model: "Expense",
         id: String(e._id),
         date: e.expenseDate,
+        amount: e.amount,
         label: `Expense Rs.${formatRs(e.amount)} — ${e.expenseCategory || e.expenseGroup || "expense"} on ${shortDate(
           e.expenseDate
         )}`,
@@ -480,7 +631,90 @@ async function findShiftableEntries(data = {}) {
     });
   }
 
-  return { matches };
+  if (wanted.includes("payment") || wanted.includes("transaction")) {
+    // Manual cash/bank/cheque money in/out — skip mirrored source rows
+    const filter = {
+      transactionDate: range,
+      sourceType: { $nin: ["Order", "RawMaterial", "Expense", "ConsumptionMaterial"] },
+    };
+    if (amount) filter.amount = amount;
+    const rows = await Transaction.find(filter)
+      .sort({ transactionDate: -1 })
+      .limit(50)
+      .lean();
+    rows.forEach((t) => {
+      // Skip bank txns that are already linked to an expense we would also move
+      // (moving expense updates the linked bank txn). Avoid double-listing.
+      if (t.linkedExpenseId && wanted.includes("expense")) return;
+      matches.push({
+        model: "Transaction",
+        id: String(t._id),
+        date: t.transactionDate,
+        amount: t.amount,
+        label: `${t.transactionType || "Payment"} Rs.${formatRs(t.amount)}${
+          t.relatedName ? ` — ${t.relatedName}` : ""
+        } (${t.paymentMethod || "Cash"}) on ${shortDate(t.transactionDate)}`,
+      });
+    });
+  }
+
+  if (wanted.includes("order")) {
+    const filter = { orderDate: range };
+    if (amount) filter.totalAmount = amount;
+    const rows = await Order.find(filter).sort({ orderDate: -1 }).limit(50).lean();
+    rows.forEach((o) => {
+      matches.push({
+        model: "Order",
+        id: String(o._id),
+        date: o.orderDate,
+        amount: o.totalAmount,
+        label: `Order ${o.initialWeightKg}kg ${getWireLabel(o.wireNumber) || o.wireType || ""} for ${
+          o.customerName || "customer"
+        } — Rs.${formatRs(o.totalAmount)} on ${shortDate(o.orderDate)}`,
+      });
+    });
+  }
+
+  if (wanted.includes("purchase")) {
+    const filter = { purchaseDate: range };
+    if (amount) filter.totalAmount = amount;
+    const rows = await RawMaterial.find(filter)
+      .sort({ purchaseDate: -1 })
+      .limit(50)
+      .lean();
+    rows.forEach((r) => {
+      matches.push({
+        model: "RawMaterial",
+        id: String(r._id),
+        date: r.purchaseDate,
+        amount: r.totalAmount,
+        label: `Purchase ${r.weightInKg}kg ${r.coilCategory || ""} from ${
+          r.supplierName || "supplier"
+        } — Rs.${formatRs(r.totalAmount)} on ${shortDate(r.purchaseDate)}`,
+      });
+    });
+  }
+
+  if (wanted.includes("worker payment")) {
+    const filter = { date: range };
+    if (amount) filter.amount = amount;
+    const rows = await WorkerLedgerEntry.find(filter)
+      .sort({ date: -1 })
+      .limit(50)
+      .lean();
+    rows.forEach((w) => {
+      matches.push({
+        model: "WorkerLedgerEntry",
+        id: String(w._id),
+        date: w.date,
+        amount: w.amount,
+        label: `Worker ${w.entryType || "Payment"} Rs.${formatRs(w.amount)} on ${shortDate(w.date)}`,
+      });
+    });
+  }
+
+  matches.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  return { matches: matches.slice(0, 80) };
 }
 
 /**
@@ -596,8 +830,7 @@ async function executeAction(intent, extractedData = {}, userId) {
         if (!amount || amount <= 0) throw new Error("Valid payment amount is required");
 
         const paymentMethod = normalizePaymentMethod(data.paymentMethod);
-        // Daily Book style Manual tx — never attach orderId (ledger skips those)
-        const transaction = await Transaction.create({
+        const payload = {
           transactionType: "Money In",
           relatedTo: "Customer",
           relatedId: customer._id,
@@ -610,14 +843,29 @@ async function executeAction(intent, extractedData = {}, userId) {
           transactionDate:
             parseOptionalDate(data.transactionDate, data.paymentDate, data.date) ||
             defaultEntryDate(data),
-        });
+        };
+
+        if (paymentMethod === "Bank Transfer") {
+          const bankAccount = resolveBankAccount(data);
+          payload.bankAccount = bankAccount;
+          payload.bankAccountOtherName =
+            bankAccount === "Other" ? data.bankAccountOtherName : undefined;
+          payload.bankAccountNumber = data.bankAccountNumber || undefined;
+        }
+
+        const transaction = await Transaction.create(payload);
 
         await recalcCustomerTotals(customer._id);
+
+        const bankNote =
+          paymentMethod === "Bank Transfer"
+            ? ` into ${bankAccountLabel(payload.bankAccount, data.bankAccountOtherName)}`
+            : "";
 
         return {
           success: true,
           savedDoc: transaction,
-          message: `Payment of Rs.${formatRs(amount)} recorded from ${customer.name}`,
+          message: `Payment of Rs.${formatRs(amount)} recorded from ${customer.name}${bankNote}`,
           undoInfo: { model: "Transaction", id: transaction._id },
         };
       }
@@ -704,18 +952,10 @@ async function executeAction(intent, extractedData = {}, userId) {
           else if (/\bmutual\b/.test(personHint)) expenseCategory = "Mutual Expense";
           else expenseCategory = "Fayyaz Expense";
         } else {
-          const key = expenseCategory.toLowerCase();
-          if (EXPENSE_CATEGORY_SYNONYMS[key]) {
-            expenseCategory = EXPENSE_CATEGORY_SYNONYMS[key];
-          } else {
-            const syn = Object.entries(EXPENSE_CATEGORY_SYNONYMS).find(([hint]) =>
-              key.includes(hint)
-            );
-            if (syn) expenseCategory = syn[1];
-          }
-          if (CATEGORY_TO_GROUP[expenseCategory]) {
-            expenseGroup = CATEGORY_TO_GROUP[expenseCategory];
-          } else if (!EXPENSE_CATEGORIES.includes(expenseCategory)) {
+          const resolved = resolveExpenseCategoryLabel(expenseCategory, expenseGroup);
+          expenseCategory = resolved.expenseCategory;
+          expenseGroup = resolved.expenseGroup || expenseGroup;
+          if (!EXPENSE_CATEGORIES.includes(expenseCategory)) {
             throw new Error(
               `Unknown expense category "${expenseCategory}". Please use a known category.`
             );
@@ -801,37 +1041,19 @@ async function executeAction(intent, extractedData = {}, userId) {
         if (!amount || amount <= 0) throw new Error("Valid ATM amount is required");
 
         const bankAccount = resolveBankAccount(data);
-
-        const personHint = String(
-          data.selfExpensePerson || data.expenseCategory || ""
-        ).toLowerCase();
-        let expenseCategory = "Fayyaz Expense";
-        if (personHint.includes("faisal")) expenseCategory = "Faisal Expense";
-        else if (personHint.includes("mutual")) expenseCategory = "Mutual Expense";
-        else if (personHint.includes("fayyaz") || personHint.includes("fayaz")) {
-          expenseCategory = "Fayyaz Expense";
-        } else if (
-          ["Fayyaz Expense", "Faisal Expense", "Mutual Expense"].includes(
-            data.expenseCategory
-          )
-        ) {
-          expenseCategory = data.expenseCategory;
-        }
-
+        const destination = data.destination === "cashInHand" ? "cashInHand" : "expense";
         const note = cleanOptionalNote(data.description || data.notes || "");
         const txnDate =
           parseOptionalDate(data.transactionDate, data.expenseDate, data.date) ||
           defaultEntryDate(data);
 
-        const transaction = await Transaction.create({
+        const bankTxn = await Transaction.create({
           transactionType: "Money Out",
           amount,
           paymentMethod: "Bank Transfer",
           relatedTo: "Other",
           relatedName: "ATM Withdrawal",
-          description: note
-            ? `ATM — ${expenseCategory}: ${note}`
-            : `ATM — ${expenseCategory}`,
+          description: note ? `ATM — ${note}` : "ATM Withdrawal",
           handledBy: data.handledBy || data.addedBy || "",
           sourceType: "Manual",
           bankAccount,
@@ -839,24 +1061,72 @@ async function executeAction(intent, extractedData = {}, userId) {
             bankAccount === "Other" ? data.bankAccountOtherName : undefined,
           bankAccountNumber: data.bankAccountNumber || undefined,
           transactionDate: txnDate,
-          expenseGroup: SELF_EXPENSE_GROUP,
-          expenseCategory,
-        });
-
-        await createLinkedExpenseForBankTransfer(transaction, {
-          expenseGroup: SELF_EXPENSE_GROUP,
-          expenseCategory,
-          description: transaction.description,
-          handledBy: data.handledBy || data.addedBy || "",
         });
 
         const bankLabel = bankAccountLabel(bankAccount, data.bankAccountOtherName);
+        let message = `ATM withdrawal of Rs.${formatRs(amount)} — deducted from ${bankLabel}`;
+
+        if (destination === "cashInHand") {
+          const cashTxn = await Transaction.create({
+            transactionType: "Money In",
+            amount,
+            paymentMethod: "Cash",
+            relatedTo: "Other",
+            relatedName: "ATM Withdrawal",
+            description: note ? `ATM — cash to hand: ${note}` : "ATM — cash to hand",
+            handledBy: data.handledBy || data.addedBy || "",
+            sourceType: "Manual",
+            transactionDate: txnDate,
+            linkedTransactionId: bankTxn._id,
+          });
+          await Transaction.findByIdAndUpdate(bankTxn._id, {
+            linkedTransactionId: cashTxn._id,
+          });
+          message += ", added to cash in hand";
+        } else {
+          const personHint = String(
+            data.selfExpensePerson || data.expenseCategory || ""
+          ).toLowerCase();
+          let expenseCategory = "Fayyaz Expense";
+          if (personHint.includes("faisal")) expenseCategory = "Faisal Expense";
+          else if (personHint.includes("mutual")) expenseCategory = "Mutual Expense";
+          else if (personHint.includes("fayyaz") || personHint.includes("fayaz")) {
+            expenseCategory = "Fayyaz Expense";
+          } else if (
+            ["Fayyaz Expense", "Faisal Expense", "Mutual Expense"].includes(
+              data.expenseCategory
+            )
+          ) {
+            expenseCategory = data.expenseCategory;
+          }
+
+          const expenseGroup = data.expenseGroup || SELF_EXPENSE_GROUP;
+          if (data.expenseCategory && !data.expenseGroup) {
+            expenseCategory = data.expenseCategory;
+          } else if (data.expenseCategory) {
+            expenseCategory = data.expenseCategory;
+          }
+
+          await Transaction.findByIdAndUpdate(bankTxn._id, {
+            expenseGroup,
+            expenseCategory,
+          });
+          await createLinkedExpenseForBankTransfer(bankTxn, {
+            expenseGroup,
+            expenseCategory,
+            description: note
+              ? `ATM — ${expenseGroup} / ${expenseCategory}: ${note}`
+              : `ATM — ${expenseGroup} / ${expenseCategory}`,
+            handledBy: data.handledBy || data.addedBy || "",
+          });
+          message += `, recorded as ${expenseGroup} / ${expenseCategory}`;
+        }
 
         return {
           success: true,
-          savedDoc: await Transaction.findById(transaction._id),
-          message: `ATM withdrawal of Rs.${formatRs(amount)} — deducted from ${bankLabel}, added to ${expenseCategory}`,
-          undoInfo: { model: "Transaction", id: transaction._id },
+          savedDoc: await Transaction.findById(bankTxn._id),
+          message,
+          undoInfo: { model: "Transaction", id: bankTxn._id },
         };
       }
 
@@ -905,10 +1175,11 @@ async function executeAction(intent, extractedData = {}, userId) {
           relatedName = supplier.name;
         }
 
-        const transaction = await Transaction.create({
+        const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+        const payload = {
           transactionType,
           amount,
-          paymentMethod: normalizePaymentMethod(data.paymentMethod),
+          paymentMethod,
           relatedTo,
           relatedId,
           relatedName,
@@ -917,15 +1188,30 @@ async function executeAction(intent, extractedData = {}, userId) {
           sourceType: "Manual",
           transactionDate:
             parseOptionalDate(data.transactionDate, data.date) || defaultEntryDate(data),
-        });
+        };
+
+        if (paymentMethod === "Bank Transfer") {
+          const bankAccount = resolveBankAccount(data);
+          payload.bankAccount = bankAccount;
+          payload.bankAccountOtherName =
+            bankAccount === "Other" ? data.bankAccountOtherName : undefined;
+          payload.bankAccountNumber = data.bankAccountNumber || undefined;
+        }
+
+        const transaction = await Transaction.create(payload);
 
         if (relatedTo === "Customer" && relatedId) await recalcCustomerTotals(relatedId);
         if (relatedTo === "Supplier" && relatedId) await recalcSupplierTotals(relatedId);
 
+        const bankNote =
+          paymentMethod === "Bank Transfer"
+            ? ` via ${bankAccountLabel(payload.bankAccount, data.bankAccountOtherName)}`
+            : "";
+
         return {
           success: true,
           savedDoc: transaction,
-          message: `${transactionType} of Rs.${formatRs(amount)} recorded${relatedName ? ` for ${relatedName}` : ""}`,
+          message: `${transactionType} of Rs.${formatRs(amount)} recorded${relatedName ? ` for ${relatedName}` : ""}${bankNote}`,
           undoInfo: { model: "Transaction", id: transaction._id },
         };
       }
@@ -1255,37 +1541,109 @@ async function executeAction(intent, extractedData = {}, userId) {
           throw new Error("Source and target dates must be different");
         }
 
-        let ids = Array.isArray(data.ids)
-          ? data.ids.map((id) => extractObjectId(id) || String(id)).filter(Boolean)
+        let items = Array.isArray(data.items)
+          ? data.items
+              .map((it) => ({
+                model: it.model,
+                id: extractObjectId(it.id) || String(it.id || ""),
+              }))
+              .filter((it) => it.model && it.id)
           : [];
-        if (!ids.length) {
+
+        // Legacy preview sent only ids (expense-only) — keep working
+        if (!items.length && Array.isArray(data.ids) && data.ids.length) {
+          items = data.ids
+            .map((id) => extractObjectId(id) || String(id))
+            .filter(Boolean)
+            .map((id) => ({ model: "Expense", id }));
+        }
+
+        if (!items.length) {
           const { matches } = await findShiftableEntries(data);
           if (!matches.length) {
-            throw new Error(`No expenses found on ${shortDate(fromDate)}`);
+            throw new Error(`No matching entries found on ${shortDate(fromDate)}`);
           }
-          ids = matches.map((m) => m.id);
+          items = matches.map((m) => ({ model: m.model, id: m.id }));
         }
 
         let moved = 0;
-        for (const id of ids) {
-          const expense = await Expense.findById(id);
-          if (!expense) continue;
-          expense.expenseDate = toDate;
-          await expense.save();
-          if (expense.bankTransactionId) {
-            await Transaction.findByIdAndUpdate(expense.bankTransactionId, {
-              transactionDate: toDate,
-            });
+        const counts = {};
+
+        for (const item of items) {
+          if (item.model === "Expense") {
+            const expense = await Expense.findById(item.id);
+            if (!expense) continue;
+            expense.expenseDate = toDate;
+            await expense.save();
+            if (expense.bankTransactionId) {
+              await Transaction.findByIdAndUpdate(expense.bankTransactionId, {
+                transactionDate: toDate,
+              });
+            }
+            moved += 1;
+            counts.Expense = (counts.Expense || 0) + 1;
+          } else if (item.model === "Transaction") {
+            const txn = await Transaction.findById(item.id);
+            if (!txn) continue;
+            txn.transactionDate = toDate;
+            await txn.save();
+            if (txn.linkedExpenseId) {
+              await Expense.findByIdAndUpdate(txn.linkedExpenseId, {
+                expenseDate: toDate,
+              });
+            }
+            moved += 1;
+            counts.Transaction = (counts.Transaction || 0) + 1;
+          } else if (item.model === "Order") {
+            const order = await Order.findById(item.id);
+            if (!order) continue;
+            order.orderDate = toDate;
+            await order.save();
+            await Transaction.updateMany(
+              { sourceType: "Order", sourceId: order._id },
+              { $set: { transactionDate: toDate } }
+            );
+            moved += 1;
+            counts.Order = (counts.Order || 0) + 1;
+          } else if (item.model === "RawMaterial") {
+            const raw = await RawMaterial.findById(item.id);
+            if (!raw) continue;
+            raw.purchaseDate = toDate;
+            await raw.save();
+            await Transaction.updateMany(
+              { sourceType: "RawMaterial", sourceId: raw._id },
+              { $set: { transactionDate: toDate } }
+            );
+            moved += 1;
+            counts.RawMaterial = (counts.RawMaterial || 0) + 1;
+          } else if (item.model === "WorkerLedgerEntry") {
+            const entry = await WorkerLedgerEntry.findById(item.id);
+            if (!entry) continue;
+            entry.date = toDate;
+            await entry.save();
+            if (entry.expenseId) {
+              await Expense.findByIdAndUpdate(entry.expenseId, {
+                expenseDate: toDate,
+              });
+            }
+            moved += 1;
+            counts.WorkerLedgerEntry = (counts.WorkerLedgerEntry || 0) + 1;
           }
-          moved += 1;
         }
 
-        if (!moved) throw new Error("No expenses were moved");
+        if (!moved) throw new Error("No entries were moved");
+
+        const parts = [];
+        if (counts.Expense) parts.push(`${counts.Expense} expense(s)`);
+        if (counts.Transaction) parts.push(`${counts.Transaction} payment(s)`);
+        if (counts.Order) parts.push(`${counts.Order} order(s)`);
+        if (counts.RawMaterial) parts.push(`${counts.RawMaterial} purchase(s)`);
+        if (counts.WorkerLedgerEntry) parts.push(`${counts.WorkerLedgerEntry} worker payment(s)`);
 
         return {
           success: true,
           savedDoc: null,
-          message: `Moved ${moved} expense(s) from ${shortDate(fromDate)} to ${shortDate(toDate)}`,
+          message: `Moved ${parts.join(", ")} from ${shortDate(fromDate)} to ${shortDate(toDate)}`,
           undoInfo: null,
         };
       }

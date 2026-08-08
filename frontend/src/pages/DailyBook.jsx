@@ -27,6 +27,11 @@ import {
   Chip,
   Checkbox,
   FormControlLabel,
+  Tooltip,
+  Stack,
+  Divider,
+  Menu,
+  IconButton,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -34,16 +39,24 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableChartIcon from '@mui/icons-material/TableChart';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import LocalAtmIcon from '@mui/icons-material/LocalAtm';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import LedgerDialog from '../components/Common/LedgerDialog';
+import PartySearchSelect from '../components/Common/PartySearchSelect';
 import DailyBookReportDialog from '../components/DailyBook/DailyBookReportDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
+const cashChequeMethods = ['Cash', 'Cheque'];
 const defaultCoilCategoryForWire = (wireNumber) => (Number(wireNumber) === 20 ? 'Patri Coil' : 'Shiplet Coil');
 const BANK_ACCOUNTS = ['MBL', 'UBL', 'Faisal Bank', 'Other'];
 const SELF_EXPENSE_GROUP = 'Self Expense';
@@ -129,6 +142,7 @@ const BANK_EXPENSE_TREE = {
   Rental: ['Coil Rental', 'Wire Rental', 'Miscellaneous'],
   Operations: ['Weight Scale Payment', 'Hardware Maintenance', 'Electricity', 'Office Expense', 'Miscellaneous'],
   Manufacturing: ['Annealing', 'Miscellaneous'],
+  'Process Material': ['Acid', 'Dye', 'Soap', 'Stationary', 'Miscellaneous'],
   'Self Expense': ['Fayyaz Expense', 'Faisal Expense', 'Mutual Expense'],
 };
 
@@ -159,6 +173,7 @@ const defaultSupplierForm = {
 };
 
 function isDailyBookExpenseRow(row) {
+  if (row.paymentMethod === 'Bank Transfer') return false;
   if (row.sourceType === 'Manual') {
     return row.expenseGroup === FACTORY_EXPENSE_TOTAL
       || (row.expenseGroup === SELF_EXPENSE_GROUP && SELF_EXPENSE_CATEGORIES.includes(row.expenseCategory));
@@ -183,8 +198,32 @@ function getSourceLabel(row) {
   if (row.relatedTo === 'Customer' && row.orderId) return 'Customer Order';
   if (row.relatedTo === 'Customer') return 'Customer Payment';
   if (row.relatedTo === 'Supplier') return 'Supplier Payment';
+  if (row.relatedName === 'ATM Withdrawal') {
+    return row.paymentMethod === 'Cash' ? 'ATM Withdrawal — Cash In' : 'ATM Withdrawal';
+  }
+  if (row.paymentMethod === 'Bank Transfer') return 'Bank Transfer';
+  if (row.relatedTo === 'Other' && row.sourceType === 'Manual') return 'General Cash / Cheque';
   return row.sourceType === 'Manual' ? 'Manual Entry' : row.relatedTo || 'Other';
 }
+
+function ToolbarSection({ label, children }) {
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <Typography
+        variant="overline"
+        color="text.secondary"
+        sx={{ display: 'block', mb: 0.75, letterSpacing: 0.6, fontWeight: 700, lineHeight: 1.2 }}
+      >
+        {label}
+      </Typography>
+      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap alignItems="center">
+        {children}
+      </Stack>
+    </Box>
+  );
+}
+
+const toolbarBtn = { textTransform: 'none', fontWeight: 600, borderRadius: 1.5, px: 1.5 };
 
 export default function DailyBook() {
   const [list, setList] = useState([]);
@@ -195,6 +234,7 @@ export default function DailyBook() {
   const [cashBookRange, setCashBookRange] = useState([]);
   const [bankBook, setBankBook] = useState(null);
   const [bankTransferDialogOpen, setBankTransferDialogOpen] = useState(false);
+  const [bankTransferEditingId, setBankTransferEditingId] = useState(null);
   const [bankTransferForm, setBankTransferForm] = useState({
     transactionType: 'Money In',
     amount: '',
@@ -227,11 +267,15 @@ export default function DailyBook() {
     amount: '',
     bankAccount: 'MBL',
     bankAccountOtherName: '',
+    destination: 'cashInHand',
+    expenseGroup: 'Self Expense',
     expenseCategory: 'Fayyaz Expense',
     description: '',
     transactionDate: '',
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [generalCashMode, setGeneralCashMode] = useState(false);
+  const [selfExpenseMenuAnchor, setSelfExpenseMenuAnchor] = useState(null);
   const [dailySaleDialogOpen, setDailySaleDialogOpen] = useState(false);
   const [dailySaleForm, setDailySaleForm] = useState({
     customerId: '',
@@ -250,6 +294,8 @@ export default function DailyBook() {
   });
   const [openingDialogOpen, setOpeningDialogOpen] = useState(false);
   const [openingForm, setOpeningForm] = useState({ openingBalance: '', note: '' });
+  const [cashBreakdownDialogOpen, setCashBreakdownDialogOpen] = useState(false);
+  const [cashBreakdownForm, setCashBreakdownForm] = useState({ lines: [{ holder: '', amount: '' }], note: '' });
   const [prevClosingHint, setPrevClosingHint] = useState(null);
   const [selectedPartyId, setSelectedPartyId] = useState('');
   const [partyLedger, setPartyLedger] = useState(null);
@@ -604,9 +650,38 @@ export default function DailyBook() {
     }
   }, [selectedPartyId, partyType, startDate, endDate, entryDate, mainTab]);
 
+  const fetchParties = useCallback(async () => {
+    try {
+      const [customerRes, supplierRes] = await Promise.all([
+        customersAPI.getAll(),
+        suppliersAPI.getAll(),
+      ]);
+      setCustomers(customerRes.data.data || []);
+      setSuppliers(supplierRes.data.data || []);
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || 'Failed to load customers and suppliers',
+        severity: 'error',
+      });
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
   }, [entryDate, startDate, endDate, selectedPartyId, mainTab, customers]);
+
+  // If an AI agent mutation happens in a separate dialog, the currently open tab
+  // must refresh (otherwise you only see the change after manually switching tabs).
+  useEffect(() => {
+    const handler = () => {
+      fetchParties();
+      fetchData();
+      fetchPartyLedger();
+    };
+    window.addEventListener('wms-ai-updated', handler);
+    return () => window.removeEventListener('wms-ai-updated', handler);
+  }, [fetchData, fetchPartyLedger, fetchParties]);
 
   useEffect(() => {
     fetchPartyLedger();
@@ -620,32 +695,17 @@ export default function DailyBook() {
     fetchJobWorkData();
   }, [fetchJobWorkData]);
 
-  const fetchParties = useCallback(async () => {
-    try {
-      const [customerRes, supplierRes] = await Promise.all([
-        customersAPI.getAll(),
-        suppliersAPI.getAll(),
-      ]);
-      setCustomers(customerRes.data.data || []);
-      setSuppliers(supplierRes.data.data || []);
-    } catch {
-      // ignore
-    }
-  }, []);
+  useEffect(() => {
+    fetchParties();
+  }, [fetchParties]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [customerRes, supplierRes, configRes] = await Promise.all([
-          customersAPI.getAll(),
-          suppliersAPI.getAll(),
-          configAPI.getWires(),
-        ]);
-        setCustomers(customerRes.data.data || []);
-        setSuppliers(supplierRes.data.data || []);
+        const configRes = await configAPI.getWires();
         setWires(configRes.data.data?.wires || []);
       } catch {
-        // ignore
+        // ignore wire config load failure
       }
     })();
   }, []);
@@ -705,6 +765,35 @@ export default function DailyBook() {
     }
   };
 
+  const openCashBreakdownDialog = () => {
+    const breakdown = cashBook?.cashBreakdown;
+    setCashBreakdownForm({
+      lines: breakdown?.lines?.length
+        ? breakdown.lines.map((line) => ({ holder: line.holder, amount: String(line.amount) }))
+        : [{ holder: '', amount: '' }],
+      note: breakdown?.note || '',
+    });
+    setCashBreakdownDialogOpen(true);
+  };
+
+  const handleSaveCashBreakdown = async () => {
+    const lines = cashBreakdownForm.lines
+      .map((line) => ({ holder: String(line.holder || '').trim(), amount: Number(line.amount) || 0 }))
+      .filter((line) => line.holder && line.amount > 0);
+    try {
+      await transactionsAPI.setCashBreakdown({
+        bookDate: entryDate,
+        lines,
+        note: cashBreakdownForm.note || undefined,
+      });
+      setSnack({ open: true, message: 'Cash breakdown saved', severity: 'success' });
+      setCashBreakdownDialogOpen(false);
+      fetchData();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
+    }
+  };
+
   const handleSaveAtmWithdrawal = async () => {
     if (!Number(atmForm.amount) || Number(atmForm.amount) <= 0) {
       setSnack({ open: true, message: 'Valid amount required', severity: 'error' });
@@ -714,16 +803,25 @@ export default function DailyBook() {
       setSnack({ open: true, message: 'Please write the bank / account name for Other', severity: 'error' });
       return;
     }
+    if (atmForm.destination === 'expense' && (!atmForm.expenseGroup || !atmForm.expenseCategory)) {
+      setSnack({ open: true, message: 'Select expense group and category', severity: 'error' });
+      return;
+    }
     try {
-      const res = await transactionsAPI.create({
+      const payload = {
         entryKind: 'ATMWithdrawal',
         amount: Number(atmForm.amount),
         bankAccount: atmForm.bankAccount || 'MBL',
         bankAccountOtherName: atmForm.bankAccount === 'Other' ? atmForm.bankAccountOtherName.trim() : undefined,
-        expenseCategory: atmForm.expenseCategory || 'Fayyaz Expense',
+        destination: atmForm.destination,
         description: atmForm.description || undefined,
         transactionDate: atmForm.transactionDate || entryDate,
-      });
+      };
+      if (atmForm.destination === 'expense') {
+        payload.expenseGroup = atmForm.expenseGroup;
+        payload.expenseCategory = atmForm.expenseCategory;
+      }
+      const res = await transactionsAPI.create(payload);
       setSnack({ open: true, message: res.data.message || 'ATM withdrawal recorded', severity: 'success' });
       setAtmDialogOpen(false);
       fetchData();
@@ -783,10 +881,18 @@ export default function DailyBook() {
         payload.recordAsExpense = true;
         payload.expenseGroup = bankTransferForm.expenseGroup;
         payload.expenseCategory = bankTransferForm.expenseCategory;
+      } else if (bankTransferEditingId && transactionType === 'Money Out') {
+        payload.recordAsExpense = false;
       }
-      const res = await transactionsAPI.create(payload);
-      setSnack({ open: true, message: res.data.message || `Bank transfer recorded — ${transactionType}`, severity: 'success' });
+      if (bankTransferEditingId) {
+        await transactionsAPI.update(bankTransferEditingId, payload);
+        setSnack({ open: true, message: 'Bank transfer updated', severity: 'success' });
+      } else {
+        const res = await transactionsAPI.create(payload);
+        setSnack({ open: true, message: res.data.message || `Bank transfer recorded — ${transactionType}`, severity: 'success' });
+      }
       setBankTransferDialogOpen(false);
+      setBankTransferEditingId(null);
       fetchData();
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
@@ -794,6 +900,7 @@ export default function DailyBook() {
   };
 
   const openExpenseDialog = (entryKind, expenseCategory = 'Fayyaz Expense') => {
+    setGeneralCashMode(false);
     setEditingId(null);
     setForm({
       entryKind,
@@ -810,6 +917,106 @@ export default function DailyBook() {
     });
     setDialogOpen(true);
   };
+
+  /** Cash/cheque from anyone who is not a ledger customer — updates cash in hand. */
+  const openGeneralCashDialog = (transactionType = 'Money In') => {
+    setGeneralCashMode(true);
+    setEditingId(null);
+    setForm({
+      entryKind: 'General',
+      expenseGroup: 'Operations',
+      expenseCategory: 'Miscellaneous',
+      transactionType,
+      amount: '',
+      paymentMethod: 'Cash',
+      relatedTo: 'Other',
+      relatedId: '',
+      relatedName: '',
+      description: '',
+      handledBy: '',
+    });
+    setDialogOpen(true);
+  };
+
+  const openEditBankTransfer = (row) => {
+    let personType = 'free';
+    if (row.relatedTo === 'Customer') personType = 'customer';
+    else if (row.relatedTo === 'Supplier') personType = 'supplier';
+
+    const pollutedDailyTotal = row.expenseGroup === FACTORY_EXPENSE_TOTAL
+      && row.expenseCategory === DAILY_TOTAL_CATEGORY;
+    const hasRealExpense = !!(row.linkedExpenseId
+      || (row.expenseGroup && !pollutedDailyTotal));
+
+    setBankTransferEditingId(row._id);
+    setBankTransferForm({
+      transactionType: row.transactionType || 'Money In',
+      amount: String(row.amount ?? ''),
+      personType,
+      relatedId: row.relatedId || '',
+      relatedName: row.relatedName || '',
+      bankAccount: row.bankAccount || 'MBL',
+      bankAccountOtherName: row.bankAccountOtherName || '',
+      bankAccountNumber: row.bankAccountNumber || '',
+      description: row.description || '',
+      transactionDate: row.transactionDate
+        ? new Date(row.transactionDate).toISOString().slice(0, 10)
+        : entryDate,
+      recordAsExpense: hasRealExpense,
+      expenseGroup: hasRealExpense && row.expenseGroup ? row.expenseGroup : 'Manufacturing',
+      expenseCategory: hasRealExpense && row.expenseCategory ? row.expenseCategory : 'Annealing',
+    });
+    setBankTransferDialogOpen(true);
+  };
+
+  const openBankTransferDialog = () => {
+    setBankTransferEditingId(null);
+    setBankTransferForm({
+      transactionType: 'Money In',
+      amount: '',
+      personType: 'free',
+      relatedId: '',
+      relatedName: '',
+      bankAccount: 'MBL',
+      bankAccountOtherName: '',
+      bankAccountNumber: '',
+      description: '',
+      transactionDate: entryDate,
+      recordAsExpense: false,
+      expenseGroup: 'Manufacturing',
+      expenseCategory: 'Annealing',
+    });
+    setBankTransferDialogOpen(true);
+  };
+
+  const openAtmDialog = () => {
+    setAtmForm({
+      amount: '',
+      bankAccount: 'MBL',
+      bankAccountOtherName: '',
+      destination: 'cashInHand',
+      expenseGroup: 'Self Expense',
+      expenseCategory: 'Fayyaz Expense',
+      description: '',
+      transactionDate: entryDate,
+    });
+    setAtmDialogOpen(true);
+  };
+
+  const closeTransactionDialog = () => {
+    setDialogOpen(false);
+    setEditingId(null);
+    setGeneralCashMode(false);
+  };
+
+  const customerSearchLabel = (c) => {
+    if (!c) return '';
+    if (c.customerType === 'Daily') return `${c.name} (Daily)`;
+    if (c.customerType === 'Processing') return `${c.name} (Processing)`;
+    return `${c.name} (Due: ${formatCurrency(c.totalAmountDue || 0)})`;
+  };
+
+  const supplierSearchLabel = (s) => `${s.name} (Due: ${formatCurrency(s.totalAmountDue || 0)})`;
 
   const handleOpenAdd = () => {
     if (mainTab === 1) {
@@ -839,6 +1046,7 @@ export default function DailyBook() {
       return;
     }
     setEditingId(null);
+    setGeneralCashMode(false);
     setForm({
       entryKind: 'General',
       expenseGroup: 'Operations',
@@ -864,6 +1072,10 @@ export default function DailyBook() {
       setSnack({ open: true, message: 'Classified expenses are edited in the Expenses section', severity: 'info' });
       return;
     }
+    if (row.paymentMethod === 'Bank Transfer') {
+      openEditBankTransfer(row);
+      return;
+    }
     if (row.transactionDate) {
       const d = new Date(row.transactionDate);
       if (!Number.isNaN(d.getTime())) {
@@ -875,10 +1087,16 @@ export default function DailyBook() {
     if (isDailyBookExpenseRow(row)) {
       entryKind = row.expenseGroup === SELF_EXPENSE_GROUP ? 'SelfExpense' : 'FactoryExpense';
     }
+    const isGeneralCash = mainTab === 0
+      && entryKind === 'General'
+      && (row.relatedTo || 'Other') === 'Other'
+      && row.paymentMethod !== 'Bank Transfer'
+      && !isDailyBookExpenseRow(row);
+    setGeneralCashMode(isGeneralCash);
     setForm({
       entryKind,
-      expenseGroup: row.expenseGroup || FACTORY_EXPENSE_TOTAL,
-      expenseCategory: row.expenseCategory || DAILY_TOTAL_CATEGORY,
+      expenseGroup: row.expenseGroup || (entryKind === 'SelfExpense' ? SELF_EXPENSE_GROUP : FACTORY_EXPENSE_TOTAL),
+      expenseCategory: row.expenseCategory || (entryKind === 'SelfExpense' ? 'Fayyaz Expense' : DAILY_TOTAL_CATEGORY),
       transactionType: row.transactionType,
       amount: String(row.amount),
       paymentMethod: row.paymentMethod || 'Cash',
@@ -998,8 +1216,7 @@ export default function DailyBook() {
           await transactionsAPI.create(payload);
         }
         setSnack({ open: true, message: editingId ? 'Updated' : 'Expense total recorded', severity: 'success' });
-        setDialogOpen(false);
-        setEditingId(null);
+        closeTransactionDialog();
         fetchData();
         fetchPartyLedger();
       } catch (err) {
@@ -1009,6 +1226,14 @@ export default function DailyBook() {
     }
     if (['Customer', 'Supplier'].includes(form.relatedTo) && !form.relatedId) {
       setSnack({ open: true, message: `Please select a ${form.relatedTo.toLowerCase()}`, severity: 'error' });
+      return;
+    }
+    if (generalCashMode && !String(form.relatedName || '').trim()) {
+      setSnack({ open: true, message: 'Please enter who paid or received (person / party name)', severity: 'error' });
+      return;
+    }
+    if (generalCashMode && form.paymentMethod === 'Bank Transfer') {
+      setSnack({ open: true, message: 'Use Bank Transfer button for bank payments — they do not affect cash in hand', severity: 'error' });
       return;
     }
     try {
@@ -1022,10 +1247,14 @@ export default function DailyBook() {
         relatedName = supplier?.name || '';
       }
       const payload = {
-        ...form,
+        transactionType: form.transactionType,
         amount: Number(form.amount),
+        paymentMethod: form.paymentMethod,
+        relatedTo: form.relatedTo,
         relatedId: form.relatedTo === 'Other' ? undefined : form.relatedId,
         relatedName,
+        description: form.description,
+        handledBy: form.handledBy,
         transactionDate: entryDate,
       };
       if (editingId) {
@@ -1034,8 +1263,7 @@ export default function DailyBook() {
         await transactionsAPI.create(payload);
       }
       setSnack({ open: true, message: editingId ? 'Updated' : 'Recorded', severity: 'success' });
-      setDialogOpen(false);
-      setEditingId(null);
+      closeTransactionDialog();
       fetchData();
       fetchPartyLedger();
     } catch (err) {
@@ -1858,186 +2086,267 @@ export default function DailyBook() {
         {partyConfig.map((p) => <Tab key={p.label} label={p.label} />)}
       </Tabs>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
-        <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
-          <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-          <TextField
-            size="small"
-            type="date"
-            label="Entry Date"
-            value={entryDate}
-            onChange={(e) => setEntryDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-          />
-          {mainTab !== 0 && mainTab !== 4 && (
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <InputLabel>{partyType || 'Party'}</InputLabel>
-              <Select value={selectedPartyId} label={partyType || 'Party'} onChange={(e) => setSelectedPartyId(e.target.value)}>
-                <MenuItem value="">All</MenuItem>
-                {parties.map((p) => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                    {(p.linkedSupplierId || p.linkedCustomerId) ? '  ↔ linked' : ''}
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 2,
+          p: { xs: 1.5, sm: 2 },
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 2,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          spacing={2}
+          alignItems={{ lg: 'center' }}
+          justifyContent="space-between"
+        >
+          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+            <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+            <TextField
+              size="small"
+              type="date"
+              label="Entry Date"
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 150 }}
+            />
+            {mainTab !== 0 && mainTab !== 4 && (
+              <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: 320, flex: 1 }}>
+                <PartySearchSelect
+                  options={parties}
+                  value={selectedPartyId}
+                  onChange={setSelectedPartyId}
+                  label={partyType || 'Party'}
+                  allowEmpty
+                  emptyLabel="All"
+                  getOptionLabel={(p) => {
+                    if (!p?._id) return 'All';
+                    const linked = (p.linkedSupplierId || p.linkedCustomerId) ? '  ↔ linked' : '';
+                    return `${p.name}${linked}`;
+                  }}
+                />
+              </Box>
+            )}
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AssessmentIcon />}
+              onClick={() => setReportDialogOpen(true)}
+              sx={toolbarBtn}
+            >
+              Report
+            </Button>
+            {mainTab !== 4 && mainTab !== 5 && (
+              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleOpenAdd} sx={toolbarBtn}>
+                {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
+              </Button>
+            )}
+            {mainTab === 5 && (
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => openJobWorkDeliveryDialog(selectedPartyId || null)}
+                sx={toolbarBtn}
+              >
+                Record Delivery
+              </Button>
+            )}
+          </Stack>
+        </Stack>
+
+        <Divider sx={{ my: 1.5 }} />
+
+        {mainTab === 0 && (
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
+            <ToolbarSection label="Cash book">
+              <Button variant="outlined" size="small" startIcon={<AccountBalanceWalletIcon />} onClick={openOpeningDialog} sx={toolbarBtn}>
+                Opening Balance
+              </Button>
+              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={openCashBreakdownDialog} sx={toolbarBtn}>
+                Cash Breakdown
+              </Button>
+              <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
+                <Button variant="outlined" size="small" startIcon={<SwapHorizIcon />} onClick={() => openGeneralCashDialog('Money In')} sx={toolbarBtn}>
+                  Cash / Cheque
+                </Button>
+              </Tooltip>
+            </ToolbarSection>
+            <ToolbarSection label="Daily expense totals">
+              <Button variant="outlined" size="small" startIcon={<ReceiptLongIcon />} onClick={() => openExpenseDialog('FactoryExpense')} sx={toolbarBtn}>
+                Factory Total
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                endIcon={<ArrowDropDownIcon />}
+                onClick={(e) => setSelfExpenseMenuAnchor(e.currentTarget)}
+                sx={toolbarBtn}
+              >
+                Self Expense
+              </Button>
+              <Menu
+                anchorEl={selfExpenseMenuAnchor}
+                open={Boolean(selfExpenseMenuAnchor)}
+                onClose={() => setSelfExpenseMenuAnchor(null)}
+              >
+                {SELF_EXPENSE_CATEGORIES.map((cat) => (
+                  <MenuItem
+                    key={cat}
+                    onClick={() => {
+                      setSelfExpenseMenuAnchor(null);
+                      openExpenseDialog('SelfExpense', cat);
+                    }}
+                  >
+                    {cat.replace(' Expense', '')}
                   </MenuItem>
                 ))}
-              </Select>
-            </FormControl>
-          )}
-        </Box>
-        <Box display="flex" gap={1}>
-          <Button
-            variant="outlined"
-            color="secondary"
-            startIcon={<AssessmentIcon />}
-            onClick={() => setReportDialogOpen(true)}
-          >
-            View Report
-          </Button>
-          {mainTab === 0 && (
-            <>
-              <Button variant="outlined" onClick={openOpeningDialog}>Set Opening Balance</Button>
-              <Button variant="outlined" onClick={() => openExpenseDialog('FactoryExpense')}>Factory Total</Button>
-              <Button variant="outlined" onClick={() => openExpenseDialog('SelfExpense', 'Fayyaz Expense')}>Self — Fayyaz</Button>
-              <Button variant="outlined" onClick={() => openExpenseDialog('SelfExpense', 'Faisal Expense')}>Self — Faisal</Button>
-              <Button variant="outlined" onClick={() => openExpenseDialog('SelfExpense', 'Mutual Expense')}>Self — Mutual</Button>
-              <Button
-                variant="outlined"
-                color="info"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  setBankTransferForm({
-                    transactionType: 'Money In',
-                    amount: '',
-                    personType: 'free',
-                    relatedId: '',
-                    relatedName: '',
-                    bankAccount: 'MBL',
-                    bankAccountOtherName: '',
-                    bankAccountNumber: '',
-                    description: '',
-                    transactionDate: entryDate,
-                    recordAsExpense: false,
-                    expenseGroup: 'Manufacturing',
-                    expenseCategory: 'Annealing',
-                  });
-                  setBankTransferDialogOpen(true);
-                }}
-              >
+              </Menu>
+            </ToolbarSection>
+            <ToolbarSection label="Bank (not cash in hand)">
+              <Button variant="outlined" size="small" startIcon={<AccountBalanceIcon />} onClick={openBankTransferDialog} sx={toolbarBtn}>
                 Bank Transfer
               </Button>
-              <Button
-                variant="outlined"
-                color="warning"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  setAtmForm({
-                    amount: '',
-                    bankAccount: 'MBL',
-                    bankAccountOtherName: '',
-                    expenseCategory: 'Fayyaz Expense',
-                    description: '',
-                    transactionDate: entryDate,
-                  });
-                  setAtmDialogOpen(true);
-                }}
-              >
+              <Button variant="outlined" size="small" startIcon={<LocalAtmIcon />} onClick={openAtmDialog} sx={toolbarBtn}>
                 ATM Withdrawal
               </Button>
-            </>
-          )}
-          {mainTab >= 1 && mainTab !== 4 && (
-            <>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleOpenAddParty}>
+            </ToolbarSection>
+          </Stack>
+        )}
+
+        {mainTab >= 1 && mainTab !== 4 && (
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
+            <ToolbarSection label="Party">
+              <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={handleOpenAddParty} sx={toolbarBtn}>
                 Add {getPartyTypeLabel()}
               </Button>
               {selectedPartyId && (
                 <>
-                  <Button variant="outlined" startIcon={<EditIcon />} onClick={handleOpenEditParty}>Edit</Button>
-                  <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => setPartyDeleteConfirm({ open: true, id: selectedPartyId })}>
+                  <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={handleOpenEditParty} sx={toolbarBtn}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={() => setPartyDeleteConfirm({ open: true, id: selectedPartyId })}
+                    sx={toolbarBtn}
+                  >
                     Drop
                   </Button>
                 </>
               )}
-            </>
-          )}
-          {selectedPartyId && mainTab >= 2 && mainTab !== 4 && (
-            <Button variant="outlined" onClick={() => setLedgerDialogOpen(true)}>Full Ledger</Button>
-          )}
-          {selectedPartyId && mainTab === 1 && (
-            <Button variant="outlined" onClick={() => setLedgerDialogOpen(true)}>View Purchases</Button>
-          )}
-          {mainTab !== 4 && (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAdd}>
-              {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
+            </ToolbarSection>
+            {selectedPartyId && (
+              <ToolbarSection label="Ledger">
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setLedgerDialogOpen(true)}
+                  sx={toolbarBtn}
+                >
+                  {mainTab === 1 ? 'View Purchases' : 'Full Ledger'}
+                </Button>
+              </ToolbarSection>
+            )}
+            {mainTab === 1 && (
+              <ToolbarSection label="Other">
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => {
+                    setGeneralCashMode(false);
+                    setEditingId(null);
+                    setForm({
+                      entryKind: 'General',
+                      expenseGroup: 'Operations',
+                      expenseCategory: 'Miscellaneous',
+                      transactionType: 'Money Out',
+                      amount: '',
+                      paymentMethod: 'Cash',
+                      relatedTo: 'Customer',
+                      relatedId: selectedPartyId || dailyCustomers[0]?._id || '',
+                      relatedName: '',
+                      description: '',
+                      handledBy: '',
+                    });
+                    setDialogOpen(true);
+                  }}
+                  sx={toolbarBtn}
+                >
+                  Add Transaction
+                </Button>
+              </ToolbarSection>
+            )}
+            {mainTab === 2 && (
+              <ToolbarSection label="Sales & returns">
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openLedgerSaleDialog} sx={toolbarBtn}>
+                  Add Sale
+                </Button>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog} sx={toolbarBtn}>
+                  Return Wire
+                </Button>
+              </ToolbarSection>
+            )}
+            {mainTab === 3 && (
+              <ToolbarSection label="Stock">
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openStockArrivalDialog} sx={toolbarBtn}>
+                  Stock Arrival
+                </Button>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openCoilReturnDialog} sx={toolbarBtn}>
+                  Return Coil
+                </Button>
+              </ToolbarSection>
+            )}
+            {mainTab === 5 && (
+              <ToolbarSection label="Processing">
+                <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={() => openJobWorkDialog()} sx={toolbarBtn}>
+                  Coil Arrival
+                </Button>
+                <Button variant="outlined" size="small" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog} sx={toolbarBtn}>
+                  Return Wire
+                </Button>
+              </ToolbarSection>
+            )}
+          </Stack>
+        )}
+
+        {mainTab === 4 && (
+          <ToolbarSection label="Annealing">
+            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openAnnealingSendDialog} sx={toolbarBtn}>
+              Send for Annealing
             </Button>
-          )}
-          {mainTab === 2 && (
-            <>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={openLedgerSaleDialog}>Add Sale</Button>
-              <Button variant="outlined" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog}>Return Wire</Button>
-            </>
-          )}
-          {mainTab === 3 && (
-            <>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={openStockArrivalDialog}>Stock Arrival</Button>
-              <Button variant="outlined" color="warning" startIcon={<AddIcon />} onClick={openCoilReturnDialog}>Return Coil</Button>
-            </>
-          )}
-          {mainTab === 4 && (
-            <>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={openAnnealingSendDialog}>Send for Annealing</Button>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={openAnnealingArrivalDialog}>
-                Arrival from Annealing
-              </Button>
-            </>
-          )}
-          {mainTab === 5 && (
-            <>
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => openJobWorkDialog()}>Coil Arrival</Button>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<AddIcon />}
-                onClick={() => openJobWorkDeliveryDialog(selectedPartyId || null)}
-              >
-                Record Delivery
-              </Button>
-              <Button variant="outlined" color="warning" startIcon={<AddIcon />} onClick={openReturnDialog}>Return Wire</Button>
-            </>
-          )}
-          {mainTab === 1 && (
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setEditingId(null);
-                setForm({
-                  entryKind: 'General',
-                  expenseGroup: 'Operations',
-                  expenseCategory: 'Miscellaneous',
-                  transactionType: 'Money Out',
-                  amount: '',
-                  paymentMethod: 'Cash',
-                  relatedTo: 'Customer',
-                  relatedId: selectedPartyId || dailyCustomers[0]?._id || '',
-                  relatedName: '',
-                  description: '',
-                  handledBy: '',
-                });
-                setDialogOpen(true);
-              }}
-            >
-              Add Transaction
+            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={openAnnealingArrivalDialog} sx={toolbarBtn}>
+              Arrival from Annealing
             </Button>
-          )}
-      </Box>
-        </Box>
+          </ToolbarSection>
+        )}
+      </Paper>
 
       {mainTab === 0 && cashBook && (
-        <Paper sx={{ p: 2, mb: 2, bgcolor: 'action.hover' }}>
-          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            mb: 2,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 2,
+            bgcolor: 'grey.50',
+          }}
+        >
+          <Typography variant="subtitle1" fontWeight={700} gutterBottom>
             Cash in Hand — {formatDate(entryDate)}
           </Typography>
-          <Box display="flex" gap={3} flexWrap="wrap" alignItems="center">
+          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap alignItems="flex-start">
             <Box>
               <Typography variant="caption" color="text.secondary">Opening Balance</Typography>
               <Typography variant="h6">{formatCurrency(cashBook.openingBalance)}</Typography>
@@ -2064,7 +2373,36 @@ export default function DailyBook() {
               <Typography variant="h6" color="primary">{formatCurrency(cashBook.closingBalance)}</Typography>
               <Typography variant="caption" color="text.secondary">Carried to next day as opening</Typography>
             </Box>
-          </Box>
+          </Stack>
+          {cashBook.cashBreakdown?.lines?.length > 0 && (
+            <Box mt={2} pt={2} borderTop={1} borderColor="divider">
+              <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                Cash Breakdown — who holds cash
+              </Typography>
+              <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-start">
+                {cashBook.cashBreakdown.lines.map((line) => (
+                  <Box key={line.holder}>
+                    <Typography variant="caption" color="text.secondary">{line.holder}</Typography>
+                    <Typography variant="h6">{formatCurrency(line.amount)}</Typography>
+                  </Box>
+                ))}
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Breakdown Total</Typography>
+                  <Typography variant="h6" fontWeight={700}>{formatCurrency(cashBook.cashBreakdown.total)}</Typography>
+                  {Math.abs((cashBook.cashBreakdown.total || 0) - (cashBook.closingBalance || 0)) > 0.01 && (
+                    <Typography variant="caption" color="warning.main" display="block">
+                      Diff vs closing: {formatCurrency(cashBook.closingBalance - cashBook.cashBreakdown.total)}
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+              {cashBook.cashBreakdown.note && (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                  Note: {cashBook.cashBreakdown.note}
+                </Typography>
+              )}
+            </Box>
+          )}
           {cashBook.expenseTotals && (
             <Box mt={2} pt={2} borderTop={1} borderColor="divider">
               <Typography variant="subtitle2" fontWeight={600} gutterBottom>
@@ -2378,12 +2716,13 @@ export default function DailyBook() {
             </Button>
           </Box>
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 920, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1020, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
                 <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
-                <TableCell sx={{ width: '28%', fontWeight: 700 }}>Description</TableCell>
-                <TableCell sx={{ width: 120, fontWeight: 700 }}>Source</TableCell>
+                <TableCell sx={{ width: '24%', fontWeight: 700 }}>Description</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Source</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Payment</TableCell>
                 <TableCell sx={{ width: 72, fontWeight: 700 }} align="right">Wt</TableCell>
                 <TableCell sx={{ width: 88, fontWeight: 700 }} align="right">Rate</TableCell>
                 <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Credit</TableCell>
@@ -2400,6 +2739,7 @@ export default function DailyBook() {
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
                   <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{row.description}</TableCell>
                   <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{row.source}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }}>{row.credit ? formatCurrency(row.credit) : '—'}</TableCell>
@@ -2423,7 +2763,7 @@ export default function DailyBook() {
               })}
               {(partyLedger.entries || []).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <Typography variant="body2" color="text.secondary">
                       No activity for selected dates — current due: {formatCurrency(selectedParty?.totalAmountDue || 0)}
                     </Typography>
@@ -2751,17 +3091,15 @@ export default function DailyBook() {
       <Dialog open={dailySaleDialogOpen} onClose={() => setDailySaleDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Daily Sale</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Customer</InputLabel>
-            <Select
+          <FormControl fullWidth margin="dense" required>
+            <PartySearchSelect
+              options={dailyCustomers}
               value={dailySaleForm.customerId}
-              onChange={(e) => setDailySaleForm((f) => ({ ...f, customerId: e.target.value }))}
+              onChange={(id) => setDailySaleForm((f) => ({ ...f, customerId: id }))}
               label="Customer"
-            >
-              {dailyCustomers.map((c) => (
-                <MenuItem key={c._id} value={c._id}>{c.name} (Daily)</MenuItem>
-              ))}
-            </Select>
+              required
+              getOptionLabel={customerSearchLabel}
+            />
           </FormControl>
           <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
             Daily customer — full cash payment. No credit/debit tracking.
@@ -2902,16 +3240,96 @@ export default function DailyBook() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={dialogOpen} onClose={() => { setDialogOpen(false); setEditingId(null); }} maxWidth="sm" fullWidth>
+      <Dialog open={cashBreakdownDialogOpen} onClose={() => setCashBreakdownDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Cash Breakdown — {formatDate(entryDate)}</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Record who is holding how much of today&apos;s cash in hand (e.g. Fayyaz, Irfan, Faisal). Add as many rows as you need.
+          </Alert>
+          {cashBreakdownForm.lines.map((line, index) => (
+            <Stack key={index} direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <TextField
+                fullWidth
+                label="Person / holder"
+                value={line.holder}
+                onChange={(e) => setCashBreakdownForm((f) => ({
+                  ...f,
+                  lines: f.lines.map((row, i) => (i === index ? { ...row, holder: e.target.value } : row)),
+                }))}
+                margin="dense"
+                placeholder="e.g. Fayyaz"
+              />
+              <TextField
+                type="number"
+                label="Amount"
+                value={line.amount}
+                onChange={(e) => setCashBreakdownForm((f) => ({
+                  ...f,
+                  lines: f.lines.map((row, i) => (i === index ? { ...row, amount: e.target.value } : row)),
+                }))}
+                margin="dense"
+                sx={{ minWidth: 140 }}
+              />
+              <IconButton
+                color="error"
+                disabled={cashBreakdownForm.lines.length <= 1}
+                onClick={() => setCashBreakdownForm((f) => ({
+                  ...f,
+                  lines: f.lines.filter((_, i) => i !== index),
+                }))}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Stack>
+          ))}
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => setCashBreakdownForm((f) => ({
+              ...f,
+              lines: [...f.lines, { holder: '', amount: '' }],
+            }))}
+            sx={{ mb: 1 }}
+          >
+            Add holder
+          </Button>
+          <TextField
+            fullWidth
+            label="Note (optional)"
+            value={cashBreakdownForm.note}
+            onChange={(e) => setCashBreakdownForm((f) => ({ ...f, note: e.target.value }))}
+            margin="dense"
+          />
+          {cashBook && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              Closing cash in hand: {formatCurrency(cashBook.closingBalance)}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCashBreakdownDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveCashBreakdown}>Save Breakdown</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={dialogOpen} onClose={closeTransactionDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
-          {['FactoryExpense', 'SelfExpense'].includes(form.entryKind)
+          {generalCashMode
+            ? (editingId ? 'Edit Cash / Cheque Entry' : 'General Cash / Cheque In-Out')
+            : ['FactoryExpense', 'SelfExpense'].includes(form.entryKind)
             ? (editingId ? 'Edit Expense Total' : form.entryKind === 'FactoryExpense'
               ? 'Add Factory Expense Total'
               : `Add Self Expense — ${form.expenseCategory?.replace(' Expense', '') || ''}`)
             : (editingId ? 'Edit Transaction' : 'Add Transaction')}
         </DialogTitle>
         <DialogContent>
-          {mainTab === 0 && !editingId && !['FactoryExpense', 'SelfExpense'].includes(form.entryKind) && (
+          {generalCashMode && (
+            <Alert severity="info" sx={{ mb: 1 }}>
+              Record cash or cheque received from (or paid to) anyone who is <strong>not</strong> a ledger customer or supplier.
+              This updates <strong>cash in hand</strong>. For bank transfers use the Bank Transfer button.
+            </Alert>
+          )}
+          {mainTab === 0 && !editingId && !['FactoryExpense', 'SelfExpense'].includes(form.entryKind) && !generalCashMode && (
             <FormControl fullWidth margin="dense">
               <InputLabel>Entry Type</InputLabel>
               <Select
@@ -2972,7 +3390,7 @@ export default function DailyBook() {
           )}
           {!['FactoryExpense', 'SelfExpense'].includes(form.entryKind) && (
           <>
-          {mainTab === 0 && (
+          {mainTab === 0 && !generalCashMode && (
             <Alert severity="info" sx={{ mb: 1 }}>
               General cash in/out or daily expense totals. Customer and supplier payments are recorded under their respective tabs.
             </Alert>
@@ -2982,6 +3400,7 @@ export default function DailyBook() {
               {mainTab === 3 ? 'Supplier payment (Money Out) or refund (Money In).' : 'Customer payment (Money In) or refund (Money Out).'}
             </Alert>
           )}
+          {!generalCashMode && (
           <FormControl fullWidth margin="dense">
             <InputLabel>Related To</InputLabel>
             <Select
@@ -3007,42 +3426,48 @@ export default function DailyBook() {
               )}
             </Select>
           </FormControl>
+          )}
           {form.relatedTo === 'Customer' && (
-            <FormControl fullWidth margin="dense">
-              <InputLabel>Customer</InputLabel>
-              <Select value={form.relatedId} onChange={(e) => setForm((f) => ({ ...f, relatedId: e.target.value }))} label="Customer">
-                {customerOptions.map((c) => (
-                  <MenuItem key={c._id} value={c._id}>
-                    {c.name}
-                    {c.customerType === 'Daily' ? ' (Daily)' : ` (Due: ${formatCurrency(c.totalAmountDue)})`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <PartySearchSelect
+              options={customerOptions}
+              value={form.relatedId}
+              onChange={(id) => setForm((f) => ({ ...f, relatedId: id }))}
+              label="Customer"
+              required
+              getOptionLabel={customerSearchLabel}
+            />
           )}
           {form.relatedTo === 'Supplier' && (
-            <FormControl fullWidth margin="dense">
-              <InputLabel>Supplier</InputLabel>
-              <Select value={form.relatedId} onChange={(e) => setForm((f) => ({ ...f, relatedId: e.target.value }))} label="Supplier">
-                {suppliers.map((s) => (
-                  <MenuItem key={s._id} value={s._id}>{s.name} (Due: {formatCurrency(s.totalAmountDue)})</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <PartySearchSelect
+              options={suppliers}
+              value={form.relatedId}
+              onChange={(id) => setForm((f) => ({ ...f, relatedId: id }))}
+              label="Supplier"
+              required
+              getOptionLabel={supplierSearchLabel}
+            />
           )}
           <FormControl fullWidth margin="dense">
             <InputLabel>Type</InputLabel>
             <Select value={form.transactionType} onChange={(e) => setForm((f) => ({ ...f, transactionType: e.target.value }))} label="Type">
               <MenuItem value="Money In">
-                Money In {mainTab === 1 ? '(Sale received)' : form.relatedTo === 'Customer' ? '(Payment received)' : '(Refund from supplier)'}
+                Money In {generalCashMode ? '(Received)' : mainTab === 1 ? '(Sale received)' : form.relatedTo === 'Customer' ? '(Payment received)' : '(Refund from supplier)'}
               </MenuItem>
               <MenuItem value="Money Out">
-                Money Out {mainTab === 1 ? '(Refund to customer)' : form.relatedTo === 'Supplier' ? '(Payment to supplier)' : '(Refund/payment out)'}
+                Money Out {generalCashMode ? '(Paid out)' : mainTab === 1 ? '(Refund to customer)' : form.relatedTo === 'Supplier' ? '(Payment to supplier)' : '(Refund/payment out)'}
               </MenuItem>
             </Select>
           </FormControl>
-          {form.relatedTo === 'Other' && (
-            <TextField fullWidth label="Related Name" value={form.relatedName} onChange={(e) => setForm((f) => ({ ...f, relatedName: e.target.value }))} margin="dense" />
+          {(form.relatedTo === 'Other' || generalCashMode) && (
+            <TextField
+              fullWidth
+              label={form.transactionType === 'Money In' ? 'Received from (person / party)' : 'Paid to (person / party)'}
+              value={form.relatedName}
+              onChange={(e) => setForm((f) => ({ ...f, relatedName: e.target.value }))}
+              margin="dense"
+              required={generalCashMode}
+              placeholder="e.g. Imran, ABC Traders, relative"
+            />
           )}
           <TextField fullWidth type="number" label="Amount" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} margin="dense" required />
           </>
@@ -3064,7 +3489,7 @@ export default function DailyBook() {
           <FormControl fullWidth margin="dense">
             <InputLabel>Payment Method</InputLabel>
             <Select value={form.paymentMethod} onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))} label="Payment Method">
-              {paymentMethods.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+              {(generalCashMode ? cashChequeMethods : paymentMethods).map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
             </Select>
           </FormControl>
           <TextField fullWidth label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} margin="dense" />
@@ -3074,7 +3499,7 @@ export default function DailyBook() {
           <TextField fullWidth label="Entry Date" value={entryDate} margin="dense" InputProps={{ readOnly: true }} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setDialogOpen(false); setEditingId(null); }}>Cancel</Button>
+          <Button onClick={closeTransactionDialog}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>{editingId ? 'Update' : 'Save'}</Button>
         </DialogActions>
       </Dialog>
@@ -3099,12 +3524,14 @@ export default function DailyBook() {
         <DialogTitle>Stock Arrival</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 1 }}>Records stock in ledger — cash payment is optional.</Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Supplier</InputLabel>
-            <Select value={stockArrivalForm.supplierId} label="Supplier" onChange={(e) => setStockArrivalForm((f) => ({ ...f, supplierId: e.target.value }))}>
-              {suppliers.map((s) => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={suppliers}
+            value={stockArrivalForm.supplierId}
+            onChange={(id) => setStockArrivalForm((f) => ({ ...f, supplierId: id }))}
+            label="Supplier"
+            required
+            getOptionLabel={supplierSearchLabel}
+          />
           <FormControl fullWidth margin="dense">
             <InputLabel>Coil Category</InputLabel>
             <Select value={stockArrivalForm.coilCategory} label="Coil Category" onChange={(e) => setStockArrivalForm((f) => ({ ...f, coilCategory: e.target.value }))}>
@@ -3131,16 +3558,14 @@ export default function DailyBook() {
           <Alert severity="info" sx={{ mb: 1 }}>
             Credits the supplier ledger (reduces what we owe) and deducts coil from factory stock.
           </Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Supplier</InputLabel>
-            <Select
-              value={coilReturnForm.supplierId}
-              label="Supplier"
-              onChange={(e) => setCoilReturnForm((f) => ({ ...f, supplierId: e.target.value }))}
-            >
-              {suppliers.map((s) => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={suppliers}
+            value={coilReturnForm.supplierId}
+            onChange={(id) => setCoilReturnForm((f) => ({ ...f, supplierId: id }))}
+            label="Supplier"
+            required
+            getOptionLabel={supplierSearchLabel}
+          />
           <FormControl fullWidth margin="dense" required>
             <InputLabel>Coil Category</InputLabel>
             <Select
@@ -3188,12 +3613,14 @@ export default function DailyBook() {
         <DialogTitle>Add Sale (Ledger Customer)</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 1 }}>Sale goes to customer ledger — payment optional on this date.</Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Customer</InputLabel>
-            <Select value={ledgerSaleForm.customerId} label="Customer" onChange={(e) => setLedgerSaleForm((f) => ({ ...f, customerId: e.target.value }))}>
-              {ledgerCustomers.map((c) => <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={ledgerCustomers}
+            value={ledgerSaleForm.customerId}
+            onChange={(id) => setLedgerSaleForm((f) => ({ ...f, customerId: id }))}
+            label="Customer"
+            required
+            getOptionLabel={customerSearchLabel}
+          />
           <FormControl fullWidth margin="dense" required>
             <InputLabel>Wire Number</InputLabel>
             <Select
@@ -3296,19 +3723,15 @@ export default function DailyBook() {
             </Select>
           </FormControl>
           {annealingSendForm.partyType !== 'None' && (
-            <FormControl fullWidth margin="dense">
-              <InputLabel>{annealingSendForm.partyType} (optional)</InputLabel>
-              <Select
-                value={annealingSendForm.partyId}
-                label={`${annealingSendForm.partyType} (optional)`}
-                onChange={(e) => setAnnealingSendForm((f) => ({ ...f, partyId: e.target.value }))}
-              >
-                <MenuItem value="">— None —</MenuItem>
-                {annealingPartyOptions(annealingSendForm.partyType).map((p) => (
-                  <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <PartySearchSelect
+              options={annealingPartyOptions(annealingSendForm.partyType)}
+              value={annealingSendForm.partyId}
+              onChange={(id) => setAnnealingSendForm((f) => ({ ...f, partyId: id }))}
+              label={`${annealingSendForm.partyType} (optional)`}
+              allowEmpty
+              emptyLabel="— None —"
+              getOptionLabel={(p) => p?.name || ''}
+            />
           )}
           <FormControl fullWidth margin="dense">
             <InputLabel>Material</InputLabel>
@@ -3543,12 +3966,14 @@ export default function DailyBook() {
           <Alert severity="info" sx={{ mb: 1 }}>
             Customer&apos;s own coil arrives for manufacturing. Labour rate is entered later when wire is delivered (rate varies by wire).
           </Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Customer</InputLabel>
-            <Select value={jobWorkForm.customerId} label="Customer" onChange={(e) => setJobWorkForm((f) => ({ ...f, customerId: e.target.value }))}>
-              {processingCustomers.map((c) => <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={processingCustomers}
+            value={jobWorkForm.customerId}
+            onChange={(id) => setJobWorkForm((f) => ({ ...f, customerId: id }))}
+            label="Customer"
+            required
+            getOptionLabel={customerSearchLabel}
+          />
           <FormControl fullWidth margin="dense">
             <InputLabel>Coil Category</InputLabel>
             <Select value={jobWorkForm.coilCategory} label="Coil Category" onChange={(e) => setJobWorkForm((f) => ({ ...f, coilCategory: e.target.value }))}>
@@ -3585,17 +4010,15 @@ export default function DailyBook() {
               ? 'Changing weight or labour rate will recalculate stock, labour charges, status, and customer balance.'
               : 'Delivery is drawn FIFO from the customer’s coil pool. Enter the labour rate for this wire delivery.'}
           </Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Customer</InputLabel>
-            <Select
-              value={jobWorkDeliveryForm.customerId}
-              label="Customer"
-              onChange={(e) => setJobWorkDeliveryForm((f) => ({ ...f, customerId: e.target.value }))}
-              disabled={!!jobWorkDeliveryEdit}
-            >
-              {processingCustomers.map((c) => <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={processingCustomers}
+            value={jobWorkDeliveryForm.customerId}
+            onChange={(id) => setJobWorkDeliveryForm((f) => ({ ...f, customerId: id }))}
+            label="Customer"
+            required
+            disabled={!!jobWorkDeliveryEdit}
+            getOptionLabel={customerSearchLabel}
+          />
           {deliveryAvailableKg > 0 && (
             <Alert severity="info" sx={{ my: 1 }}>
               Available for this {jobWorkDeliveryEdit ? 'edited delivery' : 'delivery'}:{' '}
@@ -3688,18 +4111,14 @@ export default function DailyBook() {
           <Alert severity="info" sx={{ mb: 1 }}>
             Credits the customer ledger and adds the weight back to Ready Stock by wire number. Does not change the original sale row.
           </Alert>
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel>Customer</InputLabel>
-            <Select
-              value={returnForm.customerId}
-              label="Customer"
-              onChange={(e) => setReturnForm((f) => ({ ...f, customerId: e.target.value }))}
-            >
-              {(mainTab === 5 ? processingCustomers : ledgerCustomers).map((c) => (
-                <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <PartySearchSelect
+            options={mainTab === 5 ? processingCustomers : ledgerCustomers}
+            value={returnForm.customerId}
+            onChange={(id) => setReturnForm((f) => ({ ...f, customerId: id }))}
+            label="Customer"
+            required
+            getOptionLabel={customerSearchLabel}
+          />
           <FormControl fullWidth margin="dense" required>
             <InputLabel>Wire Number</InputLabel>
             <Select
@@ -3740,8 +4159,13 @@ export default function DailyBook() {
       </Dialog>
 
       {/* ───────── Bank Transfer Dialog ───────── */}
-      <Dialog open={bankTransferDialogOpen} onClose={() => setBankTransferDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Bank Transfer</DialogTitle>
+      <Dialog
+        open={bankTransferDialogOpen}
+        onClose={() => { setBankTransferDialogOpen(false); setBankTransferEditingId(null); }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{bankTransferEditingId ? 'Edit Bank Transfer' : 'Bank Transfer'}</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
             Bank transfers do <strong>not</strong> affect cash in hand — choose which bank account ledger to update.
@@ -3811,32 +4235,24 @@ export default function DailyBook() {
             />
           )}
           {bankTransferForm.personType === 'customer' && (
-            <FormControl fullWidth margin="dense" required>
-              <InputLabel>Customer</InputLabel>
-              <Select
-                value={bankTransferForm.relatedId}
-                label="Customer"
-                onChange={(e) => setBankTransferForm((f) => ({ ...f, relatedId: e.target.value }))}
-              >
-                {[...ledgerCustomers, ...processingCustomers].map((c) => (
-                  <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <PartySearchSelect
+              options={[...ledgerCustomers, ...processingCustomers]}
+              value={bankTransferForm.relatedId}
+              onChange={(id) => setBankTransferForm((f) => ({ ...f, relatedId: id }))}
+              label="Customer"
+              required
+              getOptionLabel={customerSearchLabel}
+            />
           )}
           {bankTransferForm.personType === 'supplier' && (
-            <FormControl fullWidth margin="dense" required>
-              <InputLabel>Supplier</InputLabel>
-              <Select
-                value={bankTransferForm.relatedId}
-                label="Supplier"
-                onChange={(e) => setBankTransferForm((f) => ({ ...f, relatedId: e.target.value }))}
-              >
-                {suppliers.map((s) => (
-                  <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <PartySearchSelect
+              options={suppliers}
+              value={bankTransferForm.relatedId}
+              onChange={(id) => setBankTransferForm((f) => ({ ...f, relatedId: id }))}
+              label="Supplier"
+              required
+              getOptionLabel={supplierSearchLabel}
+            />
           )}
           <TextField
             fullWidth label="Bank Account Number"
@@ -3910,13 +4326,15 @@ export default function DailyBook() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBankTransferDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => { setBankTransferDialogOpen(false); setBankTransferEditingId(null); }}>Cancel</Button>
           <Button
             variant="contained"
             color={bankTransferForm.transactionType === 'Money In' ? 'success' : 'error'}
             onClick={handleSaveBankTransfer}
           >
-            {bankTransferForm.transactionType === 'Money In' ? 'Record Received' : 'Record Sent'}
+            {bankTransferEditingId
+              ? 'Update'
+              : (bankTransferForm.transactionType === 'Money In' ? 'Record Received' : 'Record Sent')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4258,25 +4676,25 @@ export default function DailyBook() {
       </Dialog>
 
       {/* ATM Withdrawal Dialog */}
-      <Dialog open={atmDialogOpen} onClose={() => setAtmDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={atmDialogOpen} onClose={() => setAtmDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>ATM Withdrawal</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 1 }}>
-            Deducted from bank balance only — not cash in hand. Recorded as Self Expense.
+            Amount is always deducted from the selected bank account. Choose where the withdrawn cash should go.
           </Alert>
           <TextField
-            fullWidth type="number" label="Amount" value={atmForm.amount}
+            fullWidth type="number" label="Amount (Rs.)" value={atmForm.amount}
             onChange={(e) => setAtmForm((f) => ({ ...f, amount: e.target.value }))}
             margin="dense" required autoFocus
           />
-          <FormControl fullWidth margin="dense">
+          <FormControl fullWidth margin="dense" required>
             <InputLabel>Bank Account</InputLabel>
             <Select
               value={atmForm.bankAccount}
               label="Bank Account"
               onChange={(e) => setAtmForm((f) => ({ ...f, bankAccount: e.target.value }))}
             >
-              {BANK_ACCOUNTS.map((b) => <MenuItem key={b} value={b}>{b}</MenuItem>)}
+              {BANK_ACCOUNTS.map((b) => <MenuItem key={b} value={b}>{b === 'Other' ? 'Any Other' : `${b} Account`}</MenuItem>)}
             </Select>
           </FormControl>
           {atmForm.bankAccount === 'Other' && (
@@ -4287,16 +4705,57 @@ export default function DailyBook() {
               margin="dense" required
             />
           )}
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Self Expense Category</InputLabel>
+          <FormControl fullWidth margin="dense" required sx={{ mt: 1 }}>
+            <InputLabel>Withdrawal goes to</InputLabel>
             <Select
-              value={atmForm.expenseCategory}
-              label="Self Expense Category"
-              onChange={(e) => setAtmForm((f) => ({ ...f, expenseCategory: e.target.value }))}
+              value={atmForm.destination}
+              label="Withdrawal goes to"
+              onChange={(e) => setAtmForm((f) => ({ ...f, destination: e.target.value }))}
             >
-              {SELF_EXPENSE_CATEGORIES.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+              <MenuItem value="cashInHand">Add to cash in hand</MenuItem>
+              <MenuItem value="expense">Record as expense</MenuItem>
             </Select>
           </FormControl>
+          {atmForm.destination === 'cashInHand' && (
+            <Alert severity="success" sx={{ mt: 1 }}>
+              Cash will be added to <strong>cash in hand</strong> for this day. No expense will be recorded.
+            </Alert>
+          )}
+          {atmForm.destination === 'expense' && (
+            <>
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                Amount will appear in <strong>Expenses</strong> under the selected category. Cash in hand is not affected.
+              </Alert>
+              <FormControl fullWidth margin="dense" required>
+                <InputLabel>Expense Group</InputLabel>
+                <Select
+                  value={atmForm.expenseGroup}
+                  label="Expense Group"
+                  onChange={(e) => {
+                    const group = e.target.value;
+                    const firstCat = BANK_EXPENSE_TREE[group]?.[0] || 'Miscellaneous';
+                    setAtmForm((f) => ({ ...f, expenseGroup: group, expenseCategory: firstCat }));
+                  }}
+                >
+                  {Object.keys(BANK_EXPENSE_TREE).map((g) => (
+                    <MenuItem key={g} value={g}>{g}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="dense" required>
+                <InputLabel>Expense Category</InputLabel>
+                <Select
+                  value={atmForm.expenseCategory}
+                  label="Expense Category"
+                  onChange={(e) => setAtmForm((f) => ({ ...f, expenseCategory: e.target.value }))}
+                >
+                  {(BANK_EXPENSE_TREE[atmForm.expenseGroup] || []).map((c) => (
+                    <MenuItem key={c} value={c}>{c}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </>
+          )}
           <TextField
             fullWidth label="Description (optional)"
             value={atmForm.description}

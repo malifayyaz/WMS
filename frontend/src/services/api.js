@@ -110,6 +110,7 @@ export const transactionsAPI = {
   getDaily: (date) => api.get(`/transactions/daily/${date}`),
   getCashBook: (params) => api.get('/transactions/cashbook', { params }),
   setCashOpening: (data) => api.post('/transactions/cashbook/opening', data),
+  setCashBreakdown: (data) => api.post('/transactions/cashbook/breakdown', data),
   getPreviousClosing: (params) => api.get('/transactions/cashbook/previous-closing', { params }),
   getBankBook: (params) => api.get('/transactions/bank-book', { params }),
   getBankPersons: () => api.get('/transactions/bank-persons'),

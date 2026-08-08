@@ -14,6 +14,13 @@ const FACTORY_EXPENSE_TOTAL = 'Factory Expense Total';
 const DAILY_TOTAL_CATEGORY = 'Daily Total';
 const PROCESS_MATERIAL_GROUP = 'Process Material';
 
+function isPollutedDailyTotalBankTransfer(transaction) {
+  return transaction.paymentMethod === 'Bank Transfer'
+    && transaction.expenseGroup === FACTORY_EXPENSE_TOTAL
+    && transaction.expenseCategory === DAILY_TOTAL_CATEGORY
+    && !transaction.linkedExpenseId;
+}
+
 function buildExpenseDescription(expense) {
   const parts = [expense.expenseCategory];
   if (expense.description) parts.push(expense.description);
@@ -422,6 +429,7 @@ function computeExpenseBreakdown(transactions) {
 
   transactions.forEach((t) => {
     if (t.transactionType !== 'Money Out') return;
+    if (t.paymentMethod === 'Bank Transfer') return;
     if (t.expenseGroup === SELF_EXPENSE_GROUP) {
       if (t.expenseCategory === DAILY_TOTAL_CATEGORY) {
         selfDailyTotal += t.amount || 0;
@@ -543,4 +551,7 @@ module.exports = {
   syncLinkedExpenseFromBankTransfer,
   deleteLinkedExpenseForBankTransfer,
   clearBankTransferExpenseLink,
+  isPollutedDailyTotalBankTransfer,
+  FACTORY_EXPENSE_TOTAL,
+  DAILY_TOTAL_CATEGORY,
 };

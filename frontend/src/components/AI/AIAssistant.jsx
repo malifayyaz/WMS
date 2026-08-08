@@ -390,6 +390,12 @@ export default function AIAssistant() {
       });
       if (res.data?.success) {
         addMessage('assistant', `Done! ${res.data.message}`);
+        // Let open screens (DailyBook etc.) refresh after an AI-side mutation.
+        try {
+          window.dispatchEvent(new Event('wms-ai-updated'));
+        } catch {
+          // ignore
+        }
         if (res.data.undoInfo?.model && res.data.undoInfo?.id) {
           setLastSaved({
             model: res.data.undoInfo.model,
@@ -426,6 +432,11 @@ export default function AIAssistant() {
       });
       if (res.data?.success) {
         addMessage('assistant', `Undone! ${res.data.message}`);
+        try {
+          window.dispatchEvent(new Event('wms-ai-updated'));
+        } catch {
+          // ignore
+        }
         setLastSaved(null);
       } else {
         addMessage(

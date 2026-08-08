@@ -383,7 +383,7 @@ export default function LedgerDialog({
                             <Box key={i} display="flex" alignItems="flex-start" gap={0.5} sx={{ mb: 0.15 }}>
                               {isCombined && roleChip(e.role)}
                               <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                {e.description}{e.weightKg ? ` (${e.weightKg} kg)` : ''}
+                                {e.description}{e.weightKg ? ` (${e.weightKg} kg)` : ''}{e.paymentMethod ? ` · ${e.paymentMethod}` : ''}
                               </Typography>
                             </Box>
                           ))}
@@ -402,13 +402,14 @@ export default function LedgerDialog({
               </TableContainer>
             ) : (
               <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 480, overflowX: 'auto' }}>
-                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', minWidth: isCombined ? 980 : 900 }}>
+                <Table size="small" stickyHeader sx={{ tableLayout: 'fixed', minWidth: isCombined ? 1080 : 1000 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ ...headCell, width: 96 }}>Date</TableCell>
                       {isCombined && <TableCell sx={{ ...headCell, width: 88 }}>Role</TableCell>}
-                      <TableCell sx={{ ...headCell, whiteSpace: 'normal', width: isCombined ? '22%' : '26%' }}>Description</TableCell>
-                      {!isDaily && <TableCell sx={{ ...headCell, width: 120 }}>Source</TableCell>}
+                      <TableCell sx={{ ...headCell, whiteSpace: 'normal', width: isCombined ? '20%' : '24%' }}>Description</TableCell>
+                      {!isDaily && <TableCell sx={{ ...headCell, width: 110 }}>Source</TableCell>}
+                      <TableCell sx={{ ...headCell, width: 110 }}>Payment</TableCell>
                       {!isDaily && <TableCell sx={{ ...headCell, width: 72 }} align="right">Wt</TableCell>}
                       {!isDaily && <TableCell sx={{ ...headCell, width: 88 }} align="right">Rate</TableCell>}
                       {isDaily ? (
@@ -436,6 +437,7 @@ export default function LedgerDialog({
                         {isCombined && <TableCell sx={denseCell}>{roleChip(row.role)}</TableCell>}
                         <TableCell sx={descCell}>{row.description}</TableCell>
                         {!isDaily && <TableCell sx={sourceCell}>{row.source}</TableCell>}
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
                         {!isDaily && <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>}
                         {!isDaily && <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>}
                         {isDaily ? (
@@ -461,7 +463,7 @@ export default function LedgerDialog({
                     ))}
                     {(ledger.entries || []).length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={isDaily ? 3 : (isCombined ? 10 : 9)} sx={denseCell}>
+                        <TableCell colSpan={isDaily ? 4 : (isCombined ? 11 : 10)} sx={denseCell}>
                           <Typography variant="caption" color="text.secondary">No entries for selected range.</Typography>
                         </TableCell>
                       </TableRow>

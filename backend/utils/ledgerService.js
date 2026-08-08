@@ -133,6 +133,7 @@ async function collectRawEntries(partyType, party) {
           source: 'Wire Return',
           sourceId: o._id,
           entryType: 'return',
+          paymentMethod: o.paymentMethod || '',
         });
         return;
       }
@@ -147,6 +148,7 @@ async function collectRawEntries(partyType, party) {
         source: 'Sale',
         sourceId: o._id,
         entryType: 'sale',
+        paymentMethod: o.paymentMethod || '',
       });
       if (o.amountPaid > 0) {
         entries.push({
@@ -160,6 +162,7 @@ async function collectRawEntries(partyType, party) {
           source: 'Sale Payment',
           sourceId: o._id,
           entryType: 'payment',
+          paymentMethod: o.paymentMethod || '',
         });
       }
     });
@@ -175,6 +178,7 @@ async function collectRawEntries(partyType, party) {
         totalPrice: p.amount || 0,
         source: 'Payment',
         entryType: 'payment',
+        paymentMethod: p.paymentMethod || '',
       });
     });
 
@@ -247,6 +251,7 @@ async function collectRawEntries(partyType, party) {
           source: 'Coil Return',
           sourceId: p._id,
           entryType: 'return',
+          paymentMethod: p.paymentMethod || '',
         });
         return;
       }
@@ -261,6 +266,7 @@ async function collectRawEntries(partyType, party) {
         source: 'Stock Arrival',
         sourceId: p._id,
         entryType: 'purchase',
+        paymentMethod: p.paymentMethod || '',
       });
       if (p.amountPaid > 0) {
         entries.push({
@@ -274,6 +280,7 @@ async function collectRawEntries(partyType, party) {
           source: 'Purchase Payment',
           sourceId: p._id,
           entryType: 'payment',
+          paymentMethod: p.paymentMethod || '',
         });
       }
     });
@@ -297,6 +304,7 @@ async function collectRawEntries(partyType, party) {
         source: 'Daily Book',
         sourceId: t._id,
         entryType: isIn ? 'payment' : 'adjustment',
+        paymentMethod: t.paymentMethod || '',
       });
     } else {
       // Supplier: purchase = debit (we owe them). Payment made (Money Out) = credit
@@ -312,6 +320,7 @@ async function collectRawEntries(partyType, party) {
         source: 'Daily Book',
         sourceId: t._id,
         entryType: 'payment',
+        paymentMethod: t.paymentMethod || '',
       });
     }
   });
@@ -387,6 +396,7 @@ async function buildLedger(partyType, party, options = {}) {
         totalPrice: o.totalAmount || 0,
         source: 'Sale',
         sourceId: o._id,
+        paymentMethod: o.paymentMethod || '',
       }));
 
     const dailyTxs = await Transaction.find({ relatedTo: 'Customer', relatedId: party._id }).sort({ transactionDate: -1 });
@@ -402,6 +412,7 @@ async function buildLedger(partyType, party, options = {}) {
           totalPrice: t.amount || 0,
           source: 'Daily Book',
           sourceId: t._id,
+          paymentMethod: t.paymentMethod || '',
         });
       });
 

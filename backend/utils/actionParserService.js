@@ -72,7 +72,7 @@ function extractFromToDates(message) {
 
   const rangeMatch = text.match(
     new RegExp(
-      `(?:\\bon\\b|\\bfrom\\b|\\boccur(?:s|ring)?\\s+on\\b)\\s+${dateToken}\\s+to\\s+${dateToken}`,
+      `(?:\\bon\\b|\\bfrom\\b|\\bof\\b|\\boccur(?:s|ring)?\\s+on\\b)\\s+${dateToken}\\s+to\\s+${dateToken}`,
       "i"
     )
   );
@@ -113,6 +113,90 @@ function extractFromToDates(message) {
 function cleanPartyName(name) {
   return String(name || "")
     .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mentionsCheque(message) {
+  return /\b(cheque|check)\b/i.test(String(message || ""));
+}
+
+function mentionsCash(message) {
+  return /\bcash\b/i.test(String(message || ""));
+}
+
+/**
+ * Strip description / cheque-number text so bank codes like MBL-0828
+ * are not mistaken for the payment destination bank.
+ */
+function messageWithoutDescriptionNoise(message) {
+  return String(message || "")
+    .toLowerCase()
+    .replace(/['"][^'"]*['"]/g, " ")
+    .replace(
+      /\b(?:with\s+)?(?:description|note|notes|baabat|remark|remarks)\s*[:=-]?\s*.+$/i,
+      " "
+    )
+    .replace(/\b(?:mbl|ubl)\s*[-–]?\s*\d+\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Detect named bank from the user message.
+ * Returns null when no bank is named (caller may default to MBL for bank transfers).
+ * Explicit cheque/cash never counts as a bank destination.
+ */
+function extractBankFromMessage(message) {
+  if (mentionsCheque(message) || (mentionsCash(message) && !/\bbank\b|\btransfer\b/i.test(String(message || "")))) {
+    return null;
+  }
+
+  const t = messageWithoutDescriptionNoise(message);
+  if (!t) return null;
+
+  // Prefer destination phrasing: "to UBL", "via MBL", "into Faisal Bank"
+  if (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?ubl\b/.test(t) || /\bubl\b/.test(t)) {
+    return { bankAccount: "UBL" };
+  }
+  if (
+    /\b(?:to|via|in|into|at|through)\s+(?:the\s+)?faisal\s*bank\b/.test(t) ||
+    /\bfaisal\s*bank\b/.test(t)
+  ) {
+    return { bankAccount: "Faisal Bank" };
+  }
+  if (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?mbl\b/.test(t) || /\bmbl\b/.test(t)) {
+    return { bankAccount: "MBL" };
+  }
+  if (/\b(?:any\s+)?other\s+bank\b|\bbank\s+other\b/.test(t)) {
+    return { bankAccount: "Other" };
+  }
+  return null;
+}
+
+/** Explicit method in text wins over LLM guesses / bank codes in descriptions */
+function resolvePaymentMethodFromMessage(message, existing) {
+  const t = String(message || "").toLowerCase();
+  if (mentionsCheque(t)) return "Cheque";
+  if (mentionsCash(t) && !/\bbank\b|\btransfer\b/.test(t)) return "Cash";
+  if (/\bbank\s*transfer\b|\bvia\s+bank\b|\btransfer\b/.test(t)) return "Bank Transfer";
+  if (extractBankFromMessage(message)) return "Bank Transfer";
+
+  const existingLower = String(existing || "").toLowerCase();
+  if (existingLower.includes("cheque") || existingLower.includes("check")) return "Cheque";
+  if (existingLower.includes("bank") || existingLower === "transfer") return "Bank Transfer";
+  if (existingLower.includes("cash")) return "Cash";
+  return existing || null;
+}
+
+/** Strip "to UBL" / "via MBL" etc. so party names stay clean */
+function stripBankPhrasesFromName(name) {
+  return String(name || "")
+    .replace(
+      /\s*(?:,?\s*)?(?:to|via|in|into|at|from|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b/gi,
+      " "
+    )
+    .replace(/\s+(?:ubl|mbl|faisal\s*bank)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -171,8 +255,11 @@ function resolveSupplierFromList(data, suppliers) {
 /**
  * Normalize common layman phrases the LLM often misses,
  * and strip bogus description/notes fields.
+ * @param {object} parsed
+ * @param {string} message
+ * @param {Array<{role: string, content: string}>} [conversationHistory]
  */
-function enrichParsedIntent(parsed, message) {
+function enrichParsedIntent(parsed, message, conversationHistory = []) {
   const result = {
     intent: parsed.intent || "UNKNOWN",
     confidence: parsed.confidence || "low",
@@ -188,19 +275,86 @@ function enrichParsedIntent(parsed, message) {
 
   // Shift/move date commands win over delete — compound phrasing like
   // "shift ... to ... and then delete the old date" is a move, not a delete.
-  const shiftDates = extractFromToDates(message);
+  let shiftDates = extractFromToDates(message);
+  if (!shiftDates.fromDate || !shiftDates.toDate) {
+    // Follow-ups: "not just expense, move all the payments" — reuse dates from history
+    const histText = (Array.isArray(conversationHistory) ? conversationHistory : [])
+      .slice(-6)
+      .map((m) => m.content || "")
+      .join("\n");
+    const fromHist = extractFromToDates(histText);
+    if (fromHist.fromDate && fromHist.toDate) shiftDates = fromHist;
+  }
+
+  const mentionsShiftVerb =
+    /\b(shift|move|reschedule|change\s+date|date\s+badal)\b/.test(text) ||
+    /\bnot\s+just\s+expenses?\b/.test(text) ||
+    /\bnot\s+only\s+expenses?\b/.test(text) ||
+    /\ball\s+the\s+payments?\b/.test(text) ||
+    /\ball\s+(the\s+)?(transactions?|entries|amounts?)\b/.test(text);
+
+  function resolveShiftEntryType(t) {
+    // "not just expense / move everything" follow-ups → all types
+    if (
+      /\bnot\s+just\s+expenses?\b/.test(t) ||
+      /\bnot\s+only\s+expenses?\b/.test(t) ||
+      /\bevery\s+(transaction|payment|entry|amount)s?\b/.test(t) ||
+      /\ball\s+(the\s+)?(transactions?|entries|amounts?)\b/.test(t) ||
+      (/\ball\b/.test(t) && /\btransactions?\b/.test(t))
+    ) {
+      return "any";
+    }
+
+    // Specific types BEFORE the generic "all" catch-all (plurals matter: expenses ≠ expense\b)
+    if (/\bexpenses?\b|\bkharcha\b|\bkharch\b/.test(t) && !/\b(transactions?|payments?)\b/.test(t)) {
+      return "expense";
+    }
+    if (/\borders?\b|\bsales?\b|\bbecha\b/.test(t) && !/\b(all|every)\b/.test(t)) {
+      return "order";
+    }
+    if (/\bpurchases?\b|\bkharida\b|\braw materials?\b/.test(t) && !/\b(all|every)\b/.test(t)) {
+      return "purchase";
+    }
+    if (/\bworkers?\b|\bsalary\b|\bmazdoor\b/.test(t) && !/\b(all|every)\b/.test(t)) {
+      return "worker payment";
+    }
+    // "all payments" / a specific payment amount — Money In/Out only
+    if (
+      /\ball\s+(the\s+)?payments?\b/.test(t) ||
+      (/\bpayments?\b/.test(t) && /\ball\b/.test(t)) ||
+      (/\b(payment|wusool|money\s*(in|out))\b/.test(t) && !/\bexpenses?\b/.test(t))
+    ) {
+      return "payment";
+    }
+
+    // Default shift: move everything on that date
+    return "any";
+  }
+
   const isShiftRequest =
-    /\b(shift|move|reschedule|change\s+date|date\s+badal)\b/.test(text) &&
-    Boolean(shiftDates.fromDate && shiftDates.toDate);
+    mentionsShiftVerb && Boolean(shiftDates.fromDate && shiftDates.toDate);
 
   if (isShiftRequest) {
     result.intent = "SHIFT_ENTRY_DATE";
     data.fromDate = shiftDates.fromDate;
     data.toDate = shiftDates.toDate;
-    data.shiftAll = /\ball\b/.test(text);
-    if (!data.entryType) {
-      if (/\bexpense\b|\bkharcha\b|\bkharch\b/.test(text)) data.entryType = "expense";
-      else data.entryType = "expense";
+    data.shiftAll = /\ball\b/.test(text) || data.entryType === "any";
+    data.entryType = resolveShiftEntryType(text);
+    if (!data.amount) {
+      const withoutDates = text
+        .replace(
+          /\b\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/gi,
+          " "
+        )
+        .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ");
+      const amt =
+        withoutDates.match(/(?:rs\.?|rupees?)[.\s]*(\d[\d,]*(?:\.\d+)?)/i) ||
+        withoutDates.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:rs\.?|rupees?)/i) ||
+        withoutDates.match(/\b(\d{3,}(?:\.\d+)?)\b/);
+      if (amt) {
+        const n = Number(String(amt[1]).replace(/,/g, ""));
+        if (n > 0) data.amount = n;
+      }
     }
     result.missingFields = [];
     result.clarificationNeeded = null;
@@ -316,10 +470,9 @@ function enrichParsedIntent(parsed, message) {
       if (amountMatch) data.amount = Number(amountMatch[1]);
     }
 
-    if (!data.bankAccount) {
-      if (/\bubl\b/.test(text)) data.bankAccount = "UBL";
-      else if (/\bfaisal\s*bank\b/.test(text)) data.bankAccount = "Faisal Bank";
-      else data.bankAccount = "MBL";
+    {
+      const named = extractBankFromMessage(message);
+      data.bankAccount = named ? named.bankAccount : data.bankAccount || "MBL";
     }
 
     result.missingFields = result.missingFields.filter(
@@ -340,7 +493,9 @@ function enrichParsedIntent(parsed, message) {
   // Only force ADD_EXPENSE when already that intent / UNKNOWN, or expense keywords dominate
   // (avoid hijacking "Faisal payment" / order messages).
   // Skip if already classified as ATM withdrawal.
-  const mentionsFaisal = /\bfaisal\b/.test(text);
+  const mentionsFaisalBank = /\bfaisal\s*bank\b/.test(text);
+  const textSansFaisalBank = text.replace(/\bfaisal\s*bank\b/gi, " ");
+  const mentionsFaisal = /\bfaisal\b/.test(textSansFaisalBank);
   const mentionsFayyaz = /\bfayyaz\b|\bfayaz\b|\bfayiaz\b/.test(text);
   const mentionsMutual = /\bmutual\b|\bdono\b/.test(text);
   const mentionsSelf =
@@ -354,6 +509,64 @@ function enrichParsedIntent(parsed, message) {
     /\bpayment\b|\bpaid\b|\bwusool\b|\border\b|\bbecha\b|\bsold\b|\bsale\b/.test(
       text
     );
+
+  // Factory daily total — same as Daily Book "Factory Total" button
+  // ("Add daily total factory expense of 61470" → Daily Total)
+  const mentionsFactoryDailyTotal =
+    /\bdaily\s+total\b/.test(text) ||
+    /\bfactory\s+(expense\s+)?total\b/.test(text) ||
+    /\btotal\s+(factory|daily)\b/.test(text) ||
+    (/\bfactory\s+expense\b/.test(text) && /\b(total|daily)\b/.test(text));
+
+  if (
+    mentionsFactoryDailyTotal &&
+    !mentionsFayyaz &&
+    !mentionsFaisal &&
+    !mentionsMutual &&
+    result.intent !== "ATM_WITHDRAWAL" &&
+    result.intent !== "DELETE_ENTRY" &&
+    result.intent !== "SHIFT_ENTRY_DATE" &&
+    (result.intent === "ADD_EXPENSE" ||
+      result.intent === "UNKNOWN" ||
+      hasExpenseKeyword)
+  ) {
+    result.intent = "ADD_EXPENSE";
+    data.expenseGroup = "Factory Expense Total";
+    data.expenseCategory = "Daily Total";
+    delete data.selfExpensePerson;
+
+    if (!data.amount) {
+      const amountMatch =
+        text.match(/(?:rs\.?|rupees?)[.\s]*(\d[\d,]*(?:\.\d+)?)/i) ||
+        text.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:rs\.?|rupees?)/i) ||
+        text.match(/\b(?:of|expense|total|kharcha)\s+(\d[\d,]*(?:\.\d+)?)\b/i) ||
+        text.match(/\b(\d[\d,]*(?:\.\d+)?)\b/);
+      if (amountMatch) {
+        data.amount = Number(String(amountMatch[1]).replace(/,/g, ""));
+      }
+    }
+
+    if (!data.paymentMethod) {
+      if (/\bbank\b|\btransfer\b/.test(text) || extractBankFromMessage(message)) {
+        data.paymentMethod = "Bank Transfer";
+      } else if (/\bcheque\b|\bcheck\b/.test(text)) {
+        data.paymentMethod = "Cheque";
+      } else {
+        data.paymentMethod = "Cash";
+      }
+    }
+
+    result.missingFields = (result.missingFields || []).filter(
+      (f) =>
+        !["expenseGroup", "expenseCategory", "selfExpensePerson", "paymentMethod"].includes(f) &&
+        !(f === "amount" && data.amount)
+    );
+    if (data.amount) {
+      result.confidence = "high";
+      result.clarificationNeeded = null;
+    }
+  }
+
   const canForceExpense =
     result.intent !== "ATM_WITHDRAWAL" &&
     result.intent !== "DELETE_ENTRY" &&
@@ -460,29 +673,113 @@ function enrichParsedIntent(parsed, message) {
   if (
     result.intent === "ADD_EXPENSE" &&
     !/\batm\b/.test(text) &&
-    (/\bbank\b|\btransfer\b/.test(text) || /\bvia\s+bank\b/.test(text))
+    (/\bbank\b|\btransfer\b/.test(text) ||
+      /\bvia\s+bank\b/.test(text) ||
+      extractBankFromMessage(message))
   ) {
     data.paymentMethod = "Bank Transfer";
-    if (!data.bankAccount) {
-      if (/\bubl\b/.test(text)) data.bankAccount = "UBL";
-      else if (/\bfaisal\s*bank\b/.test(text)) data.bankAccount = "Faisal Bank";
-      else data.bankAccount = "MBL";
-    }
+    const named = extractBankFromMessage(message);
+    data.bankAccount = named ? named.bankAccount : data.bankAccount || "MBL";
   }
 
   // Payment direction: TO supplier/party = Money Out; FROM customer = Money In
+  // "to UBL/MBL/Faisal Bank" means destination bank, not a supplier payment.
+  // Bank codes inside cheque descriptions (MBL-0828) must NOT count as destination.
+  const bankAsDestination = Boolean(
+    !mentionsCheque(message) &&
+      (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b/.test(
+        messageWithoutDescriptionNoise(message)
+      ) ||
+        extractBankFromMessage(message))
+  );
+
+  const isCompactCustomerPayment =
+    /\bpayment\s*:\s*[a-z0-9]/i.test(text) ||
+    (/\bpayment\b/.test(text) &&
+      /\b(?:via|by|from)\s+(?:cheque|check|cash)\b/.test(text) &&
+      !/\bpayment\s+to\b/.test(text) &&
+      !/\bpaid\s+to\b/.test(text));
+
   const isPaymentFromCustomer =
     /\b(?:received|wusool)\s+from\b/.test(text) ||
     (/\b(?:payment|paid)\b/.test(text) &&
       /\bfrom\b/.test(text) &&
-      !/\bpayment\s+to\b/.test(text));
+      !/\bpayment\s+to\b/.test(text) &&
+      !/\bfrom\s+(?:cheque|check|cash)\b/.test(text)) ||
+    (/\b(?:payment|paid)\b/.test(text) &&
+      /\bfrom\b/.test(text) &&
+      bankAsDestination) ||
+    isCompactCustomerPayment;
 
   const isPaymentToParty =
     !isPaymentFromCustomer &&
     (/\bpayment\s+to\b/.test(text) ||
       /\bpaid\s+to\b/.test(text) ||
       /\bmoney\s*out\b/.test(text) ||
-      (/\bpayment\b/.test(text) && /\bsupplier\b/.test(text)));
+      (/\bpayment\b/.test(text) && /\bsupplier\b/.test(text))) &&
+    !/\b(?:to|via|in|into)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b/.test(text);
+
+  if (
+    isPaymentFromCustomer &&
+    !isShiftRequest &&
+    !isDeleteRequest &&
+    result.intent !== "ATM_WITHDRAWAL"
+  ) {
+    result.intent = "RECORD_CUSTOMER_PAYMENT";
+
+    if (!data.customerName) {
+      const fromMatch =
+        String(message || "").match(
+          /\b(?:payment|paid|received|wusool)\s+(?:of\s+(?:rs\.?\s*)?[\d,]+\s+)?from\s+(.+?)(?:\s+(?:to|via|in|into|at|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b|\s+(?:via|by|from)\s+(?:cheque|check|cash)\b|\s+via\b|\s+of\s+|\s+rs\.?\b|$)/i
+        ) ||
+        String(message || "").match(
+          /\bfrom\s+(.+?)(?:\s+(?:to|via|in|into|at|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b|\s+(?:via|by|from)\s+(?:cheque|check|cash)\b|\s+via\b|$)/i
+        ) ||
+        String(message || "").match(
+          /\bpayment\s*:\s*([^,]+?)(?:,|\s+rs\.?\b|\s+\d|\s+via\b|\s+by\b|$)/i
+        );
+      if (fromMatch) {
+        data.customerName = stripBankPhrasesFromName(fromMatch[1])
+          .replace(/\s+(?:via|by|from)\s+(?:cheque|check|cash)\b/i, "")
+          .trim();
+      }
+    } else {
+      data.customerName = stripBankPhrasesFromName(data.customerName);
+    }
+
+    if (!data.amount) {
+      const amountMatch =
+        text.match(/(?:rs\.?|rupees?)[.\s]*(\d[\d,]*(?:\.\d+)?)/i) ||
+        text.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:rs\.?|rupees?)/i) ||
+        text.match(/\bof\s+(?:rs\.?\s*)?(\d[\d,]*(?:\.\d+)?)/i) ||
+        text.match(/\b(\d[\d,]*(?:\.\d+)?)\b/);
+      if (amountMatch) {
+        data.amount = Number(String(amountMatch[1]).replace(/,/g, ""));
+      }
+    }
+
+    data.paymentMethod =
+      resolvePaymentMethodFromMessage(message, data.paymentMethod) || "Cash";
+    if (data.paymentMethod === "Bank Transfer") {
+      const namedBank = extractBankFromMessage(message);
+      if (namedBank) data.bankAccount = namedBank.bankAccount;
+    } else {
+      delete data.bankAccount;
+    }
+
+    const descMatch = String(message || "").match(
+      /\b(?:with\s+)?description\s*[:=]?\s*['"]?([^'"]+)['"]?/i
+    );
+    if (descMatch) data.description = descMatch[1].trim();
+
+    result.missingFields = (result.missingFields || []).filter(
+      (f) => !["receivedBy", "orderId", "handledBy", "notes", "description", "bankAccount"].includes(f)
+    );
+    if (data.amount && data.customerName) {
+      result.confidence = "high";
+      result.clarificationNeeded = null;
+    }
+  }
 
   if (
     isPaymentToParty &&
@@ -496,15 +793,18 @@ function enrichParsedIntent(parsed, message) {
 
     const payTo = extractPaymentToParty(message);
     if (payTo.name) {
-      data.relatedName = payTo.name;
-      data.supplierName = cleanPartyName(payTo.name) || payTo.name;
+      data.relatedName = stripBankPhrasesFromName(payTo.name);
+      data.supplierName = cleanPartyName(data.relatedName) || data.relatedName;
     }
     if (payTo.amount && !data.amount) data.amount = payTo.amount;
 
-    if (!data.paymentMethod) {
-      if (/\bbank\b|\btransfer\b/.test(text)) data.paymentMethod = "Bank Transfer";
-      else if (/\bcheque\b|\bcheck\b/.test(text)) data.paymentMethod = "Cheque";
-      else data.paymentMethod = "Cash";
+    data.paymentMethod =
+      resolvePaymentMethodFromMessage(message, data.paymentMethod) || "Cash";
+    if (data.paymentMethod === "Bank Transfer") {
+      const namedBank = extractBankFromMessage(message);
+      if (namedBank) data.bankAccount = namedBank.bankAccount;
+    } else {
+      delete data.bankAccount;
     }
 
     result.missingFields = (result.missingFields || []).filter(
@@ -517,6 +817,7 @@ function enrichParsedIntent(parsed, message) {
           "customerName",
           "description",
           "notes",
+          "bankAccount",
         ].includes(f)
     );
     delete data.customerId;
@@ -554,6 +855,51 @@ function enrichParsedIntent(parsed, message) {
     if (result.intent === "ARRIVE_ANNEALING") data.arrivedDate = parsedDateIso;
     if (result.intent === "DELETE_ENTRY") data.date = parsedDateIso;
   }
+
+  // Named bank in message wins only for real bank transfers — never override cheque/cash
+  const resolvedMethod = resolvePaymentMethodFromMessage(message, data.paymentMethod);
+  if (resolvedMethod) data.paymentMethod = resolvedMethod;
+
+  const bankNamed = extractBankFromMessage(message);
+  const bankPaymentIntents = new Set([
+    "RECORD_CUSTOMER_PAYMENT",
+    "ADD_DAILY_TRANSACTION",
+    "ADD_EXPENSE",
+    "ATM_WITHDRAWAL",
+    "CREATE_RAW_MATERIAL_PURCHASE",
+    "ADD_WORKER_PAYMENT",
+  ]);
+  if (
+    bankNamed &&
+    bankPaymentIntents.has(result.intent) &&
+    (result.intent === "ATM_WITHDRAWAL" ||
+      String(data.paymentMethod || "").toLowerCase().includes("bank"))
+  ) {
+    data.bankAccount = bankNamed.bankAccount;
+    if (result.intent !== "ATM_WITHDRAWAL") {
+      data.paymentMethod = "Bank Transfer";
+    }
+  } else if (
+    bankPaymentIntents.has(result.intent) &&
+    String(data.paymentMethod || "")
+      .toLowerCase()
+      .includes("bank") &&
+    !data.bankAccount
+  ) {
+    data.bankAccount = "MBL";
+  } else if (
+    bankPaymentIntents.has(result.intent) &&
+    !String(data.paymentMethod || "")
+      .toLowerCase()
+      .includes("bank")
+  ) {
+    delete data.bankAccount;
+  }
+
+  // "payment from Ali to UBL" — strip bank from party names
+  ["customerName", "supplierName", "relatedName", "workerName"].forEach((key) => {
+    if (data[key]) data[key] = stripBankPhrasesFromName(data[key]);
+  });
 
   // Description / notes: only keep if user explicitly asked for a note
   const explicitNote =
@@ -596,16 +942,57 @@ function enrichParsedIntent(parsed, message) {
       .trim();
   });
 
-  // Optional fields the LLM often wrongly marks as required
-  const optionalByIntent = {
-    RECORD_CUSTOMER_PAYMENT: ["receivedBy", "orderId", "notes", "description"],
-    ADD_DAILY_TRANSACTION: ["handledBy", "description", "notes", "relatedId", "supplierId"],
-  };
-  const optional = optionalByIntent[result.intent] || [];
-  if (optional.length) {
-    result.missingFields = (result.missingFields || []).filter(
-      (f) => !optional.includes(f)
-    );
+  // Never treat optional / non-essential fields as missing.
+  // Only amount/name/core action fields may remain in missingFields.
+  const ALWAYS_OPTIONAL = [
+    "contactNumber",
+    "address",
+    "companyName",
+    "openingBalance",
+    "openingBalanceType",
+    "openingBalanceDate",
+    "receivedBy",
+    "orderId",
+    "notes",
+    "description",
+    "handledBy",
+    "soldBy",
+    "addedBy",
+    "paidBy",
+    "producedBy",
+    "paymentMethod",
+    "bankAccount",
+    "bankAccountOtherName",
+    "bankAccountNumber",
+    "bundles",
+    "labourName",
+    "weekStartDate",
+    "weekEndDate",
+    "manufacturingCostPerKg",
+    "wireSize",
+    "coilType",
+    "rentalRoute",
+    "relatedId",
+    "supplierId",
+    "customerId",
+    "workerId",
+  ];
+  result.missingFields = (result.missingFields || []).filter(
+    (f) => typeof f === "string" && !ALWAYS_OPTIONAL.includes(f.trim())
+  );
+
+  // Daily / Ledger / Processing customer type from layman phrasing
+  if (result.intent === "ADD_CUSTOMER" || /\b(add|create|naya)\b.*\bcustomer\b/.test(text)) {
+    if (/\bdaily\b|\brozmarra\b/.test(text)) data.customerType = "Daily";
+    else if (/\bprocessing\b|\bjob\s*work\b/.test(text)) data.customerType = "Processing";
+    else if (/\bledger\b/.test(text)) data.customerType = "Ledger";
+  }
+  if (
+    (result.intent === "ADD_CUSTOMER" || result.intent === "ADD_SUPPLIER") &&
+    data.name &&
+    !data.openingBalanceType
+  ) {
+    data.openingBalanceType = "none";
   }
 
   return result;
@@ -662,6 +1049,11 @@ SELF EXPENSE SHORTCUTS (important):
 - User does NOT need to say the word "Self". Just "Fayyaz" or "Faisal" is enough.
 - Default paymentMethod to "Cash" if not mentioned.
 
+FACTORY DAILY TOTAL (important — Daily Book "Factory Total"):
+- "daily total", "factory total", "daily total factory expense", "factory expense total of 61470"
+  → ADD_EXPENSE, expenseGroup="Factory Expense Total", expenseCategory="Daily Total"
+- Never invent categories like "Daily Total Factory Expense" — the real category name is exactly "Daily Total"
+
 ATM WITHDRAWAL (important — different from cash expense):
 - "ATM", "ATM withdrawal", "withdraw from bank/ATM", "atm se 1000 nikaale" → ATM_WITHDRAWAL
 - This deducts from BANK balance (not cash in hand) and creates a Self Expense.
@@ -690,8 +1082,14 @@ Classify the user message into EXACTLY ONE of these intents:
 
 SHIFT RULE (critical):
 - "shift", "move", "reschedule", "change date" with TWO dates → SHIFT_ENTRY_DATE
-- Example: "shift all expenses on 22 Feb to 23 Feb" → fromDate=22 Feb, toDate=23 Feb, entryType=expense
+- "shift all transactions of 3 March to 2 March" → entryType=any (expenses + payments + orders + purchases)
+- "shift all expenses on 22 Feb to 23 Feb" → entryType=expense
+- "move all payments from 3 March to 2 March" → entryType=payment
+- "move the 10000 payment on 3 March to 2 March" → entryType=payment, amount=10000
 - If message also says "delete" the old date, still use SHIFT_ENTRY_DATE (move only)
+- Follow-ups like "not just expense, move all the payments" keep the same dates and set entryType=any
+- "all transactions" / "all amounts" / "every transaction" → entryType=any
+- Prefer listing every matching record type for "all transactions", not expenses only
 
 DELETE RULE (critical):
 - "delete", "remove", "cancel", "hata do", "mita do" → DELETE_ENTRY, never a create intent.
@@ -718,13 +1116,18 @@ CREATE_ORDER:
 RECORD_CUSTOMER_PAYMENT:
   customerId, customerName, amount,
   paymentMethod (Cash/Bank Transfer/Cheque),
+  bankAccount (MBL / UBL / Faisal Bank / Other — ONLY when Bank Transfer; use the bank the user named, default MBL only if unnamed),
   receivedBy (optional), orderId (optional — rarely used), notes
 
 PAYMENT DIRECTION (critical):
 - "payment FROM customer" / "received from X" → RECORD_CUSTOMER_PAYMENT (Money In)
+- "payment from X to UBL" / "via UBL" / "in UBL" → still RECORD_CUSTOMER_PAYMENT, bankAccount=UBL, paymentMethod=Bank Transfer
+- "via cheque" / "from cheque" / "by cheque" → paymentMethod=Cheque (even if description has MBL-1234)
+- Bank codes inside cheque descriptions are NOT bank transfers
 - "payment TO supplier" / "paid to X" / "money out to X" → ADD_DAILY_TRANSACTION,
   transactionType="Money Out", relatedTo="Supplier", relatedName=party name
 - receivedBy and orderId are OPTIONAL — never put them in missingFields
+- If user names UBL / MBL / Faisal Bank as the destination (and did NOT say cheque), set bankAccount to that exact value (do NOT default to MBL)
 
 CREATE_RAW_MATERIAL_PURCHASE:
   supplierId, supplierName,
@@ -749,6 +1152,7 @@ ATM_WITHDRAWAL:
 ADD_DAILY_TRANSACTION:
   transactionType (Money In / Money Out),
   amount, paymentMethod,
+  bankAccount (when Bank Transfer — use named bank, else MBL),
   relatedTo (Customer/Supplier/Other),
   relatedName, description, handledBy
 
@@ -766,13 +1170,13 @@ ADD_PROCESSING_DELIVERY:
   deliveryDate, notes
 
 ADD_CUSTOMER:
-  name, contactNumber, address,
-  customerType (Ledger/Daily/Processing),
-  openingBalance, openingBalanceType (debit/credit/none)
+  name (REQUIRED), customerType (Ledger/Daily/Processing — detect from "daily customer" etc),
+  contactNumber, address, openingBalance, openingBalanceType — ALL OPTIONAL
+  Default openingBalanceType to "none" if not mentioned.
 
 ADD_SUPPLIER:
-  name, contactNumber, companyName,
-  address, openingBalance
+  name (REQUIRED),
+  contactNumber, companyName, address, openingBalance — ALL OPTIONAL
 
 ADD_READY_STOCK:
   wireType (Number Wire / Binding Wire),
@@ -790,7 +1194,8 @@ DELETE_ENTRY:
   amount (positive, only if mentioned), date (if a date is mentioned)
 
 SHIFT_ENTRY_DATE:
-  entryType (expense — default), fromDate, toDate, shiftAll (true if "all" mentioned)
+  entryType (any / expense / payment / order / purchase / worker payment),
+  fromDate, toDate, amount (optional — filter one amount), shiftAll (true if "all")
 
 For READ_QUERY and UNKNOWN: extractedData = {}
 
@@ -801,11 +1206,21 @@ DESCRIPTION / NOTES RULE (critical):
 - Amount, person name, category, and date are NOT a description.
 
 Match customerId / supplierId / workerId from the available lists when a name is mentioned.
-If a required field is missing, list it in missingFields and set confidence to medium or low.
+
+MISSING FIELDS RULE (critical):
+- missingFields may ONLY list fields that are truly required for the intent.
+- NEVER put optional fields in missingFields. Optional includes:
+  contactNumber, address, companyName, openingBalance, openingBalanceType,
+  soldBy, receivedBy, handledBy, addedBy, paidBy, notes, description,
+  orderId, paymentMethod, bankAccount, bundles, labourName, week dates.
+- Example: "Add a daily customer named Abdul Rehman" → ADD_CUSTOMER with
+  name="Abdul Rehman", customerType="Daily", missingFields=[] (empty).
+- If only the name is given for a customer/supplier, that is enough — proceed with high confidence.
+
 For self expenses, expenseGroup/expenseCategory/selfExpensePerson are NOT missing if Fayyaz or Faisal is mentioned.`;
 
     const history = Array.isArray(conversationHistory)
-      ? conversationHistory.slice(-4)
+      ? conversationHistory.slice(-6)
       : [];
 
     const response = await groq.chat.completions.create({
@@ -822,7 +1237,7 @@ For self expenses, expenseGroup/expenseCategory/selfExpensePerson are NOT missin
     let raw = response.choices[0].message.content.trim();
     raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(raw);
-    const enriched = enrichParsedIntent(parsed, message);
+    const enriched = enrichParsedIntent(parsed, message, conversationHistory);
 
     if (
       enriched.intent === "ADD_DAILY_TRANSACTION" &&
@@ -849,7 +1264,8 @@ For self expenses, expenseGroup/expenseCategory/selfExpensePerson are NOT missin
         clarificationNeeded:
           "Sorry, I did not understand. Please try again with more details.",
       },
-      message
+      message,
+      conversationHistory
     );
     if (fallback.intent !== "UNKNOWN") return fallback;
     return fallback;
