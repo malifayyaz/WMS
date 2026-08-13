@@ -59,16 +59,12 @@ const createOrder = async (req, res, next) => {
 
     const { totalAmount, amountDue } = orderTotalAndDue(body.initialWeightKg, body.ratePerKg, body.amountPaid || 0);
     body.totalAmount = totalAmount;
-    if (customer.customerType === 'Daily') {
-      body.amountPaid = totalAmount;
-      body.amountDue = 0;
-    } else {
-      body.amountDue = amountDue;
-    }
+    body.amountPaid = Number(body.amountPaid) || 0;
+    body.amountDue = amountDue;
 
     const order = await Order.create(body);
     try {
-      if (customer.customerType === 'Daily') {
+      if (order.amountPaid > 0) {
         await syncTransactionFromOrder(order, customer.name);
       }
       if (fromAnnealing) {
@@ -181,8 +177,10 @@ const updateOrder = async (req, res, next) => {
     body.amountDue = amountDue;
     const updated = await Order.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true });
     const customer = await Customer.findById(order.customerId);
-    if (customer?.customerType === 'Daily') {
-      await syncTransactionFromOrder(updated, customer.name || updated.customerName);
+    if (updated.amountPaid > 0) {
+      await syncTransactionFromOrder(updated, customer?.name || updated.customerName);
+    } else {
+      await deleteTransactionsForSource('Order', updated._id);
     }
     await recalcCustomerTotals(order.customerId);
     await logActivity({
@@ -248,15 +246,12 @@ const updateFinalWeight = async (req, res, next) => {
     order.heatingEndDate = new Date();
     const { totalAmount, amountDue } = orderTotalAndDue(finalWeightKg, order.ratePerKg, order.amountPaid || 0);
     order.totalAmount = totalAmount;
-    if (customer?.customerType === 'Daily') {
-      order.amountPaid = totalAmount;
-      order.amountDue = 0;
-    } else {
-      order.amountDue = amountDue;
-    }
+    order.amountDue = amountDue;
     await order.save();
-    if (customer?.customerType === 'Daily') {
-      await syncTransactionFromOrder(order, customer.name || order.customerName);
+    if (order.amountPaid > 0) {
+      await syncTransactionFromOrder(order, customer?.name || order.customerName);
+    } else {
+      await deleteTransactionsForSource('Order', order._id);
     }
     await recalcCustomerTotals(order.customerId);
     await logActivity({

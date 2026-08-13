@@ -793,8 +793,8 @@ async function executeAction(intent, extractedData = {}, userId) {
           initialWeightKg,
           ratePerKg,
           totalAmount,
-          amountPaid: customer.customerType === "Daily" ? totalAmount : amountPaid,
-          amountDue: customer.customerType === "Daily" ? 0 : amountDue,
+          amountPaid: Number(amountPaid) || 0,
+          amountDue,
           orderStatus: "Outer",
           soldBy: data.soldBy || "",
           notes: cleanOptionalNote(data.notes || ""),
@@ -810,7 +810,7 @@ async function executeAction(intent, extractedData = {}, userId) {
 
         const order = await Order.create(orderPayload);
 
-        if (customer.customerType === "Daily") {
+        if (order.amountPaid > 0) {
           await syncTransactionFromOrder(order, customer.name);
         }
         await recalcCustomerTotals(customer._id);

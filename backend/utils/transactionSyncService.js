@@ -105,9 +105,16 @@ async function syncTransactionFromRawMaterial(raw, supplierName) {
 
 async function syncTransactionFromOrder(order, customerName) {
   if (!order?._id) return null;
+  const paid = Number(order.amountPaid) || 0;
+  if (paid <= 0) {
+    await Transaction.deleteMany({
+      $or: [{ orderId: order._id }, { sourceType: 'Order', sourceId: order._id }],
+    });
+    return null;
+  }
   const payload = {
     transactionType: 'Money In',
-    amount: order.totalAmount || 0,
+    amount: paid,
     paymentMethod: order.paymentMethod || 'Cash',
     relatedTo: 'Customer',
     relatedId: order.customerId,
@@ -140,18 +147,6 @@ async function recalcCustomerTotals(customerId) {
   if (!customerId) return;
   const customer = await Customer.findById(customerId);
   if (!customer) return;
-
-  if (customer.customerType === 'Daily') {
-    const orders = await Order.find({ customerId });
-    const totalPurchased = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
-    await Customer.findByIdAndUpdate(customerId, {
-      totalAmountPurchased: totalPurchased,
-      totalAmountPaid: totalPurchased,
-      totalAmountDue: 0,
-      totalOrders: orders.length,
-    });
-    return;
-  }
 
   const { collectRawEntries } = require('./ledgerService');
   const entries = await collectRawEntries('Customer', customer);
@@ -279,21 +274,18 @@ async function syncSourceFromTransaction(transaction, updates = {}) {
   if (orderId) {
     const order = await Order.findById(orderId);
     if (order) {
-      const totalAmount = amount;
+      const amountPaid = amount;
+      const totalAmount = order.totalAmount || 0;
+      const amountDue = Math.max(0, totalAmount - amountPaid);
       await Order.findByIdAndUpdate(orderId, {
-        totalAmount,
-        amountPaid: totalAmount,
-        amountDue: 0,
+        amountPaid,
+        amountDue,
         orderDate: transactionDate,
         paymentMethod,
         notes: description || order.notes,
       });
-      const deltaPurchased = totalAmount - (order.totalAmount || 0);
-      const deltaPaid = totalAmount - (order.amountPaid || 0);
-      if (order.customerId && (deltaPurchased || deltaPaid)) {
-        await Customer.findByIdAndUpdate(order.customerId, {
-          $inc: { totalAmountPurchased: deltaPurchased, totalAmountPaid: deltaPaid },
-        });
+      if (order.customerId) {
+        await recalcCustomerTotals(order.customerId);
       }
     }
   }
@@ -408,12 +400,7 @@ async function cleanupPhantomTransactions() {
   const orderTxs = await Transaction.find({ sourceType: 'Order' });
   for (const t of orderTxs) {
     const order = await Order.findById(t.sourceId || t.orderId);
-    if (!order) {
-      await Transaction.findByIdAndDelete(t._id);
-      continue;
-    }
-    const customer = order.customerId ? await Customer.findById(order.customerId) : null;
-    if (!customer || customer.customerType !== 'Daily') {
+    if (!order || !(order.amountPaid > 0)) {
       await Transaction.findByIdAndDelete(t._id);
     }
   }

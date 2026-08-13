@@ -87,11 +87,9 @@ export default function Orders() {
   const isDailyCustomer = selectedCustomer?.customerType === 'Daily';
   const orderTotal = Number(form.initialWeightKg || 0) * Number(form.ratePerKg || 0);
 
-  const ledgerCustomersOnly = customers.filter((c) => c.customerType !== 'Daily');
-
   const handleOpenAdd = () => {
     setForm({
-      customerId: ledgerCustomersOnly[0]?._id || '', wireNumber: '', coilCategory: '', wireSize: '', initialWeightKg: '',
+      customerId: customers[0]?._id || '', wireNumber: '', coilCategory: '', wireSize: '', initialWeightKg: '',
       ratePerKg: '', amountPaid: 0, paymentMethod: 'Cash', soldBy: '',
       orderDate: new Date().toISOString().slice(0, 10), notes: '',
     });
@@ -473,21 +471,13 @@ export default function Orders() {
           <FormControl fullWidth margin="dense">
             <InputLabel>Customer</InputLabel>
             <Select value={form.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value }))} label="Customer">
-              {ledgerCustomersOnly.map((c) => (
-                <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>
+              {customers.map((c) => (
+                <MenuItem key={c._id} value={c._id}>
+                  {c.name}{c.customerType === 'Daily' ? ' (Daily)' : ''}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
-          {ledgerCustomersOnly.length === 0 && (
-            <Alert severity="info" sx={{ mt: 1 }}>
-              Daily customers are recorded in Daily Book → Daily Customers tab.
-            </Alert>
-          )}
-          {isDailyCustomer && (
-            <Alert severity="info" sx={{ mt: 1 }}>
-              Daily customer — full cash payment. No credit/debit tracking.
-            </Alert>
-          )}
           <FormControl fullWidth margin="dense" required>
             <InputLabel>Wire Number</InputLabel>
             <Select
@@ -527,11 +517,30 @@ export default function Orders() {
           <TextField fullWidth label="Wire Size (optional)" value={form.wireSize} onChange={(e) => setForm((f) => ({ ...f, wireSize: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Initial Weight (kg)" value={form.initialWeightKg} onChange={(e) => setForm((f) => ({ ...f, initialWeightKg: e.target.value }))} margin="dense" required />
           <TextField fullWidth type="number" label="Rate per kg" value={form.ratePerKg} onChange={(e) => setForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
-          {!isDailyCustomer && (
-            <TextField fullWidth type="number" label="Amount Paid" value={form.amountPaid} onChange={(e) => setForm((f) => ({ ...f, amountPaid: e.target.value }))} margin="dense" />
-          )}
-          {isDailyCustomer && orderTotal > 0 && (
-            <TextField fullWidth label="Amount Paid" value={orderTotal} margin="dense" InputProps={{ readOnly: true }} helperText="Full amount — daily cash customer" />
+          <TextField
+            fullWidth
+            type="number"
+            label="Amount Paid"
+            value={form.amountPaid}
+            onChange={(e) => setForm((f) => ({ ...f, amountPaid: e.target.value }))}
+            margin="dense"
+            helperText="Default 0 for credit / partial payment"
+          />
+          {orderTotal > 0 && (
+            <TextField
+              fullWidth
+              label="Amount Due"
+              value={formatCurrency(Math.max(0, orderTotal - (Number(form.amountPaid) || 0)))}
+              margin="dense"
+              InputProps={{ readOnly: true }}
+              helperText={
+                Number(form.amountPaid) >= orderTotal
+                  ? 'Fully paid'
+                  : Number(form.amountPaid) > 0
+                    ? 'Partial payment'
+                    : 'Full credit — unpaid'
+              }
+            />
           )}
           <TextField fullWidth type="date" label="Order Date" value={form.orderDate} onChange={(e) => setForm((f) => ({ ...f, orderDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <FormControl fullWidth margin="dense">

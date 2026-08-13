@@ -229,13 +229,13 @@ export default function Customers() {
               <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
                 <Typography variant="caption">Purchased: <strong>{formatCurrency(row.totalAmountPurchased)}</strong></Typography>
                 <Typography variant="caption">Paid: <strong>{formatCurrency(row.totalAmountPaid)}</strong></Typography>
-                <Typography variant="caption">Due: <strong>{row.customerType === 'Daily' ? '—' : formatCurrency(row.totalAmountDue)}</strong></Typography>
+                <Typography variant="caption">Due: <strong>{formatCurrency(row.totalAmountDue)}</strong></Typography>
               </Box>
               <Stack direction="row" spacing={0.5} justifyContent="flex-end" mt={1}>
                 <IconButton
                   size="small"
                   onClick={() => handleOpenLedger(row)}
-                  title={row.customerType === 'Daily' ? 'View Purchases' : 'View Ledger'}
+                  title="View Ledger"
                 >
                   <MenuBookIcon />
                 </IconButton>
@@ -310,13 +310,13 @@ export default function Customers() {
                   <TableCell align="right">{formatCurrency(row.totalAmountPurchased)}</TableCell>
                   <TableCell align="right">{formatCurrency(row.totalAmountPaid)}</TableCell>
                   <TableCell align="right">
-                    {row.customerType === 'Daily' ? '—' : formatCurrency(row.totalAmountDue)}
+                    {formatCurrency(row.totalAmountDue)}
                   </TableCell>
                   <TableCell align="right">
                     <IconButton
                       size="small"
                       onClick={() => handleOpenLedger(row)}
-                      title={row.customerType === 'Daily' ? 'View Purchases' : 'View Ledger'}
+                      title="View Ledger"
                     >
                       <MenuBookIcon />
                     </IconButton>
@@ -425,7 +425,7 @@ export default function Customers() {
         <LedgerDialog
           open={ledgerOpen}
           onClose={() => { setLedgerOpen(false); setLedgerCustomer(null); }}
-          title={ledgerCustomer.customerType === 'Daily' ? `Daily Purchases — ${ledgerCustomer.name}` : `Ledger — ${ledgerCustomer.name}`}
+          title={`Ledger — ${ledgerCustomer.name}`}
           fetchLedger={fetchLedger}
           partyType="Customer"
           linked={!!ledgerCustomer.linkedSupplierId && ledgerCustomer.customerType === 'Processing'}

@@ -123,7 +123,6 @@ const updateCustomer = async (req, res, next) => {
     if (body.customerType === 'Daily') {
       body.openingBalance = 0;
       body.openingBalanceType = 'none';
-      body.totalAmountDue = 0;
     }
 
     const previousValue = existing.toObject();

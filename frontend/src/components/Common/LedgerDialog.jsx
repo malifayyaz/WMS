@@ -118,8 +118,7 @@ export default function LedgerDialog({
     })();
   }, [open, fetchLedger, startDate, endDate, viewTab, scopeTab, linked]);
 
-  const isDaily = ledger?.isDailyCustomer;
-  const isDateWise = ledger?.ledgerMode === 'datewise' && !isDaily;
+  const isDateWise = ledger?.ledgerMode === 'datewise';
   const isCombined = ledger?.scope === 'combined';
   const settlement = ledger?.settlement || ledger?.summary?.settlement;
 
@@ -225,7 +224,7 @@ export default function LedgerDialog({
   return (
     <ResponsiveDialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ py: 1.5, px: 2, fontSize: '1.05rem', fontWeight: 700, borderBottom: 1, borderColor: 'divider' }}>
-        {title || (isDaily ? 'Daily Purchases' : 'Ledger')}
+        {title || 'Ledger'}
         {linked && (
           <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 500, display: { xs: 'block', sm: 'inline' }, ml: { xs: 0, sm: 1.5 } }}>
             Linked supplier + processing
@@ -233,7 +232,7 @@ export default function LedgerDialog({
         )}
       </DialogTitle>
       <DialogContent sx={{ px: { xs: 1.5, sm: 2 }, pt: 1.5, pb: 1, overflowX: 'hidden' }}>
-        {linked && !isDaily && (
+        {linked && (
           <Tabs
             value={scopeTab}
             onChange={(_, v) => setScopeTab(v)}
@@ -251,22 +250,20 @@ export default function LedgerDialog({
           </Tabs>
         )}
 
-        {!isDaily && (
-          <Tabs
-            value={viewTab}
-            onChange={(_, v) => setViewTab(v)}
-            variant="scrollable"
-            allowScrollButtonsMobile
-            sx={{
-              minHeight: 32,
-              mb: 1.5,
-              '& .MuiTab-root': { minHeight: 32, py: 0.25, px: 1.25, fontSize: '0.75rem', textTransform: 'none' },
-            }}
-          >
-            <Tab label="Personal" />
-            <Tab label="Date-wise" />
-          </Tabs>
-        )}
+        <Tabs
+          value={viewTab}
+          onChange={(_, v) => setViewTab(v)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            minHeight: 32,
+            mb: 1.5,
+            '& .MuiTab-root': { minHeight: 32, py: 0.25, px: 1.25, fontSize: '0.75rem', textTransform: 'none' },
+          }}
+        >
+          <Tab label="Personal" />
+          <Tab label="Date-wise" />
+        </Tabs>
 
         <Box
           display="flex"
@@ -322,12 +319,7 @@ export default function LedgerDialog({
                 py: 1,
               }}
             >
-              {isDaily ? (
-                <>
-                  <Typography variant="body2">Purchased: <strong>{formatCurrency(ledger.summary?.totalPurchased || 0)}</strong></Typography>
-                  <Typography variant="body2">Weight: <strong>{(ledger.summary?.totalWeight || 0).toFixed(2)} kg</strong></Typography>
-                </>
-              ) : isCombined && settlement ? (
+              {isCombined && settlement ? (
                 <>
                   <Typography variant="body2">
                     Processing: <strong>{formatCurrency(Math.abs(settlement.processing?.balance || 0))}</strong>
@@ -424,20 +416,14 @@ export default function LedgerDialog({
                       <TableCell sx={{ ...headCell, width: 96 }}>Date</TableCell>
                       {isCombined && <TableCell sx={{ ...headCell, width: 88 }}>Role</TableCell>}
                       <TableCell sx={{ ...headCell, whiteSpace: 'normal', width: isCombined ? '20%' : '24%' }}>Description</TableCell>
-                      {!isDaily && <TableCell sx={{ ...headCell, width: 110 }}>Source</TableCell>}
+                      <TableCell sx={{ ...headCell, width: 110 }}>Source</TableCell>
                       <TableCell sx={{ ...headCell, width: 110 }}>Payment</TableCell>
-                      {!isDaily && <TableCell sx={{ ...headCell, width: 72 }} align="right">Wt</TableCell>}
-                      {!isDaily && <TableCell sx={{ ...headCell, width: 88 }} align="right">Rate</TableCell>}
-                      {isDaily ? (
-                        <TableCell sx={{ ...headCell, width: 110 }} align="right">Amount</TableCell>
-                      ) : (
-                        <>
-                          <TableCell sx={{ ...headCell, width: 100 }} align="right">Credit</TableCell>
-                          <TableCell sx={{ ...headCell, width: 100 }} align="right">Debit</TableCell>
-                          <TableCell sx={{ ...headCell, width: 100 }} align="right">Total</TableCell>
-                          <TableCell sx={{ ...headCell, width: 150 }} align="right">Balance</TableCell>
-                        </>
-                      )}
+                      <TableCell sx={{ ...headCell, width: 72 }} align="right">Wt</TableCell>
+                      <TableCell sx={{ ...headCell, width: 88 }} align="right">Rate</TableCell>
+                      <TableCell sx={{ ...headCell, width: 100 }} align="right">Credit</TableCell>
+                      <TableCell sx={{ ...headCell, width: 100 }} align="right">Debit</TableCell>
+                      <TableCell sx={{ ...headCell, width: 100 }} align="right">Total</TableCell>
+                      <TableCell sx={{ ...headCell, width: 150 }} align="right">Balance</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -452,34 +438,28 @@ export default function LedgerDialog({
                         <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
                         {isCombined && <TableCell sx={denseCell}>{roleChip(row.role)}</TableCell>}
                         <TableCell sx={descCell}>{row.description}</TableCell>
-                        {!isDaily && <TableCell sx={sourceCell}>{row.source}</TableCell>}
+                        <TableCell sx={sourceCell}>{row.source}</TableCell>
                         <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
-                        {!isDaily && <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>}
-                        {!isDaily && <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>}
-                        {isDaily ? (
-                          <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{formatCurrency(row.amount)}</TableCell>
-                        ) : (
-                          <>
-                            <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }} align="right">
-                              {row.credit ? formatCurrency(row.credit) : '—'}
-                            </TableCell>
-                            <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', color: row.debit ? 'error.main' : undefined }} align="right">
-                              {row.debit ? formatCurrency(row.debit) : '—'}
-                            </TableCell>
-                            <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.totalPrice ? formatCurrency(row.totalPrice) : '—'}</TableCell>
-                            <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', fontWeight: 600 }} align="right">
-                              {formatCurrency(Math.abs(row.balance))}
-                              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontWeight: 400, display: 'block' }}>
-                                {balanceLabel(row.balance)}
-                              </Typography>
-                            </TableCell>
-                          </>
-                        )}
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }} align="right">
+                          {row.credit ? formatCurrency(row.credit) : '—'}
+                        </TableCell>
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', color: row.debit ? 'error.main' : undefined }} align="right">
+                          {row.debit ? formatCurrency(row.debit) : '—'}
+                        </TableCell>
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.totalPrice ? formatCurrency(row.totalPrice) : '—'}</TableCell>
+                        <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap', fontWeight: 600 }} align="right">
+                          {formatCurrency(Math.abs(row.balance))}
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontWeight: 400, display: 'block' }}>
+                            {balanceLabel(row.balance)}
+                          </Typography>
+                        </TableCell>
                       </TableRow>
                     ))}
                     {(ledger.entries || []).length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={isDaily ? 4 : (isCombined ? 11 : 10)} sx={denseCell}>
+                        <TableCell colSpan={isCombined ? 11 : 10} sx={denseCell}>
                           <Typography variant="caption" color="text.secondary">No entries for selected range.</Typography>
                         </TableCell>
                       </TableRow>

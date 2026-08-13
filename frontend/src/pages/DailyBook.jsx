@@ -291,6 +291,7 @@ export default function DailyBook() {
   const [generalCashMode, setGeneralCashMode] = useState(false);
   const [selfExpenseMenuAnchor, setSelfExpenseMenuAnchor] = useState(null);
   const [dailySaleDialogOpen, setDailySaleDialogOpen] = useState(false);
+  const [editingDailySaleId, setEditingDailySaleId] = useState(null);
   const [dailySaleForm, setDailySaleForm] = useState({
     customerId: '',
     wireNumber: '',
@@ -299,6 +300,7 @@ export default function DailyBook() {
     initialWeightKg: '',
     bundles: '',
     ratePerKg: '',
+    amountPaid: 0,
     paymentMethod: 'Cash',
     soldBy: '',
     orderDate: '',
@@ -1034,6 +1036,7 @@ export default function DailyBook() {
 
   const handleOpenAdd = () => {
     if (mainTab === 1) {
+      setEditingDailySaleId(null);
       setDailySaleForm({
         customerId: selectedPartyId || dailyCustomers[0]?._id || '',
         wireNumber: '',
@@ -1042,6 +1045,7 @@ export default function DailyBook() {
         initialWeightKg: '',
         bundles: '',
         ratePerKg: '',
+        amountPaid: 0,
         paymentMethod: 'Cash',
         soldBy: '',
         orderDate: entryDate,
@@ -1143,13 +1147,52 @@ export default function DailyBook() {
     }
   };
 
+  /** Edit a sale order from the party ledger table or daily sales table. */
+  const openEditDailySale = async (orderOrRow) => {
+    let order = orderOrRow;
+    const orderId = orderOrRow._id || orderOrRow.sourceId;
+    if ((!order.wireNumber && orderId) || !order._id) {
+      try {
+        const res = await ordersAPI.getById(orderId);
+        order = res.data.data;
+      } catch (err) {
+        setSnack({ open: true, message: err.response?.data?.message || 'Could not load sale details', severity: 'error' });
+        return;
+      }
+    }
+    setEditingDailySaleId(order._id);
+    setDailySaleForm({
+      customerId: order.customerId?._id || order.customerId || '',
+      wireNumber: order.wireNumber || '',
+      coilCategory: order.coilCategory || defaultCoilCategoryForWire(order.wireNumber),
+      wireSize: order.wireSize || '',
+      initialWeightKg: order.finalWeightKg ?? order.initialWeightKg ?? '',
+      bundles: order.bundles || '',
+      ratePerKg: order.ratePerKg || '',
+      amountPaid: order.amountPaid ?? 0,
+      paymentMethod: order.paymentMethod || 'Cash',
+      soldBy: order.soldBy || '',
+      orderDate: order.orderDate ? new Date(order.orderDate).toISOString().slice(0, 10) : entryDate,
+      notes: order.notes || '',
+      isAnnealed: !!order.isAnnealed,
+      annealingRecordId: order.annealingRecordId || '',
+    });
+    if (order.isAnnealed && order.wireNumber) {
+      loadAnnealedWireOptions(order.wireNumber);
+    } else {
+      setAnnealedWireOptions([]);
+    }
+    setStockPreview(null);
+    setDailySaleDialogOpen(true);
+  };
+
   const handleSaveDailySale = async () => {
     if (!dailySaleForm.customerId || !dailySaleForm.wireNumber || !dailySaleForm.initialWeightKg || !dailySaleForm.ratePerKg) {
       setSnack({ open: true, message: 'Customer, wire, weight and rate required', severity: 'error' });
       return;
     }
     try {
-      const res = await ordersAPI.create({
+      const payload = {
         customerId: dailySaleForm.customerId,
         wireNumber: Number(dailySaleForm.wireNumber),
         coilCategory: dailySaleForm.coilCategory,
@@ -1157,6 +1200,7 @@ export default function DailyBook() {
         initialWeightKg: Number(dailySaleForm.initialWeightKg),
         bundles: Number(dailySaleForm.bundles) || 0,
         ratePerKg: Number(dailySaleForm.ratePerKg),
+        amountPaid: Number(dailySaleForm.amountPaid) || 0,
         paymentMethod: dailySaleForm.paymentMethod,
         soldBy: dailySaleForm.soldBy,
         orderDate: dailySaleForm.orderDate || entryDate,
@@ -1165,15 +1209,22 @@ export default function DailyBook() {
         annealingRecordId: dailySaleForm.isAnnealed && dailySaleForm.annealingRecordId
           ? dailySaleForm.annealingRecordId
           : undefined,
-      });
+      };
+      let res;
+      if (editingDailySaleId) {
+        res = await ordersAPI.update(editingDailySaleId, payload);
+      } else {
+        res = await ordersAPI.create(payload);
+      }
       const warnings = res.data.warnings || [];
       setSnack({
         open: true,
         message: warnings.length
           ? `Sale recorded — ${warnings.join('; ')}`
-          : (res.data.message || 'Daily sale recorded'),
+          : (res.data.message || (editingDailySaleId ? 'Daily sale updated' : 'Daily sale recorded')),
         severity: warnings.length ? 'warning' : 'success',
       });
+      setEditingDailySaleId(null);
       setDailySaleDialogOpen(false);
       fetchData();
       fetchPartyLedger();
@@ -2283,7 +2334,7 @@ export default function DailyBook() {
                   onClick={() => setLedgerDialogOpen(true)}
                   sx={toolbarBtn}
                 >
-                  {mainTab === 1 ? 'View Purchases' : 'Full Ledger'}
+                  Full Ledger
                 </Button>
               </ToolbarSection>
             )}
@@ -2584,28 +2635,112 @@ export default function DailyBook() {
       {selectedParty && partyLedger && mainTab >= 1 && mainTab !== 4 && (
         <Box display="flex" gap={2} mb={2} flexWrap="wrap" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1, minWidth: 0 }}>
           <Typography fontWeight={600}>{selectedParty.name}</Typography>
-          {partyLedger.isDailyCustomer ? (
-            <Typography>Total Purchased: <strong>{formatCurrency(partyLedger.summary.totalPurchased)}</strong></Typography>
-          ) : (
-            <>
-              <Typography>Credit: <strong>{formatCurrency(partyLedger.summary.totalCredit)}</strong></Typography>
-              <Typography>Debit: <strong>{formatCurrency(partyLedger.summary.totalDebit)}</strong></Typography>
-              <Typography>
-                Net Balance: <strong>{formatCurrency(Math.abs(partyLedger.summary.balance))}</strong>
-                {partyLedger.summary.balance > 0 ? ' — They owe us' : partyLedger.summary.balance < 0 ? ' — We owe them' : ' — Settled'}
-              </Typography>
-              <Typography>
-                Due: <strong>{formatCurrency(Math.max(0, mainTab === 3 ? -partyLedger.summary.balance : partyLedger.summary.balance))}</strong>
-                {Math.abs(partyLedger.summary.balance) < 0.01 ? ' — Settled' : ''}
-              </Typography>
-            </>
-          )}
+          <Typography>Credit: <strong>{formatCurrency(partyLedger.summary?.totalCredit ?? partyLedger.summary?.totalPurchased ?? 0)}</strong></Typography>
+          <Typography>Debit: <strong>{formatCurrency(partyLedger.summary?.totalDebit ?? 0)}</strong></Typography>
+          <Typography>
+            Net Balance: <strong>{formatCurrency(Math.abs(partyLedger.summary?.balance ?? 0))}</strong>
+            {(partyLedger.summary?.balance ?? 0) > 0 ? ' — They owe us' : (partyLedger.summary?.balance ?? 0) < 0 ? ' — We owe them' : ' — Settled'}
+          </Typography>
+          <Typography>
+            Due: <strong>{formatCurrency(Math.max(0, mainTab === 3 ? -(partyLedger.summary?.balance ?? 0) : (partyLedger.summary?.balance ?? 0)))}</strong>
+            {Math.abs(partyLedger.summary?.balance ?? 0) < 0.01 ? ' — Settled' : ''}
+          </Typography>
         </Box>
       )}
 
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
-      ) : mainTab === 4 || mainTab === 5 ? null : mainTab === 1 ? (
+      ) : mainTab === 4 || mainTab === 5 ? null : selectedPartyId && partyLedger ? (
+        <>
+          <Box display="flex" justifyContent="flex-end" gap={1} mb={1}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<TableChartIcon />}
+              onClick={() => exportLedgerExcel(partyLedger, {
+                title: selectedParty?.name,
+                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
+              })}
+            >
+              Export Excel
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<PictureAsPdfIcon />}
+              onClick={() => exportLedgerPdf(partyLedger, {
+                title: selectedParty?.name,
+                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
+              })}
+            >
+              Export PDF
+            </Button>
+          </Box>
+        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: { xs: 700, sm: 1020 }, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
+                <TableCell sx={{ width: '24%', fontWeight: 700 }}>Description</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Source</TableCell>
+                <TableCell sx={{ width: 110, fontWeight: 700 }}>Payment</TableCell>
+                <TableCell sx={{ width: 72, fontWeight: 700 }} align="right">Wt</TableCell>
+                <TableCell sx={{ width: 88, fontWeight: 700 }} align="right">Rate</TableCell>
+                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Credit</TableCell>
+                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Debit</TableCell>
+                <TableCell sx={{ width: 150, fontWeight: 700 }} align="right">Balance</TableCell>
+                <TableCell sx={{ width: 140, fontWeight: 700 }} align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(partyLedger.entries || []).map((row, i) => {
+                const canEditTxn = row.source === 'Daily Book' && !!row.sourceId;
+                return (
+                <TableRow key={i} hover>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{row.description}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{row.source}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }}>{row.credit ? formatCurrency(row.credit) : '—'}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.debit ? 'error.main' : undefined }}>{row.debit ? formatCurrency(row.debit) : '—'}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {formatCurrency(Math.abs(row.balance))}
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, display: 'block', fontWeight: 400 }}>
+                      {row.balance > 0 ? 'They owe us' : row.balance < 0 ? 'We owe them' : ''}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {canEditTxn ? (
+                      <>
+                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditLedgerEntry(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
+                      </>
+                    ) : (row.source === 'Sale' || row.source === 'Order') && !!row.sourceId ? (
+                      <>
+                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditDailySale(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
+                      </>
+                    ) : '—'}
+                  </TableCell>
+                </TableRow>
+                );
+              })}
+              {(partyLedger.entries || []).length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10}>
+                    <Typography variant="body2" color="text.secondary">
+                      No activity for selected dates — current due: {formatCurrency(selectedParty?.totalAmountDue || 0)}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        </>
+      ) : mainTab === 1 ? (
         <>
         <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
           <Table size="small">
@@ -2618,6 +2753,8 @@ export default function DailyBook() {
                 <TableCell align="right">Bundles</TableCell>
                 <TableCell align="right">Rate/kg</TableCell>
                 <TableCell align="right">Total</TableCell>
+                <TableCell align="right">Paid</TableCell>
+                <TableCell align="right">Due</TableCell>
                 <TableCell>Payment</TableCell>
                 <TableCell>Sold By</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -2633,18 +2770,25 @@ export default function DailyBook() {
                   <TableCell align="right">{row.bundles || '—'}</TableCell>
                   <TableCell align="right">{formatCurrency(row.ratePerKg)}</TableCell>
                   <TableCell align="right">{formatCurrency(row.totalAmount)}</TableCell>
+                  <TableCell align="right">{formatCurrency(row.amountPaid ?? 0)}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: row.amountDue > 0 ? 600 : 400, color: row.amountDue > 0 ? 'error.main' : 'text.secondary' }}>
+                    {formatCurrency(row.amountDue ?? 0)}
+                  </TableCell>
                   <TableCell>{row.paymentMethod}</TableCell>
                   <TableCell>{row.soldBy}</TableCell>
                   <TableCell align="right">
                     {(
-                      <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row._id }))}>Delete</Button>
+                      <>
+                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditDailySale(row))} sx={{ mr: 0.5 }}>Edit</Button>
+                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row._id }))}>Delete</Button>
+                      </>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
               {dailyOrders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={12}>
                     <Typography variant="body2" color="text.secondary">No daily sales for selected date range.</Typography>
                   </TableCell>
                 </TableRow>
@@ -2728,91 +2872,6 @@ export default function DailyBook() {
             </TableBody>
           </Table>
         </TableContainer>
-      ) : mainTab >= 2 && selectedPartyId && partyLedger && !partyLedger.isDailyCustomer ? (
-        <>
-          <Box display="flex" justifyContent="flex-end" gap={1} mb={1}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<TableChartIcon />}
-              onClick={() => exportLedgerExcel(partyLedger, {
-                title: selectedParty?.name,
-                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
-              })}
-            >
-              Export Excel
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<PictureAsPdfIcon />}
-              onClick={() => exportLedgerPdf(partyLedger, {
-                title: selectedParty?.name,
-                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
-              })}
-            >
-              Export PDF
-            </Button>
-          </Box>
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: { xs: 700, sm: 1020 }, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'grey.100' }}>
-                <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
-                <TableCell sx={{ width: '24%', fontWeight: 700 }}>Description</TableCell>
-                <TableCell sx={{ width: 110, fontWeight: 700 }}>Source</TableCell>
-                <TableCell sx={{ width: 110, fontWeight: 700 }}>Payment</TableCell>
-                <TableCell sx={{ width: 72, fontWeight: 700 }} align="right">Wt</TableCell>
-                <TableCell sx={{ width: 88, fontWeight: 700 }} align="right">Rate</TableCell>
-                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Credit</TableCell>
-                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Debit</TableCell>
-                <TableCell sx={{ width: 150, fontWeight: 700 }} align="right">Balance</TableCell>
-                <TableCell sx={{ width: 140, fontWeight: 700 }} align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(partyLedger.entries || []).map((row, i) => {
-                const canEditTxn = row.source === 'Daily Book' && !!row.sourceId;
-                return (
-                <TableRow key={i} hover>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{row.description}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{row.source}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }}>{row.credit ? formatCurrency(row.credit) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.debit ? 'error.main' : undefined }}>{row.debit ? formatCurrency(row.debit) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {formatCurrency(Math.abs(row.balance))}
-                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, display: 'block', fontWeight: 400 }}>
-                      {row.balance > 0 ? 'They owe us' : row.balance < 0 ? 'We owe them' : ''}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                    {canEditTxn ? (
-                      <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditLedgerEntry(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
-                      </>
-                    ) : '—'}
-                  </TableCell>
-                </TableRow>
-                );
-              })}
-              {(partyLedger.entries || []).length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10}>
-                    <Typography variant="body2" color="text.secondary">
-                      No activity for selected dates — current due: {formatCurrency(selectedParty?.totalAmountDue || 0)}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        </>
       ) : (
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
           <Table size="small">
@@ -3140,7 +3199,7 @@ export default function DailyBook() {
       )}
 
       <ResponsiveDialog open={dailySaleDialogOpen} onClose={() => setDailySaleDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Daily Sale</DialogTitle>
+        <DialogTitle>{editingDailySaleId ? 'Edit Daily Sale' : 'Add Daily Sale'}</DialogTitle>
         <DialogContent sx={{ overflowY: 'auto' }}>
           <FormControl fullWidth margin="dense" required>
             <PartySearchSelect
@@ -3152,9 +3211,6 @@ export default function DailyBook() {
               getOptionLabel={customerSearchLabel}
             />
           </FormControl>
-          <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
-            Daily customer — full cash payment. No credit/debit tracking.
-          </Alert>
           <FormControl fullWidth margin="dense" required>
             <InputLabel>Wire Number</InputLabel>
             <Select
@@ -3240,8 +3296,30 @@ export default function DailyBook() {
               </Typography>
             </FormControl>
           )}
+          <TextField
+            fullWidth
+            type="number"
+            label="Amount Paid"
+            value={dailySaleForm.amountPaid}
+            onChange={(e) => setDailySaleForm((f) => ({ ...f, amountPaid: e.target.value }))}
+            margin="dense"
+            helperText="Default 0 for credit / partial payment"
+          />
           {dailyOrderTotal > 0 && (
-            <TextField fullWidth label="Amount Paid" value={dailyOrderTotal} margin="dense" InputProps={{ readOnly: true }} helperText="Full amount — daily cash customer" />
+            <TextField
+              fullWidth
+              label="Amount Due"
+              value={formatCurrency(Math.max(0, dailyOrderTotal - (Number(dailySaleForm.amountPaid) || 0)))}
+              margin="dense"
+              InputProps={{ readOnly: true }}
+              helperText={
+                Number(dailySaleForm.amountPaid) >= dailyOrderTotal
+                  ? 'Fully paid'
+                  : Number(dailySaleForm.amountPaid) > 0
+                    ? 'Partial payment'
+                    : 'Full credit — unpaid'
+              }
+            />
           )}
           <TextField fullWidth type="date" label="Order Date" value={dailySaleForm.orderDate} onChange={(e) => setDailySaleForm((f) => ({ ...f, orderDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <FormControl fullWidth margin="dense">

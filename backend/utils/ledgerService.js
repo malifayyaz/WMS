@@ -383,52 +383,6 @@ function summarizeEntries(entries) {
 }
 
 async function buildLedger(partyType, party, options = {}) {
-  if (partyType === 'Customer' && party.customerType === 'Daily') {
-    const orders = await Order.find({ customerId: party._id }).sort({ orderDate: -1 });
-    const dailyEntries = orders
-      .filter((o) => inRange(o.orderDate, options.startDate, options.endDate))
-      .map((o) => ({
-        date: o.orderDate,
-        description: `${o.wireType || `Wire #${o.wireNumber}`} — ${o.finalWeightKg ?? o.initialWeightKg} kg`,
-        amount: o.totalAmount || 0,
-        weightKg: o.finalWeightKg ?? o.initialWeightKg ?? 0,
-        ratePerKg: o.ratePerKg || 0,
-        totalPrice: o.totalAmount || 0,
-        source: 'Sale',
-        sourceId: o._id,
-        paymentMethod: o.paymentMethod || '',
-      }));
-
-    const dailyTxs = await Transaction.find({ relatedTo: 'Customer', relatedId: party._id }).sort({ transactionDate: -1 });
-    dailyTxs
-      .filter((t) => inRange(t.transactionDate, options.startDate, options.endDate) && !t.orderId)
-      .forEach((t) => {
-        dailyEntries.push({
-          date: t.transactionDate,
-          description: t.description || (t.transactionType === 'Money In' ? 'Cash purchase' : 'Refund'),
-          amount: t.transactionType === 'Money In' ? t.amount : -(t.amount || 0),
-          weightKg: 0,
-          ratePerKg: 0,
-          totalPrice: t.amount || 0,
-          source: 'Daily Book',
-          sourceId: t._id,
-          paymentMethod: t.paymentMethod || '',
-        });
-      });
-
-    dailyEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
-    const totalPurchased = dailyEntries.reduce((s, e) => s + Math.max(0, e.amount || 0), 0);
-    const totalWeight = dailyEntries.reduce((s, e) => s + (e.weightKg || 0), 0);
-
-    return {
-      party: { _id: party._id, name: party.name, type: partyType, customerType: 'Daily' },
-      isDailyCustomer: true,
-      ledgerMode: 'personal',
-      entries: dailyEntries,
-      summary: { totalPurchased, totalWeight },
-    };
-  }
-
   const allEntries = await collectRawEntries(partyType, party);
   const { entries: rangedEntries, broughtForward } = applyDateRange(allEntries, options.startDate, options.endDate);
   const entries = applyRunningBalance(rangedEntries);
@@ -436,7 +390,7 @@ async function buildLedger(partyType, party, options = {}) {
   summary.broughtForward = broughtForward;
 
   return {
-    party: { _id: party._id, name: party.name, type: partyType },
+    party: { _id: party._id, name: party.name, type: partyType, customerType: party.customerType },
     ledgerMode: 'personal',
     entries,
     summary,
@@ -444,23 +398,6 @@ async function buildLedger(partyType, party, options = {}) {
 }
 
 async function buildDateWiseLedger(partyType, party, options = {}) {
-  if (partyType === 'Customer' && party.customerType === 'Daily') {
-    const personal = await buildLedger(partyType, party, options);
-    const byDate = new Map();
-    personal.entries.forEach((e) => {
-      const day = format(new Date(e.date), 'yyyy-MM-dd');
-      if (!byDate.has(day)) {
-        byDate.set(day, { date: day, entries: [], totalWeight: 0, totalPrice: 0, credit: 0, debit: 0 });
-      }
-      const row = byDate.get(day);
-      row.entries.push(e);
-      row.totalWeight += e.weightKg || 0;
-      row.totalPrice += Math.abs(e.amount || e.totalPrice || 0);
-    });
-    const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-    return { ...personal, ledgerMode: 'datewise', days };
-  }
-
   const allEntries = await collectRawEntries(partyType, party);
   const { entries: rangedEntries, broughtForward } = applyDateRange(allEntries, options.startDate, options.endDate);
   const byDate = new Map();

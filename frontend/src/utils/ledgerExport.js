@@ -31,21 +31,17 @@ function fmtWt(v) {
 export function buildLedgerExportPayload(ledger, { title, partyType } = {}) {
   if (!ledger) return null;
 
-  const isDaily = !!ledger.isDailyCustomer;
-  const isDateWise = ledger.ledgerMode === 'datewise' && !isDaily;
+  const isDateWise = ledger.ledgerMode === 'datewise';
   const isCombined = ledger.scope === 'combined';
   const partyName = ledger.party?.name || title || 'Ledger';
-  const modeLabel = isDaily ? 'Daily Purchases' : isDateWise ? 'Date-wise' : 'Personal';
+  const modeLabel = isDateWise ? 'Date-wise' : 'Personal';
   const scopeLabel = isCombined ? 'Combined Net' : '';
   const exportTitle = scopeLabel
     ? `${partyName} — ${scopeLabel} (${modeLabel})`
     : `${partyName} — ${modeLabel}`;
 
   const summaryLines = [];
-  if (isDaily) {
-    summaryLines.push(`Purchased: ${formatCurrency(ledger.summary?.totalPurchased || 0)}`);
-    summaryLines.push(`Weight: ${(ledger.summary?.totalWeight || 0).toFixed(2)} kg`);
-  } else if (isCombined && (ledger.settlement || ledger.summary?.settlement)) {
+  if (isCombined && (ledger.settlement || ledger.summary?.settlement)) {
     const s = ledger.settlement || ledger.summary.settlement;
     summaryLines.push(`Processing side: ${formatCurrency(Math.abs(s.processing?.balance || 0))} (${s.processing?.status || 'Settled'})`);
     summaryLines.push(`Supplier side: ${formatCurrency(Math.abs(s.supplier?.balance || 0))} (${s.supplier?.status || 'Settled'})`);
@@ -93,14 +89,6 @@ export function buildLedgerExportPayload(ledger, { title, partyType } = {}) {
           return `${role}${e.description || ''}${wt}${pay}`;
         })
         .join('; '),
-    ]);
-  } else if (isDaily) {
-    headers = ['Date', 'Description', 'Payment', 'Amount'];
-    bodyRows = (ledger.entries || []).map((row) => [
-      formatDate(row.date),
-      row.description || '',
-      row.paymentMethod || '—',
-      formatCurrency(row.amount),
     ]);
   } else {
     headers = ['Date'];
