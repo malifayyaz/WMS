@@ -22,6 +22,7 @@ const annealingRoutes = require('./routes/annealingRoutes');
 const jobWorkRoutes = require('./routes/jobWorkRoutes');
 const workerRoutes = require('./routes/workerRoutes');
 const aiRoutes = require("./routes/aiRoutes");
+const chequeRoutes = require('./routes/chequeRoutes');
 const userRoutes = require('./routes/userRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
 
@@ -77,6 +78,7 @@ app.use('/api/annealing', authMiddleware, annealingRoutes);
 app.use('/api/jobwork', authMiddleware, jobWorkRoutes);
 app.use('/api/workers', authMiddleware, workerRoutes);
 app.use("/api/ai", authMiddleware, aiRoutes);
+app.use('/api/cheques', authMiddleware, chequeRoutes);
 app.use('/api/users', authMiddleware, userRoutes);
 app.use('/api/activity-logs', authMiddleware, activityLogRoutes);
 

@@ -1,6 +1,7 @@
 const Transaction = require('../models/Transaction');
 const Customer = require('../models/Customer');
 const Supplier = require('../models/Supplier');
+const Cheque = require('../models/Cheque');
 const { startOfDay, endOfDay } = require('date-fns');
 const {
   getCashBookForDate,
@@ -174,7 +175,80 @@ const createTransaction = async (req, res, next) => {
       }
       if (body.bankAccount !== 'Other') body.bankAccountOtherName = undefined;
     }
+
+    if (body.paymentMethod === 'Cheque') {
+      const isMoneyIn = body.transactionType === 'Money In';
+      const isEndorsed = !isMoneyIn && (body.isEndorsedCheque || body.chequeType === 'Customer Cheque');
+      const chqType = isEndorsed ? 'Customer Cheque' : (body.chequeType || (isMoneyIn ? 'Customer Cheque' : 'Company Cheque'));
+      const chqNumber = String(body.chequeNumber || '').trim() || `CHQ-${Date.now().toString().slice(-6)}`;
+      const chqBank = String(body.chequeBank || body.bankName || body.bankAccount || 'Bank').trim();
+      const chqDate = body.chequeDate ? new Date(body.chequeDate) : (body.transactionDate ? new Date(body.transactionDate) : new Date());
+
+      if (isEndorsed && body.sourceChequeId) {
+        const sourceCheque = await Cheque.findById(body.sourceChequeId);
+        if (sourceCheque) {
+          sourceCheque.status = 'Endorsed';
+          sourceCheque.givenTo = {
+            partyType: body.relatedTo || 'Supplier',
+            partyId: body.relatedId || undefined,
+            partyName: body.relatedName || '',
+            expenseGroup: body.expenseGroup || undefined,
+            expenseCategory: body.expenseCategory || undefined,
+          };
+          sourceCheque.endorsedDate = body.transactionDate || new Date();
+          await sourceCheque.save();
+          body.chequeId = sourceCheque._id;
+          body.chequeNumber = sourceCheque.chequeNumber;
+          body.chequeBank = sourceCheque.bankName;
+          body.chequeDate = sourceCheque.chequeDate;
+          body.chequeType = 'Customer Cheque';
+          body.isEndorsedCheque = true;
+        }
+      } else if (!body.chequeId) {
+        const newCheque = await Cheque.create({
+          chequeNumber: chqNumber,
+          chequeType: chqType,
+          direction: (isMoneyIn || isEndorsed) ? 'Received' : 'Issued',
+          bankName: chqBank,
+          amount: Number(body.amount) || 0,
+          chequeDate: chqDate,
+          receivedDate: (isMoneyIn || isEndorsed) ? (body.transactionDate || new Date()) : undefined,
+          issueDate: (!isMoneyIn && !isEndorsed) ? (body.transactionDate || new Date()) : undefined,
+          status: isMoneyIn ? 'In Hand' : (isEndorsed ? 'Endorsed' : 'Issued'),
+          receivedFrom: (isMoneyIn || isEndorsed) ? {
+            partyType: 'Customer',
+            partyId: isMoneyIn ? body.relatedId : undefined,
+            partyName: isMoneyIn ? (body.relatedName || 'Customer') : (body.receivedFromName || 'Customer'),
+          } : undefined,
+          givenTo: !isMoneyIn ? {
+            partyType: body.relatedTo || 'Supplier',
+            partyId: body.relatedId || undefined,
+            partyName: body.relatedName || '',
+            expenseGroup: body.expenseGroup || undefined,
+            expenseCategory: body.expenseCategory || undefined,
+          } : undefined,
+          endorsedDate: isEndorsed ? (body.transactionDate || new Date()) : undefined,
+          notes: body.description || '',
+          handledBy: body.handledBy || '',
+        });
+        body.chequeId = newCheque._id;
+        body.chequeNumber = chqNumber;
+        body.chequeBank = chqBank;
+        body.chequeDate = chqDate;
+        body.chequeType = chqType;
+        if (isEndorsed) body.isEndorsedCheque = true;
+      }
+
+      if (isEndorsed || isMoneyIn || chqType === 'Customer Cheque') {
+        body.bankAccount = undefined;
+        body.bankAccountOtherName = undefined;
+      }
+    }
+
     const transaction = await Transaction.create(body);
+    if (body.chequeId) {
+      await Cheque.findByIdAndUpdate(body.chequeId, { transactionId: transaction._id });
+    }
     await applyRelatedBalanceImpact(transaction, 1);
 
     let message = 'Transaction recorded';

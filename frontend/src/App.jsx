@@ -11,6 +11,7 @@ import Customers from './pages/Customers';
 import Orders from './pages/Orders';
 import DailyBook from './pages/DailyBook';
 import BankAccounts from './pages/BankAccounts';
+import Cheques from './pages/Cheques';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import ReadyStock from './pages/ReadyStock';
@@ -99,6 +100,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="Bank Account">
               <BankAccounts />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cheques"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Cheque Management">
+              <Cheques />
             </AppLayout>
           </ProtectedRoute>
         }

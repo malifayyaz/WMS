@@ -773,7 +773,30 @@ async function executeAction(intent, extractedData = {}, userId) {
         }
 
         const coilCategory = resolveCoilCategory(data.coilCategory, wireNumber);
-        const amountPaid = Number(data.amountPaid) || 0;
+        const calculatedTotal = initialWeightKg * ratePerKg;
+
+        const isDailySale = customer.customerType === "Daily" ||
+          (data.customerType && String(data.customerType).toLowerCase() === "daily") ||
+          data.isDailySale === true;
+
+        const isExplicitlyUnpaid = data.isUnpaid === true ||
+          data.isPaid === false ||
+          (typeof data.notes === "string" && /\b(unpaid|credit|udhaar|udhar|baqi|baki|not\s*paid)\b/i.test(data.notes));
+
+        let amountPaid = 0;
+        if (data.amountPaid !== undefined && data.amountPaid !== null && data.amountPaid !== "") {
+          amountPaid = Number(data.amountPaid);
+          if (Number.isNaN(amountPaid)) amountPaid = 0;
+        } else if (isExplicitlyUnpaid) {
+          amountPaid = 0;
+        } else if (isDailySale) {
+          // By default, Daily sales via AI agent are fully paid unless user specified unpaid/partial
+          amountPaid = calculatedTotal;
+        } else {
+          // Ledger customers default to 0 (credit) unless specified
+          amountPaid = 0;
+        }
+
         const { totalAmount, amountDue } = orderTotalAndDue(initialWeightKg, ratePerKg, amountPaid);
 
         let stockResult = { deductedKg: 0, pendingKg: 0, sufficient: true };
@@ -793,7 +816,7 @@ async function executeAction(intent, extractedData = {}, userId) {
           initialWeightKg,
           ratePerKg,
           totalAmount,
-          amountPaid: Number(amountPaid) || 0,
+          amountPaid,
           amountDue,
           orderStatus: "Outer",
           soldBy: data.soldBy || "",
@@ -805,7 +828,7 @@ async function executeAction(intent, extractedData = {}, userId) {
           orderDate,
           paymentMethod: data.paymentMethod
             ? normalizePaymentMethod(data.paymentMethod)
-            : undefined,
+            : "Cash",
         };
 
         const order = await Order.create(orderPayload);
@@ -815,10 +838,16 @@ async function executeAction(intent, extractedData = {}, userId) {
         }
         await recalcCustomerTotals(customer._id);
 
+        const paymentNote = order.amountPaid >= order.totalAmount
+          ? ` (Total: Rs. ${totalAmount.toLocaleString()}, Fully Paid: Rs. ${order.amountPaid.toLocaleString()} — recorded to Daily Book)`
+          : order.amountPaid > 0
+            ? ` (Total: Rs. ${totalAmount.toLocaleString()}, Paid: Rs. ${order.amountPaid.toLocaleString()}, Due: Rs. ${order.amountDue.toLocaleString()} — partial payment recorded to Daily Book)`
+            : ` (Total: Rs. ${totalAmount.toLocaleString()}, Unpaid / Due: Rs. ${order.amountDue.toLocaleString()})`;
+
         return {
           success: true,
           savedDoc: order,
-          message: `Order created for ${customer.name}`,
+          message: `Order created for ${customer.name}${paymentNote}`,
           undoInfo: { model: "Order", id: order._id },
         };
       }

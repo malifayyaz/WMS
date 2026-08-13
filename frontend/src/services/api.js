@@ -123,6 +123,20 @@ export const transactionsAPI = {
   delete: (id) => api.delete(`/transactions/${id}`),
 };
 
+// Cheques
+export const chequesAPI = {
+  getAll: (params) => api.get('/cheques', { params }),
+  getInHand: () => api.get('/cheques/in-hand'),
+  getSummary: (params) => api.get('/cheques/summary', { params }),
+  getById: (id) => api.get(`/cheques/${id}`),
+  create: (data) => api.post('/cheques', data),
+  endorse: (id, data) => api.post(`/cheques/${id}/endorse`, data),
+  deposit: (id, data) => api.post(`/cheques/${id}/deposit`, data),
+  updateStatus: (id, data) => api.patch(`/cheques/${id}/status`, data),
+  update: (id, data) => api.put(`/cheques/${id}`, data),
+  delete: (id) => api.delete(`/cheques/${id}`),
+};
+
 // Expenses
 export const expensesAPI = {
   getAll: (params) => api.get('/expenses', { params }),
@@ -131,6 +145,7 @@ export const expensesAPI = {
   create: (data) => api.post('/expenses', data),
   update: (id, data) => api.put(`/expenses/${id}`, data),
   delete: (id) => api.delete(`/expenses/${id}`),
+  breakdown: (id, data) => api.post(`/expenses/${id}/breakdown`, data),
 };
 
 // Annealing

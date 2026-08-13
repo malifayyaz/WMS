@@ -36,7 +36,7 @@ export default function Orders() {
   const [stockPreview, setStockPreview] = useState(null);
   const [form, setForm] = useState({
     customerId: '', wireNumber: '', coilCategory: '', wireSize: '', initialWeightKg: '', ratePerKg: '',
-    amountPaid: 0, paymentMethod: 'Cash', soldBy: '', orderDate: '', notes: '',
+    amountPaid: 0, paymentMethod: 'Cash', chequeNumber: '', chequeBank: 'MBL', soldBy: '', orderDate: '', notes: '',
   });
   const [editingId, setEditingId] = useState(null);
   const [weightDialog, setWeightDialog] = useState({ open: false, order: null, finalWeightKg: '' });
@@ -549,6 +549,28 @@ export default function Orders() {
               {paymentMethods.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
             </Select>
           </FormControl>
+          {form.paymentMethod === 'Cheque' && Number(form.amountPaid) > 0 && (
+            <>
+              <TextField
+                fullWidth
+                size="small"
+                label="Cheque Number *"
+                value={form.chequeNumber}
+                onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. 123456"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Drawer Bank Name *"
+                value={form.chequeBank}
+                onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. HBL, MCB, MBL"
+              />
+            </>
+          )}
           <TextField fullWidth label="Sold By" value={form.soldBy} onChange={(e) => setForm((f) => ({ ...f, soldBy: e.target.value }))} margin="dense" />
           <TextField fullWidth label="Notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
         </DialogContent>

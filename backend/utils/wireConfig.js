@@ -22,7 +22,7 @@ const EXPENSE_CATEGORY_TREE = {
   'Process Material': [...CONSUMPTION_MATERIAL_TYPES, 'Miscellaneous'],
 };
 
-const FACTORY_EXPENSE_GROUPS = ['Labour', 'Rental', 'Operations', 'Manufacturing', 'Process Material'];
+const FACTORY_EXPENSE_GROUPS = ['Labour', 'Rental', 'Operations', 'Manufacturing', 'Process Material', 'Factory Expense Total'];
 const SELF_EXPENSE_GROUP = 'Self Expense';
 
 const LEGACY_EXPENSE_CATEGORIES = ['Salary', 'Bills', 'Maintenance', 'Manufacturing', 'Other'];

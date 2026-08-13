@@ -133,6 +133,12 @@ exports.chat = async (req, res) => {
 - Format currency as Rs. X,XXX. Read integers exactly (275022 is Rs. 275,022).
 - Dates are DD/MM/YYYY.
 - If a domain section is present, use it; if a figure is 0 say so — do not invent numbers.
+- For cheques:
+  * For "cheques received till now / total received": state totalReceivedTillNow.count and totalReceivedTillNow.totalAmount (e.g. "We have received X cheques totaling Rs. Y till now").
+  * For "in-hand cheques / cheques with us": state inHandSummary.count and inHandSummary.totalAmount, and list active in-hand cheques (Cheque #, Customer, Bank, Amount, Date).
+  * For "our cheques / company vs personal": state totalIssuedCompanyCheques and totalIssuedPersonalCheques.
+  * For "passed / endorsed cheques": state totalEndorsedToSuppliers (customer cheques given to suppliers).
+  * If specificLookup is present, describe that exact cheque's details (number, status, bank, amount, parties).
 - For cash: cashInHand/closingBalance is cash in hand for that date.
 - For expenses: use totalAmount and list items when asked for a day.
 - For profit: use finalNetProfit / gross figures from profitReport for periodLabel.

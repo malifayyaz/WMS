@@ -72,7 +72,16 @@ function filterTxnsAfterOpening(txns, openingDoc) {
 
 async function loadBankTxns(filter = {}) {
   return Transaction.find({
-    paymentMethod: 'Bank Transfer',
+    $or: [
+      { paymentMethod: 'Bank Transfer' },
+      {
+        paymentMethod: 'Cheque',
+        transactionType: 'Money Out',
+        chequeType: { $in: ['Company Cheque', 'Personal Cheque'] },
+        isEndorsedCheque: { $ne: true },
+        bankAccount: { $exists: true, $ne: null },
+      },
+    ],
     sourceType: { $nin: BANK_SOURCE_EXCLUDE },
     ...filter,
   }).sort({ transactionDate: 1 });

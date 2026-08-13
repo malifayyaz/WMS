@@ -976,6 +976,10 @@ function enrichParsedIntent(parsed, message, conversationHistory = []) {
     "supplierId",
     "customerId",
     "workerId",
+    "amountPaid",
+    "isUnpaid",
+    "isPaid",
+    "isDailySale",
   ];
   result.missingFields = (result.missingFields || []).filter(
     (f) => typeof f === "string" && !ALWAYS_OPTIONAL.includes(f.trim())
@@ -986,6 +990,22 @@ function enrichParsedIntent(parsed, message, conversationHistory = []) {
     if (/\bdaily\b|\brozmarra\b/.test(text)) data.customerType = "Daily";
     else if (/\bprocessing\b|\bjob\s*work\b/.test(text)) data.customerType = "Processing";
     else if (/\bledger\b/.test(text)) data.customerType = "Ledger";
+  }
+
+  // Order payment detection (paid, unpaid/credit/udhaar, partial payment, daily sale)
+  if (result.intent === "CREATE_ORDER" || /\b(daily\s*sale|becha|sale|order)\b/.test(text)) {
+    if (/\b(daily|rozmarra)\b/.test(text)) {
+      data.isDailySale = true;
+    }
+    const paidMatch = text.match(/\b(?:paid|wasool|mile|cash\s*diya|pese\s*diye)\s*(?:rs\.?|pkr)?\s*([\d,]+(?:\.\d+)?)\b/i) ||
+      text.match(/\b([\d,]+(?:\.\d+)?)\s*(?:rs\.?|pkr)?\s*(?:paid|cash\s*diya|wasool|mile|diye)\b/i);
+    if (paidMatch) {
+      data.amountPaid = Number(String(paidMatch[1]).replace(/,/g, ""));
+      data.isUnpaid = false;
+    } else if (/\b(unpaid|credit|udhaar|udhar|not\s*paid|bina\s*pese|without\s*payment|payment\s*nahi|full\s*baqi)\b/i.test(text)) {
+      data.isUnpaid = true;
+      data.amountPaid = 0;
+    }
   }
   if (
     (result.intent === "ADD_CUSTOMER" || result.intent === "ADD_SUPPLIER") &&
@@ -1012,7 +1032,7 @@ async function parseUserIntent(message, conversationHistory = []) {
     ]);
 
     const customerList = customers
-      .map((c) => `${c.name} (id:${c._id})`)
+      .map((c) => `${c.name} (${c.customerType || "Ledger"} customer, id:${c._id})`)
       .join(", ") || "none";
     const supplierList = suppliers
       .map((s) => `${s.name}${s.companyName ? ` / ${s.companyName}` : ""} (id:${s._id})`)
@@ -1111,7 +1131,17 @@ EXTRACTED DATA FIELDS BY INTENT:
 
 CREATE_ORDER:
   customerId, customerName, wireNumber (1-20),
-  initialWeightKg, ratePerKg, soldBy, notes
+  initialWeightKg, ratePerKg, amountPaid (optional),
+  isUnpaid (boolean, true if credit/udhaar/baqi/not paid),
+  paymentMethod (Cash/Bank Transfer/Cheque, default Cash), soldBy, notes
+
+ORDER PAYMENT RULES (critical):
+- When user creates a daily sale or sale to a Daily customer:
+  * By default, it is assumed FULLY PAID in cash at sale time.
+  * If user specifies partial payment ("paid 5000"), set amountPaid=5000.
+  * If user specifies unpaid ("credit", "udhaar", "not paid", "baqi"), set isUnpaid=true and amountPaid=0.
+- When user creates a sale for a Ledger customer:
+  * By default, it is on credit (amountPaid=0) unless the user explicitly mentions payment was received ("paid in full", "paid 10000").
 
 RECORD_CUSTOMER_PAYMENT:
   customerId, customerName, amount,
@@ -1272,4 +1302,4 @@ For self expenses, expenseGroup/expenseCategory/selfExpensePerson are NOT missin
   }
 }
 
-module.exports = { parseUserIntent };
+module.exports = { parseUserIntent, enrichParsedIntent };

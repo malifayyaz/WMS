@@ -27,6 +27,14 @@ const transactionSchema = new mongoose.Schema(
     /** Custom bank name when bankAccount is 'Other' */
     bankAccountOtherName: String,
     bankAccountNumber: String,
+    /** Cheque tracking fields */
+    chequeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cheque' },
+    chequeNumber: String,
+    chequeType: { type: String, enum: ['Customer Cheque', 'Company Cheque', 'Personal Cheque'] },
+    chequeBank: String,
+    chequeDate: Date,
+    isEndorsedCheque: { type: Boolean, default: false },
+    sourceChequeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cheque' },
     transactionDate: { type: Date, default: Date.now },
   },
   { timestamps: true }

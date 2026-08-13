@@ -17,6 +17,7 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import PaymentIcon from '@mui/icons-material/Payment';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FactoryIcon from '@mui/icons-material/Factory';
@@ -53,6 +54,7 @@ const menuGroups = [
     items: [
       { label: 'Daily Book', path: '/daily-book', icon: <ReceiptIcon /> },
       { label: 'Bank Account', path: '/bank', icon: <AccountBalanceIcon /> },
+      { label: 'Cheques', path: '/cheques', icon: <PaymentIcon /> },
       { label: 'Workers', path: '/workers', icon: <PeopleIcon /> },
       { label: 'Expenses', path: '/expenses', icon: <AccountBalanceWalletIcon /> },
     ],

@@ -3,11 +3,13 @@ import {
   Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, TextField, Tabs, Tab, Typography, Card, CardContent,
+  Tooltip, Chip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { expensesAPI, configAPI, consumptionAPI } from '../services/api';
@@ -44,7 +46,8 @@ const DEFAULT_EXPENSE_TREE = {
   Rental: ['Coil Rental', 'Wire Rental', 'Miscellaneous'],
   Operations: ['Weight Scale Payment', 'Hardware Maintenance', 'Electricity', 'Office Expense', 'Miscellaneous'],
   Manufacturing: ['Annealing', 'Miscellaneous'],
-  [SELF_EXPENSE_GROUP]: ['Fayyaz Expense', 'Faisal Expense', 'Mutual Expense'],
+  'Self Expense': ['Fayyaz Expense', 'Faisal Expense', 'Mutual Expense'],
+  'Factory Expense Total': ['Daily Total'],
   'Process Material': ['Acid', 'Dye', 'Soap', 'Stationary', 'Miscellaneous'],
 };
 
@@ -54,6 +57,8 @@ const defaultForm = {
   description: '',
   amount: '',
   paymentMethod: 'Cash',
+  chequeNumber: '',
+  chequeBank: 'MBL',
   addedBy: '',
   labourName: '',
   coilType: '',
@@ -99,6 +104,10 @@ export default function Expenses() {
     purchaseDate: new Date().toISOString().slice(0, 10),
   });
   const [processDeleteConfirm, setProcessDeleteConfirm] = useState({ open: false, id: null });
+  const [breakdownDialogOpen, setBreakdownDialogOpen] = useState(false);
+  const [breakdownTargetRow, setBreakdownTargetRow] = useState(null);
+  const [breakdownLines, setBreakdownLines] = useState([]);
+  const [savingBreakdown, setSavingBreakdown] = useState(false);
 
   const categoryTree = config.expenseCategoryTree || DEFAULT_EXPENSE_TREE;
   const groups = Object.keys(categoryTree);
@@ -124,6 +133,152 @@ export default function Expenses() {
     }
     return rawList;
   }, [rawList, isFactoryOverviewTab, groupFilter, getGroupForCategory]);
+
+  const isDailyTotalRow = useCallback((row) => {
+    if (!row) return false;
+    return (
+      row.expenseGroup === 'Factory Expense Total' ||
+      row.expenseCategory === 'Daily Total' ||
+      (row.expenseGroup === 'Operations' && row.expenseCategory === 'Daily Total')
+    );
+  }, []);
+
+  const dailyTotalRows = useMemo(() => {
+    return list.filter(isDailyTotalRow);
+  }, [list, isDailyTotalRow]);
+
+  const breakdownGroups = useMemo(() => {
+    return Object.keys(categoryTree).filter(
+      (g) => g !== SELF_EXPENSE_GROUP && g !== 'Factory Expense Total'
+    );
+  }, [categoryTree]);
+
+  const defaultBreakdownLine = useCallback((group = 'Labour', cat = '') => {
+    const defaultCat = cat || (categoryTree[group] || [])[0] || 'Miscellaneous';
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      expenseGroup: group,
+      expenseCategory: defaultCat,
+      amount: '',
+      description: '',
+      labourName: '',
+      coilType: 'Shiplet Coil',
+      rentalRoute: (config.rentalRoutes || [])[0] || '',
+      quantity: '',
+      unit: getDefaultUnit(defaultCat),
+    };
+  }, [categoryTree, config.rentalRoutes]);
+
+  const openBreakdownDialog = useCallback((row) => {
+    if (isViewer) { setAccessDenied(true); return; }
+    setBreakdownTargetRow(row);
+    const initialLine = defaultBreakdownLine('Labour');
+    initialLine.amount = String(row.amount || '');
+    setBreakdownLines([initialLine]);
+    setBreakdownDialogOpen(true);
+  }, [isViewer, defaultBreakdownLine]);
+
+  const totalBreakdownAllocated = useMemo(() => {
+    return breakdownLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+  }, [breakdownLines]);
+
+  const breakdownRemaining = useMemo(() => {
+    if (!breakdownTargetRow) return 0;
+    return Math.max(0, Number(breakdownTargetRow.amount || 0) - totalBreakdownAllocated);
+  }, [breakdownTargetRow, totalBreakdownAllocated]);
+
+  const breakdownOverAllocated = useMemo(() => {
+    if (!breakdownTargetRow) return false;
+    return totalBreakdownAllocated > Number(breakdownTargetRow.amount || 0);
+  }, [breakdownTargetRow, totalBreakdownAllocated]);
+
+  const handleAddBreakdownLine = () => {
+    const remaining = Number(breakdownTargetRow?.amount || 0) - totalBreakdownAllocated;
+    const newLine = defaultBreakdownLine(breakdownGroups[0] || 'Labour');
+    if (remaining > 0) {
+      newLine.amount = String(remaining);
+    }
+    setBreakdownLines((prev) => [...prev, newLine]);
+  };
+
+  const handleRemoveBreakdownLine = (id) => {
+    setBreakdownLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+  };
+
+  const handleUpdateBreakdownLine = (id, field, value) => {
+    setBreakdownLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== id) return line;
+        if (field === 'expenseGroup') {
+          const nextGroup = value;
+          const nextCategory = (categoryTree[nextGroup] || [])[0] || 'Miscellaneous';
+          return {
+            ...line,
+            expenseGroup: nextGroup,
+            expenseCategory: nextCategory,
+            unit: getDefaultUnit(nextCategory),
+          };
+        }
+        if (field === 'expenseCategory') {
+          return {
+            ...line,
+            expenseCategory: value,
+            unit: getDefaultUnit(value),
+          };
+        }
+        return { ...line, [field]: value };
+      })
+    );
+  };
+
+  const handleFillRemaining = (id) => {
+    const otherAllocated = breakdownLines
+      .filter((l) => l.id !== id)
+      .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    const remainingForThis = Math.max(0, Number(breakdownTargetRow?.amount || 0) - otherAllocated);
+    if (remainingForThis > 0) {
+      handleUpdateBreakdownLine(id, 'amount', String(remainingForThis));
+    }
+  };
+
+  const handleSaveBreakdown = async () => {
+    if (!breakdownTargetRow?._id) return;
+    if (breakdownOverAllocated) {
+      setSnack({ open: true, message: 'Total allocated cannot exceed the original daily total amount', severity: 'error' });
+      return;
+    }
+    const validLines = breakdownLines
+      .map((l) => ({
+        expenseGroup: l.expenseGroup,
+        expenseCategory: l.expenseCategory,
+        amount: Number(l.amount) || 0,
+        description: l.description,
+        labourName: l.labourName,
+        coilType: l.coilType,
+        rentalRoute: l.rentalRoute,
+        quantity: l.quantity ? Number(l.quantity) : undefined,
+        unit: l.unit,
+      }))
+      .filter((l) => l.amount > 0);
+
+    if (validLines.length === 0) {
+      setSnack({ open: true, message: 'Enter at least one category line with a valid amount', severity: 'error' });
+      return;
+    }
+
+    setSavingBreakdown(true);
+    try {
+      const res = await expensesAPI.breakdown(breakdownTargetRow._id, { breakdownItems: validLines });
+      setSnack({ open: true, message: res.data.message || 'Breakdown saved successfully', severity: 'success' });
+      setBreakdownDialogOpen(false);
+      setBreakdownTargetRow(null);
+      fetchList();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to save breakdown', severity: 'error' });
+    } finally {
+      setSavingBreakdown(false);
+    }
+  };
 
   const fetchProcessData = async () => {
     try {
@@ -426,6 +581,20 @@ export default function Expenses() {
             </Select>
           </FormControl>
           <Button variant="outlined" fullWidth={isMobile} startIcon={<PictureAsPdfIcon />} onClick={exportPdf}>Export PDF</Button>
+          {dailyTotalRows.length > 0 && !isProcessMaterialTab && !isSelfExpenseTab && (
+            <Button
+              variant="outlined"
+              color="primary"
+              fullWidth={isMobile}
+              startIcon={<CallSplitIcon />}
+              onClick={() => {
+                if (isViewer) { setAccessDenied(true); return; }
+                openBreakdownDialog(dailyTotalRows[0]);
+              }}
+            >
+              Break Down Daily Total
+            </Button>
+          )}
           {isProcessMaterialTab ? (
             <Button
               variant="contained"
@@ -656,6 +825,20 @@ export default function Expenses() {
                       </>
                     ) : (
                       <>
+                        {isDailyTotalRow(row) && (
+                          <Tooltip title="Break down into specific categories">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => {
+                                if (isViewer) { setAccessDenied(true); return; }
+                                openBreakdownDialog(row);
+                              }}
+                            >
+                              <CallSplitIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <IconButton
                           size="small"
                           onClick={() => {
@@ -830,6 +1013,28 @@ export default function Expenses() {
       <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
         <DialogContent>
+          {editingId && (form.expenseGroup === 'Factory Expense Total' || form.expenseCategory === 'Daily Total') && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  startIcon={<CallSplitIcon />}
+                  onClick={() => {
+                    const target = rawList.find((r) => r._id === editingId) || { ...form, _id: editingId };
+                    setDialogOpen(false);
+                    openBreakdownDialog(target);
+                  }}
+                >
+                  Break Down
+                </Button>
+              }
+            >
+              This is a daily factory total. You can break it down into categorized lines.
+            </Alert>
+          )}
           <FormControl fullWidth margin="dense">
             <InputLabel>Main Category</InputLabel>
             <Select
@@ -891,11 +1096,279 @@ export default function Expenses() {
               {paymentMethods.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
             </Select>
           </FormControl>
+          {form.paymentMethod === 'Cheque' && (
+            <>
+              <TextField
+                fullWidth
+                size="small"
+                label="Cheque Number *"
+                value={form.chequeNumber}
+                onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. 123456"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Bank Account *"
+                value={form.chequeBank}
+                onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. MBL, UBL, Faisal Bank"
+              />
+            </>
+          )}
           <TextField fullWidth label="Added By" value={form.addedBy} onChange={(e) => setForm((f) => ({ ...f, addedBy: e.target.value }))} margin="dense" />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Break Down Daily Factory Total Dialog */}
+      <ResponsiveDialog open={breakdownDialogOpen} onClose={() => setBreakdownDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <CallSplitIcon color="primary" />
+            <Typography variant="h6" fontWeight={700}>Break Down Daily Factory Total</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ overflowY: 'auto' }}>
+          {breakdownTargetRow && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2.5, backgroundColor: 'background.default', borderRadius: 2 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">Entry Date</Typography>
+                  <Typography variant="body1" fontWeight={600}>{formatDate(breakdownTargetRow.expenseDate)}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">Original Daily Total</Typography>
+                  <Typography variant="h6" fontWeight={700} color="primary.main">
+                    {formatCurrency(breakdownTargetRow.amount || 0)}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">Total Allocated</Typography>
+                  <Typography variant="h6" fontWeight={700} color={breakdownOverAllocated ? 'error.main' : 'info.main'}>
+                    {formatCurrency(totalBreakdownAllocated)}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">Remaining Balance</Typography>
+                  <Chip
+                    label={formatCurrency(breakdownRemaining)}
+                    color={breakdownOverAllocated ? 'error' : breakdownRemaining === 0 ? 'success' : 'warning'}
+                    variant={breakdownRemaining === 0 ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: 700, fontSize: '0.9rem' }}
+                  />
+                </Box>
+              </Box>
+              {breakdownOverAllocated && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  Total allocated exceeds original amount by {formatCurrency(totalBreakdownAllocated - Number(breakdownTargetRow.amount || 0))}. Please reduce line amounts.
+                </Alert>
+              )}
+              {!breakdownOverAllocated && breakdownRemaining > 0 && (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                  Note: The unallocated balance of {formatCurrency(breakdownRemaining)} will stay as Factory Expense Total (Daily Total).
+                </Typography>
+              )}
+              {!breakdownOverAllocated && breakdownRemaining === 0 && (
+                <Typography variant="caption" color="success.main" display="block" sx={{ mt: 1, fontWeight: 600 }}>
+                  ✓ Fully allocated! The daily total entry will be replaced with these categorized expense lines.
+                </Typography>
+              )}
+            </Paper>
+          )}
+
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            Categorized Expense Lines
+          </Typography>
+
+          <Box display="flex" flexDirection="column" gap={2}>
+            {breakdownLines.map((line, idx) => {
+              const lineCategories = categoryTree[line.expenseGroup] || [];
+              const isProcess = line.expenseGroup === PROCESS_MATERIAL_GROUP;
+              const isLabour = line.expenseGroup === 'Labour';
+              const isRental = line.expenseGroup === 'Rental';
+
+              return (
+                <Paper
+                  key={line.id}
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    borderLeft: '4px solid',
+                    borderLeftColor: 'primary.main',
+                    position: 'relative',
+                  }}
+                >
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
+                    <Chip label={`Line #${idx + 1}`} size="small" color="primary" variant="outlined" />
+                    {breakdownLines.length > 1 && (
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleRemoveBreakdownLine(line.id)}
+                        title="Remove line"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+
+                  <Box display="flex" gap={1.5} flexWrap="wrap">
+                    <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
+                      <InputLabel>Main Category</InputLabel>
+                      <Select
+                        value={line.expenseGroup}
+                        onChange={(e) => handleUpdateBreakdownLine(line.id, 'expenseGroup', e.target.value)}
+                        label="Main Category"
+                      >
+                        {breakdownGroups.map((g) => (
+                          <MenuItem key={g} value={g}>{g}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
+                      <InputLabel>Subcategory</InputLabel>
+                      <Select
+                        value={line.expenseCategory}
+                        onChange={(e) => handleUpdateBreakdownLine(line.id, 'expenseCategory', e.target.value)}
+                        label="Subcategory"
+                      >
+                        {lineCategories.map((c) => (
+                          <MenuItem key={c} value={c}>{c}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <Box display="flex" gap={0.5} sx={{ minWidth: 180, flex: 1 }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Amount (Rs.)"
+                        value={line.amount}
+                        onChange={(e) => handleUpdateBreakdownLine(line.id, 'amount', e.target.value)}
+                        required
+                        fullWidth
+                      />
+                      {breakdownRemaining > 0 && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleFillRemaining(line.id)}
+                          sx={{ whiteSpace: 'nowrap', px: 1, minWidth: 'auto', fontSize: '0.75rem' }}
+                          title="Fill remaining unallocated balance into this line"
+                        >
+                          Fill Rem.
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+
+                  {/* Extra fields based on category/group */}
+                  <Box display="flex" gap={1.5} flexWrap="wrap" sx={{ mt: 1.5 }}>
+                    {isLabour && (
+                      <TextField
+                        size="small"
+                        label="Labour Name (optional)"
+                        value={line.labourName}
+                        onChange={(e) => handleUpdateBreakdownLine(line.id, 'labourName', e.target.value)}
+                        sx={{ minWidth: 180, flex: 1 }}
+                      />
+                    )}
+
+                    {isRental && line.expenseCategory === 'Coil Rental' && (
+                      <FormControl size="small" sx={{ minWidth: 150, flex: 1 }}>
+                        <InputLabel>Coil Type</InputLabel>
+                        <Select
+                          value={line.coilType}
+                          onChange={(e) => handleUpdateBreakdownLine(line.id, 'coilType', e.target.value)}
+                          label="Coil Type"
+                        >
+                          <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
+                          <MenuItem value="Patri Coil">Patri Coil</MenuItem>
+                        </Select>
+                      </FormControl>
+                    )}
+
+                    {isRental && ['Coil Rental', 'Wire Rental'].includes(line.expenseCategory) && (
+                      <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
+                        <InputLabel>Rental Route</InputLabel>
+                        <Select
+                          value={line.rentalRoute}
+                          onChange={(e) => handleUpdateBreakdownLine(line.id, 'rentalRoute', e.target.value)}
+                          label="Rental Route"
+                        >
+                          {(config.rentalRoutes || []).map((r) => (
+                            <MenuItem key={r} value={r}>{r}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+
+                    {isProcess && (
+                      <>
+                        <TextField
+                          size="small"
+                          type="number"
+                          label={`Quantity (${line.unit || 'kg'})`}
+                          value={line.quantity}
+                          onChange={(e) => handleUpdateBreakdownLine(line.id, 'quantity', e.target.value)}
+                          sx={{ minWidth: 120, flex: 1 }}
+                        />
+                        <FormControl size="small" sx={{ minWidth: 100, flex: 0.5 }}>
+                          <InputLabel>Unit</InputLabel>
+                          <Select
+                            value={line.unit}
+                            onChange={(e) => handleUpdateBreakdownLine(line.id, 'unit', e.target.value)}
+                            label="Unit"
+                          >
+                            <MenuItem value="kg">kg</MenuItem>
+                            <MenuItem value="piece">piece</MenuItem>
+                            <MenuItem value="liter">liter</MenuItem>
+                            <MenuItem value="bag">bag</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </>
+                    )}
+
+                    <TextField
+                      size="small"
+                      label="Description / Notes (optional)"
+                      value={line.description}
+                      onChange={(e) => handleUpdateBreakdownLine(line.id, 'description', e.target.value)}
+                      sx={{ minWidth: 200, flex: 2 }}
+                    />
+                  </Box>
+                </Paper>
+              );
+            })}
+          </Box>
+
+          <Button
+            startIcon={<AddIcon />}
+            variant="outlined"
+            onClick={handleAddBreakdownLine}
+            sx={{ mt: 2 }}
+          >
+            Add Category Line
+          </Button>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setBreakdownDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveBreakdown}
+            disabled={totalBreakdownAllocated <= 0 || breakdownOverAllocated || savingBreakdown}
+            startIcon={savingBreakdown ? <CircularProgress size={18} /> : undefined}
+          >
+            {savingBreakdown ? 'Saving...' : 'Apply Breakdown'}
+          </Button>
         </DialogActions>
       </ResponsiveDialog>
       <ConfirmDialog open={deleteConfirm.open} title="Delete Expense" message="Are you sure?" onConfirm={handleDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />

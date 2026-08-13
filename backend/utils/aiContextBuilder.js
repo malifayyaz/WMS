@@ -10,6 +10,7 @@ const WorkerLedgerEntry = require("../models/WorkerLedgerEntry");
 const ReadyStock = require("../models/ReadyStock");
 const JobWork = require("../models/JobWork");
 const AnnealingRecord = require("../models/AnnealingRecord");
+const Cheque = require("../models/Cheque");
 const { buildProfitReport } = require("./profitReportService");
 const { getCashBookForDate } = require("./cashBookService");
 const { currentBankBalance, buildAccountSummaries } = require("./bankBalanceService");
@@ -685,10 +686,162 @@ async function annealingPendingTotals() {
   );
 }
 
+/** Comprehensive snapshot of Cheques (in-hand, received, company, personal, endorsed). */
+async function loadChequeSnapshot(period, message) {
+  const lower = String(message || "").toLowerCase();
+  // Check if a specific cheque number is queried (e.g. "cheque 12345", "CHQ-1234", "check #9988")
+  const chequeNumMatch =
+    lower.match(/(?:cheque|check|chq)(?:\s*(?:#|no\.?|number))?\s*([a-zA-Z0-9_-]+)/i) ||
+    lower.match(/\b([0-9]{4,10})\b/);
+
+  let specificLookup = null;
+  if (chequeNumMatch?.[1]) {
+    const rawNum = chequeNumMatch[1].trim();
+    if (rawNum.length >= 3 && !["and", "the", "for", "our", "all"].includes(rawNum.toLowerCase())) {
+      const matchDoc = await Cheque.findOne({
+        chequeNumber: new RegExp(escapeRegex(rawNum), "i"),
+      }).lean();
+      if (matchDoc) {
+        specificLookup = {
+          chequeNumber: matchDoc.chequeNumber,
+          chequeType: matchDoc.chequeType,
+          direction: matchDoc.direction,
+          bankName: matchDoc.bankName,
+          amount: matchDoc.amount,
+          chequeDate: matchDoc.chequeDate ? formatUtcDMY(new Date(matchDoc.chequeDate)) : null,
+          status: matchDoc.status,
+          receivedFrom: matchDoc.receivedFrom?.partyName || null,
+          givenTo: matchDoc.givenTo?.partyName || null,
+          depositBankAccount: matchDoc.depositBankAccount || null,
+          notes: matchDoc.notes || "",
+        };
+      }
+    }
+  }
+
+  const [
+    inHandCheques,
+    allReceivedAgg,
+    allDepositedAgg,
+    allEndorsedAgg,
+    allIssuedCompanyAgg,
+    allIssuedPersonalAgg,
+    recentReceived,
+    recentIssued,
+  ] = await Promise.all([
+    Cheque.find({ direction: "Received", status: "In Hand" })
+      .sort({ chequeDate: 1 })
+      .limit(25)
+      .lean(),
+    Cheque.aggregate([
+      { $match: { direction: "Received" } },
+      { $group: { _id: null, count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
+    Cheque.aggregate([
+      { $match: { direction: "Received", status: "Deposited" } },
+      { $group: { _id: null, count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
+    Cheque.aggregate([
+      { $match: { direction: "Received", status: "Endorsed" } },
+      { $group: { _id: null, count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
+    Cheque.aggregate([
+      { $match: { direction: "Issued", chequeType: "Company Cheque" } },
+      { $group: { _id: null, count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
+    Cheque.aggregate([
+      { $match: { direction: "Issued", chequeType: "Personal Cheque" } },
+      { $group: { _id: null, count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
+    Cheque.find({ direction: "Received" })
+      .sort({ chequeDate: -1, createdAt: -1 })
+      .limit(10)
+      .lean(),
+    Cheque.find({ direction: "Issued" })
+      .sort({ chequeDate: -1, createdAt: -1 })
+      .limit(10)
+      .lean(),
+  ]);
+
+  const inHandTotalAmount = inHandCheques.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+
+  return {
+    inHandSummary: {
+      count: inHandCheques.length,
+      totalAmount: inHandTotalAmount,
+      cheques: inHandCheques.map((c) => ({
+        chequeNumber: c.chequeNumber,
+        customerName: c.receivedFrom?.partyName || "Customer",
+        bankName: c.bankName,
+        amount: c.amount,
+        chequeDate: c.chequeDate ? formatUtcDMY(new Date(c.chequeDate)) : null,
+        status: c.status,
+      })),
+    },
+    totalReceivedTillNow: {
+      count: allReceivedAgg[0]?.count || 0,
+      totalAmount: allReceivedAgg[0]?.totalAmount || 0,
+    },
+    totalDepositedToBank: {
+      count: allDepositedAgg[0]?.count || 0,
+      totalAmount: allDepositedAgg[0]?.totalAmount || 0,
+    },
+    totalEndorsedToSuppliers: {
+      count: allEndorsedAgg[0]?.count || 0,
+      totalAmount: allEndorsedAgg[0]?.totalAmount || 0,
+    },
+    totalIssuedCompanyCheques: {
+      count: allIssuedCompanyAgg[0]?.count || 0,
+      totalAmount: allIssuedCompanyAgg[0]?.totalAmount || 0,
+    },
+    totalIssuedPersonalCheques: {
+      count: allIssuedPersonalAgg[0]?.count || 0,
+      totalAmount: allIssuedPersonalAgg[0]?.totalAmount || 0,
+    },
+    totalIssuedAll: {
+      count: (allIssuedCompanyAgg[0]?.count || 0) + (allIssuedPersonalAgg[0]?.count || 0),
+      totalAmount: (allIssuedCompanyAgg[0]?.totalAmount || 0) + (allIssuedPersonalAgg[0]?.totalAmount || 0),
+    },
+    recentReceivedCustomerCheques: recentReceived.map((c) => ({
+      chequeNumber: c.chequeNumber,
+      customerName: c.receivedFrom?.partyName || "Customer",
+      bankName: c.bankName,
+      amount: c.amount,
+      chequeDate: c.chequeDate ? formatUtcDMY(new Date(c.chequeDate)) : null,
+      status: c.status,
+      endorsedTo: c.givenTo?.partyName || null,
+    })),
+    recentIssuedCheques: recentIssued.map((c) => ({
+      chequeNumber: c.chequeNumber,
+      chequeType: c.chequeType,
+      bankName: c.bankName,
+      givenTo: c.givenTo?.partyName || "Payee",
+      amount: c.amount,
+      chequeDate: c.chequeDate ? formatUtcDMY(new Date(c.chequeDate)) : null,
+      status: c.status,
+    })),
+    specificLookup,
+    note:
+      "inHandSummary has active customer cheques in our possession. totalReceivedTillNow is all customer cheques received all time. totalIssuedCompanyCheques & totalIssuedPersonalCheques are our cheques given. totalEndorsedToSuppliers are customer cheques passed to pay suppliers.",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Intent detection
 // ---------------------------------------------------------------------------
 
+const CHEQUE_KEYWORDS = [
+  "cheque",
+  "cheques",
+  "check",
+  "checks",
+  "chq",
+  "in hand",
+  "in-hand",
+  "hath me",
+  "hath mein",
+  "cheque book",
+];
 const CUSTOMER_KEYWORDS = ["customer", "grahak", "baqi", "due", "receivable"];
 const SUPPLIER_KEYWORDS = ["supplier", "kharida", "payable"];
 const RAW_STOCK_KEYWORDS = ["coil", "shiplet", "patri", "raw material", "raw materials"];
@@ -842,6 +995,50 @@ function isGreeting(message) {
   return includesAny(trimmed, GREETING_WORDS);
 }
 
+function isChequeIntent(lower) {
+  if (includesAny(lower, ["cheque", "cheques", "check", "checks", "chq"])) return true;
+  if (/in\s*-?\s*hand\s+cheque/i.test(lower)) return true;
+  if (
+    includesAny(lower, [
+      "cheque aye",
+      "cheque mila",
+      "cheque received",
+      "cheques received",
+      "customer cheque",
+      "hamare cheque",
+      "apne cheque",
+      "company cheque",
+      "personal cheque",
+      "cheque number",
+      "cheque no",
+      "cheque kitne",
+      "cheques with us",
+      "given from us",
+    ])
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isGeneralSummaryIntent(lower) {
+  return includesAny(lower, [
+    "summary",
+    "overview",
+    "overall status",
+    "factory status",
+    "factory summary",
+    "financial overview",
+    "business update",
+    "business status",
+    "kya halaat",
+    "sab theek",
+    "overall report",
+    "overall",
+    "update on factory",
+  ]);
+}
+
 function isHelpRequest(lower) {
   return includesAny(lower, HELP_KEYWORDS);
 }
@@ -851,6 +1048,7 @@ function isHelpRequest(lower) {
 // ---------------------------------------------------------------------------
 
 const DEEP_LINK_MAP = {
+  cheques: { label: "Open Cheques", path: "/cheques" },
   customers: { label: "Open Customers", path: "/customers" },
   suppliers: { label: "Open Suppliers", path: "/suppliers" },
   rawStock: { label: "Open Raw Materials", path: "/raw-materials" },
@@ -887,6 +1085,7 @@ function buildDeepLinks(domainsFetched) {
 }
 
 const CAPABILITIES_TEXT = `I can answer questions using live WMS data, such as:
+- Cheques — customer cheques in hand, cheques received till now, company/personal cheques issued, cheque lookup by number
 - Customer dues, payments, and balances
 - Supplier payables and purchase history
 - Raw material (coil) stock levels and low-stock alerts
@@ -901,7 +1100,7 @@ const CAPABILITIES_TEXT = `I can answer questions using live WMS data, such as:
 - Daily Book summaries for a specific date or month
 - Looking up a customer, supplier, or worker by name (e.g. "who is Aslam")
 
-Just ask, for example: "expenses for 11 february", "who is Bilal", "cash in hand today", or "gross profit this month".`;
+Just ask, for example: "how much cheques we have received till now", "cheques in hand", "expenses for 11 february", "who is Bilal", "cash in hand today", or "gross profit this month".`;
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -937,6 +1136,10 @@ async function buildChatContext(message, conversationHistory = []) {
   fetchedData.shipletCoilStockKg = stockMap["Shiplet Coil"] || 0;
   fetchedData.patriCoilStockKg = stockMap["Patri Coil"] || 0;
 
+  const wantCheques =
+    isChequeIntent(lower) ||
+    (historyMentions(history, CHEQUE_KEYWORDS) && hasFollowupSignal(message));
+  const wantGeneralSummary = isGeneralSummaryIntent(lower);
   const wantCustomers =
     isCustomersIntent(lower) ||
     (historyMentions(history, CUSTOMER_KEYWORDS) && hasFollowupSignal(message));
@@ -963,8 +1166,13 @@ async function buildChatContext(message, conversationHistory = []) {
   const personQuery = extractPersonQuery(message);
 
   let period = null;
-  if (wantExpenses || wantProfit || wantCash || wantDailyBook) {
+  if (wantExpenses || wantProfit || wantCash || wantDailyBook || wantCheques) {
     period = resolvePeriod(message, history, now);
+  }
+
+  if (wantCheques || wantGeneralSummary) {
+    fetchedData.cheques = await loadChequeSnapshot(period, message);
+    domainsFetched.push("cheques");
   }
 
   if (wantCustomers) {
@@ -1193,7 +1401,30 @@ async function buildChatContext(message, conversationHistory = []) {
   if (isHelpRequest(lower)) {
     refusalMessage = CAPABILITIES_TEXT;
   } else if (domainsFetched.length === 0 && !isGreeting(message)) {
-    refusalMessage = `I'm not sure how to answer that from WMS data yet. Here's what I can help with:\n\n${CAPABILITIES_TEXT}`;
+    // If the message is a dynamic question, load a cross-domain snapshot (cash, bank, cheques, customers)
+    const isQuestionLike =
+      /\b(how|what|who|which|when|where|why|can|is|are|tell|give|show|kitna|kitne|kaun|kya|batao|bataen|balance|hisaab|hisab|paisa|rupaye|rs|factory|wms|cheque|check)\b/i.test(
+        lower
+      ) || lower.length > 6;
+
+    if (isQuestionLike) {
+      fetchedData.cheques = await loadChequeSnapshot(period, message);
+      domainsFetched.push("cheques");
+      const cashDate = localDateForCashBook(period || defaultThisMonth(now));
+      const [cashBook, bankBalance] = await Promise.all([
+        getCashBookForDate(cashDate),
+        currentBankBalance(),
+      ]);
+      fetchedData.cashBook = {
+        date: formatUtcDMY(new Date(Date.UTC(cashDate.getFullYear(), cashDate.getMonth(), cashDate.getDate()))),
+        closingBalance: cashBook.closingBalance,
+        cashInHand: cashBook.closingBalance,
+      };
+      fetchedData.currentBankBalance = bankBalance;
+      domainsFetched.push("cash");
+    } else {
+      refusalMessage = `I'm not sure how to answer that from WMS data yet. Here's what I can help with:\n\n${CAPABILITIES_TEXT}`;
+    }
   }
 
   return {

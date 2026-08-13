@@ -433,4 +433,121 @@ const deleteExpense = async (req, res, next) => {
   }
 };
 
-module.exports = { createExpense, getExpenses, getExpenseSummary, getExpenseBreakdown, updateExpense, deleteExpense };
+/**
+ * Break down a factory expense total entry into specific category expense lines.
+ */
+const breakdownExpense = async (req, res, next) => {
+  try {
+    const original = await Expense.findById(req.params.id);
+    if (!original) {
+      return res.status(404).json({ success: false, error: 'Not found', message: 'Expense not found' });
+    }
+
+    const { breakdownItems } = req.body;
+    if (!Array.isArray(breakdownItems) || breakdownItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one breakdown item is required' });
+    }
+
+    const validItems = [];
+    let totalAllocated = 0;
+
+    for (const item of breakdownItems) {
+      const amount = Number(item.amount);
+      if (!amount || amount <= 0) continue;
+      if (!item.expenseGroup || !item.expenseCategory) {
+        return res.status(400).json({ success: false, message: 'Group and category are required for all breakdown items' });
+      }
+      validItems.push({
+        ...item,
+        amount,
+      });
+      totalAllocated += amount;
+    }
+
+    if (validItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one breakdown item with amount > 0 is required' });
+    }
+
+    if (totalAllocated > original.amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Total allocated (Rs.${totalAllocated.toLocaleString()}) exceeds expense amount (Rs.${original.amount.toLocaleString()})`,
+      });
+    }
+
+    const createdExpenses = [];
+    const createdMaterials = [];
+
+    for (const item of validItems) {
+      if (item.expenseGroup === PROCESS_MATERIAL_GROUP || CONSUMPTION_MATERIAL_TYPES.includes(item.expenseCategory)) {
+        const material = await ConsumptionMaterial.create({
+          materialType: item.expenseCategory,
+          quantity: Number(item.quantity) || 1,
+          unit: item.unit || (['Acid', 'Soap'].includes(item.expenseCategory) ? 'kg' : 'piece'),
+          totalCost: item.amount,
+          costPerUnit: item.quantity && Number(item.quantity) > 0 ? Number((item.amount / Number(item.quantity)).toFixed(2)) : undefined,
+          notes: item.description || `Breakdown from ${original.expenseCategory || 'Daily Total'}`,
+          purchaseDate: original.expenseDate || new Date(),
+        });
+        createdMaterials.push(material);
+      } else {
+        const payload = normalizeExpensePayload({
+          expenseGroup: item.expenseGroup,
+          expenseCategory: item.expenseCategory,
+          amount: item.amount,
+          description: item.description || '',
+          paymentMethod: original.paymentMethod || 'Cash',
+          expenseDate: original.expenseDate || new Date(),
+          addedBy: original.addedBy || '',
+          labourName: item.labourName || undefined,
+          coilType: item.coilType || undefined,
+          rentalRoute: item.rentalRoute || undefined,
+        });
+        const exp = await Expense.create(payload);
+        createdExpenses.push(exp);
+      }
+    }
+
+    const remaining = original.amount - totalAllocated;
+    if (remaining > 0) {
+      await Expense.findByIdAndUpdate(original._id, { amount: remaining });
+    } else {
+      await Expense.findByIdAndDelete(original._id);
+    }
+
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Expense',
+      description: `Broke down factory expense Rs.${original.amount} into ${validItems.length} categories (allocated Rs.${totalAllocated}${remaining > 0 ? `, remaining Rs.${remaining}` : ''})`,
+      documentId: original._id,
+      newValue: { originalAmount: original.amount, allocated: totalAllocated, remaining, items: validItems },
+    });
+
+    res.json({
+      success: true,
+      message: `Expense broken down successfully into ${validItems.length} items${remaining > 0 ? ` (Rs.${remaining.toLocaleString()} remaining as Daily Total)` : ''}`,
+      data: {
+        allocated: totalAllocated,
+        remaining,
+        createdExpenses,
+        createdMaterials,
+      },
+    });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+};
+
+module.exports = {
+  createExpense,
+  getExpenses,
+  getExpenseSummary,
+  getExpenseBreakdown,
+  updateExpense,
+  deleteExpense,
+  breakdownExpense,
+};
