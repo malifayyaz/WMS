@@ -31,6 +31,8 @@ import {
   Divider,
   Menu,
   IconButton,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -44,6 +46,12 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import LocalAtmIcon from '@mui/icons-material/LocalAtm';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
+import PeopleIcon from '@mui/icons-material/People';
+import FactoryIcon from '@mui/icons-material/Factory';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
@@ -53,6 +61,11 @@ import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import LedgerDialog from '../components/Common/LedgerDialog';
 import PartySearchSelect from '../components/Common/PartySearchSelect';
 import DailyBookReportDialog from '../components/DailyBook/DailyBookReportDialog';
+import DailyBookHeader from '../components/DailyBook/DailyBookHeader';
+import KpiEquationBanner from '../components/DailyBook/KpiEquationBanner';
+import CashReconciliationBar from '../components/DailyBook/CashReconciliationBar';
+import QuickAddEntryDialog from '../components/DailyBook/QuickAddEntryDialog';
+import TwoColumnRokarLedger from '../components/DailyBook/TwoColumnRokarLedger';
 import ResponsiveDialog from '../components/Common/ResponsiveDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
 import { usePermissions } from '../hooks/usePermissions';
@@ -240,6 +253,8 @@ export default function DailyBook() {
     }
     return fn(...args);
   };
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [cashBankTab, setCashBankTab] = useState('cash');
   const [list, setList] = useState([]);
   const [dailyOrders, setDailyOrders] = useState([]);
   const [wires, setWires] = useState([]);
@@ -523,12 +538,12 @@ export default function DailyBook() {
   const processingCustomers = customers.filter((c) => c.customerType === 'Processing');
 
   const partyConfig = [
-    { label: 'Cash Book', type: null },
-    { label: 'Daily Customers', type: 'DailyCustomer', partyType: 'Customer', parties: dailyCustomers },
-    { label: 'Ledger Customers', type: 'LedgerCustomer', partyType: 'Customer', parties: ledgerCustomers },
-    { label: 'Suppliers', type: 'Supplier', partyType: 'Supplier', parties: suppliers },
-    { label: 'Annealing', type: 'Annealing', partyType: null, parties: [] },
-    { label: 'Processing Work', type: 'Processing', partyType: 'Customer', parties: processingCustomers },
+    { label: 'Cash Register', icon: <PaymentsIcon sx={{ fontSize: 20 }} />, type: null },
+    { label: 'Daily Sales', icon: <ShoppingBagIcon sx={{ fontSize: 20 }} />, type: 'DailyCustomer', partyType: 'Customer', parties: dailyCustomers },
+    { label: 'Customer Accounts', icon: <PeopleIcon sx={{ fontSize: 20 }} />, type: 'LedgerCustomer', partyType: 'Customer', parties: ledgerCustomers },
+    { label: 'Suppliers & Stock', icon: <FactoryIcon sx={{ fontSize: 20 }} />, type: 'Supplier', partyType: 'Supplier', parties: suppliers },
+    { label: 'Annealing / Heating', icon: <LocalFireDepartmentIcon sx={{ fontSize: 20 }} />, type: 'Annealing', partyType: null, parties: [] },
+    { label: 'Processing Work', icon: <SettingsIcon sx={{ fontSize: 20 }} />, type: 'Processing', partyType: 'Customer', parties: processingCustomers },
   ];
 
   const currentConfig = partyConfig[mainTab];
@@ -1042,6 +1057,47 @@ export default function DailyBook() {
   };
 
   const supplierSearchLabel = (s) => `${s.name} (Due: ${formatCurrency(s.totalAmountDue || 0)})`;
+
+  const openDailySaleDialog = () => {
+    setEditingDailySaleId(null);
+    setDailySaleForm({
+      customerId: selectedPartyId || dailyCustomers[0]?._id || '',
+      wireNumber: '',
+      coilCategory: '',
+      wireSize: '',
+      initialWeightKg: '',
+      bundles: '',
+      ratePerKg: '',
+      amountPaid: 0,
+      paymentMethod: 'Cash',
+      soldBy: '',
+      orderDate: entryDate,
+      notes: '',
+      isAnnealed: false,
+      annealingRecordId: '',
+    });
+    setAnnealedWireOptions([]);
+    setStockPreview(null);
+    setDailySaleDialogOpen(true);
+  };
+
+  const handleQuickAddSelect = (optionId) => {
+    if (isViewer) {
+      setAccessDenied(true);
+      return;
+    }
+    if (optionId === 'cashReceived') {
+      openGeneralCashDialog('Money In');
+    } else if (optionId === 'factoryExpense') {
+      openExpenseDialog('FactoryExpense');
+    } else if (optionId === 'personalDrawing') {
+      openExpenseDialog('SelfExpense', 'Fayyaz Expense');
+    } else if (optionId === 'dailySale') {
+      openDailySaleDialog();
+    } else if (optionId === 'bankAtm') {
+      openBankTransferDialog();
+    }
+  };
 
   const handleOpenAdd = () => {
     if (mainTab === 1) {
@@ -2163,18 +2219,56 @@ export default function DailyBook() {
 
   return (
     <Box>
+      <DailyBookHeader
+        entryDate={entryDate}
+        setEntryDate={setEntryDate}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+      />
+
       <Tabs
         value={mainTab}
         onChange={(_, v) => { setMainTab(v); setSelectedPartyId(''); }}
         variant="scrollable"
         allowScrollButtonsMobile
-        sx={{ mb: 2 }}
+        sx={{
+          mb: 2,
+          '& .MuiTab-root': {
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            minHeight: 48,
+          },
+        }}
       >
-        {partyConfig.map((p) => <Tab key={p.label} label={p.label} />)}
+        {partyConfig.map((p) => (
+          <Tab
+            key={p.label}
+            label={p.label}
+            icon={p.icon}
+            iconPosition="start"
+          />
+        ))}
       </Tabs>
+
+      {mainTab === 0 && (
+        <KpiEquationBanner
+          openingBalance={cashBook?.openingBalance || 0}
+          totalIn={cashBook?.totalIn || 0}
+          totalOut={cashBook?.totalOut || 0}
+          closingBalance={cashBook?.closingBalance || 0}
+          inCount={(list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash').length}
+          factoryExpense={factoryCashOut}
+          selfExpense={selfCashOut}
+          entryDate={entryDate}
+        />
+      )}
 
       <Paper
         elevation={0}
+        className="no-print"
         sx={{
           mb: 2,
           p: { xs: 1.5, sm: 2 },
@@ -2185,45 +2279,58 @@ export default function DailyBook() {
         }}
       >
         <Stack
-          direction={{ xs: 'column', lg: 'row' }}
+          direction={{ xs: 'column', sm: 'row' }}
           spacing={2}
-          alignItems={{ lg: 'center' }}
+          alignItems={{ sm: 'center' }}
           justifyContent="space-between"
         >
-          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0, width: { xs: '100%', lg: 'auto' } }}>
-            <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-            <TextField
-              size={btnSize}
-              type="date"
-              label="Entry Date"
-              value={entryDate}
-              onChange={(e) => setEntryDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: { xs: '100%', sm: 150 } }}
-            />
-            {mainTab !== 0 && mainTab !== 4 && (
-              <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: { sm: 320 }, flex: 1 }}>
-                <PartySearchSelect
-                  options={parties}
-                  value={selectedPartyId}
-                  onChange={setSelectedPartyId}
-                  label={partyType || 'Party'}
-                  allowEmpty
-                  emptyLabel="All"
-                  getOptionLabel={(p) => {
-                    if (!p?._id) return 'All';
-                    const linked = (p.linkedSupplierId || p.linkedCustomerId) ? '  ↔ linked' : '';
-                    return `${p.name}${linked}`;
-                  }}
-                />
-              </Box>
-            )}
-          </Stack>
+          {mainTab === 0 ? (
+            <ToggleButtonGroup
+              value={cashBankTab}
+              exclusive
+              onChange={(_, v) => v && setCashBankTab(v)}
+              size="small"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  px: 2,
+                  py: 0.6,
+                },
+              }}
+            >
+              <ToggleButton value="cash">💵 Cash in Hand</ToggleButton>
+              <ToggleButton value="bank">🏦 Bank Accounts</ToggleButton>
+            </ToggleButtonGroup>
+          ) : (
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+              <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+              {mainTab !== 4 && (
+                <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: { sm: 320 }, flex: 1 }}>
+                  <PartySearchSelect
+                    options={parties}
+                    value={selectedPartyId}
+                    onChange={setSelectedPartyId}
+                    label={partyType || 'Party'}
+                    allowEmpty
+                    emptyLabel="All"
+                    getOptionLabel={(p) => {
+                      if (!p?._id) return 'All';
+                      const linked = (p.linkedSupplierId || p.linkedCustomerId) ? '  ↔ linked' : '';
+                      return `${p.name}${linked}`;
+                    }}
+                  />
+                </Box>
+              )}
+            </Stack>
+          )}
+
           <Stack
-            direction={{ xs: 'column', sm: 'row' }}
+            direction="row"
             spacing={1}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
-            sx={{ width: { xs: '100%', lg: 'auto' }, flexShrink: 0 }}
+            alignItems="center"
+            sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0, justifyContent: 'flex-end' }}
           >
             <Button
               variant="outlined"
@@ -2235,12 +2342,22 @@ export default function DailyBook() {
             >
               Report
             </Button>
-            {mainTab !== 4 && mainTab !== 5 && (
+            {mainTab === 0 ? (
+              <Button
+                variant="contained"
+                size={btnSize}
+                startIcon={<AddIcon />}
+                onClick={() => setQuickAddOpen(true)}
+                sx={{ ...toolbarBtn, bgcolor: 'primary.main', color: '#fff', px: 2 }}
+                fullWidth={isMobile}
+              >
+                + Add Entry
+              </Button>
+            ) : mainTab !== 4 && mainTab !== 5 ? (
               <Button variant="contained" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAdd)} sx={toolbarBtn} fullWidth={isMobile}>
                 {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
               </Button>
-            )}
-            {mainTab === 5 && (
+            ) : mainTab === 5 ? (
               <Button
                 variant="contained"
                 color="success"
@@ -2252,75 +2369,78 @@ export default function DailyBook() {
               >
                 Record Delivery
               </Button>
-            )}
+            ) : null}
           </Stack>
         </Stack>
 
-        <Divider sx={{ my: 1.5 }} />
-
         {mainTab === 0 && (
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
-            <ToolbarSection label="Cash book">
-              <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
-                Opening Balance
-              </Button>
-              <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
-                Cash Breakdown
-              </Button>
-              <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
-                <Button variant="outlined" size={btnSize} startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
-                  Cash / Cheque
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
+              <ToolbarSection label="Cash book shortcuts">
+                <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
+                  Opening Balance
                 </Button>
-              </Tooltip>
-            </ToolbarSection>
-            <ToolbarSection label="Daily expense totals">
-              <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
-                Factory Total
-              </Button>
-              <Button
-                variant="outlined"
-                size={btnSize}
-                endIcon={<ArrowDropDownIcon />}
-                onClick={(e) => {
-                  if (isViewer) { setAccessDenied(true); return; }
-                  setSelfExpenseMenuAnchor(e.currentTarget);
-                }}
-                sx={toolbarBtn}
-              >
-                Self Expense
-              </Button>
-              <Menu
-                anchorEl={selfExpenseMenuAnchor}
-                open={Boolean(selfExpenseMenuAnchor)}
-                onClose={() => setSelfExpenseMenuAnchor(null)}
-              >
-                {SELF_EXPENSE_CATEGORIES.map((cat) => (
-                  <MenuItem
-                    key={cat}
-                    onClick={() => {
-                      setSelfExpenseMenuAnchor(null);
-                      openExpenseDialog('SelfExpense', cat);
-                    }}
-                  >
-                    {cat.replace(' Expense', '')}
-                  </MenuItem>
-                ))}
-              </Menu>
-            </ToolbarSection>
-            <ToolbarSection label="Bank (not cash in hand)">
-              <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
-                Bank Transfer
-              </Button>
-              <Button variant="outlined" size={btnSize} startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
-                ATM Withdrawal
-              </Button>
-            </ToolbarSection>
-          </Stack>
+                <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
+                  Cash Breakdown
+                </Button>
+                <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
+                  <Button variant="outlined" size={btnSize} startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
+                    Cash / Cheque
+                  </Button>
+                </Tooltip>
+              </ToolbarSection>
+              <ToolbarSection label="Daily expense totals">
+                <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
+                  Factory Total
+                </Button>
+                <Button
+                  variant="outlined"
+                  size={btnSize}
+                  endIcon={<ArrowDropDownIcon />}
+                  onClick={(e) => {
+                    if (isViewer) { setAccessDenied(true); return; }
+                    setSelfExpenseMenuAnchor(e.currentTarget);
+                  }}
+                  sx={toolbarBtn}
+                >
+                  Self Expense
+                </Button>
+                <Menu
+                  anchorEl={selfExpenseMenuAnchor}
+                  open={Boolean(selfExpenseMenuAnchor)}
+                  onClose={() => setSelfExpenseMenuAnchor(null)}
+                >
+                  {SELF_EXPENSE_CATEGORIES.map((cat) => (
+                    <MenuItem
+                      key={cat}
+                      onClick={() => {
+                        setSelfExpenseMenuAnchor(null);
+                        openExpenseDialog('SelfExpense', cat);
+                      }}
+                    >
+                      {cat.replace(' Expense', '')}
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </ToolbarSection>
+              <ToolbarSection label="Bank & ATM">
+                <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
+                  Bank Transfer
+                </Button>
+                <Button variant="outlined" size={btnSize} startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
+                  ATM Withdrawal
+                </Button>
+              </ToolbarSection>
+            </Stack>
+          </>
         )}
 
         {mainTab >= 1 && mainTab !== 4 && (
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
-            <ToolbarSection label="Party">
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
+              <ToolbarSection label="Party">
                 <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAddParty)} sx={toolbarBtn}>
                   Add {getPartyTypeLabel()}
                 </Button>
@@ -2342,225 +2462,119 @@ export default function DailyBook() {
                   </>
                 )}
               </ToolbarSection>
-            {selectedPartyId && (
-              <ToolbarSection label="Ledger">
-                <Button
-                  variant="outlined"
-                  size={btnSize}
-                  onClick={() => setLedgerDialogOpen(true)}
-                  sx={toolbarBtn}
-                >
-                  Full Ledger
-                </Button>
-              </ToolbarSection>
-            )}
-            {mainTab === 1 && (
-              <ToolbarSection label="Other">
-                <Button
-                  variant="outlined"
-                  size={btnSize}
-                  onClick={requireAdmin(() => {
-                    setGeneralCashMode(false);
-                    setEditingId(null);
-                    setForm({
-                      entryKind: 'General',
-                      expenseGroup: 'Operations',
-                      expenseCategory: 'Miscellaneous',
-                      transactionType: 'Money Out',
-                      amount: '',
-                      paymentMethod: 'Cash',
-                      relatedTo: 'Customer',
-                      relatedId: selectedPartyId || dailyCustomers[0]?._id || '',
-                      relatedName: '',
-                      description: '',
-                      handledBy: '',
-                    });
-                    setDialogOpen(true);
-                  })}
-                  sx={toolbarBtn}
-                >
-                  Add Transaction
-                </Button>
-              </ToolbarSection>
-            )}
-            {mainTab === 2 && (
-              <ToolbarSection label="Sales & returns">
-                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
-                  Add Sale
-                </Button>
-                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
-                  Return Wire
-                </Button>
-              </ToolbarSection>
-            )}
-            {mainTab === 3 && (
-              <ToolbarSection label="Stock">
-                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
-                  Stock Arrival
-                </Button>
-                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
-                  Return Coil
-                </Button>
-              </ToolbarSection>
-            )}
-            {mainTab === 5 && (
-              <ToolbarSection label="Processing">
-                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
-                  Coil Arrival
-                </Button>
-                <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
-                  Return Wire
-                </Button>
-              </ToolbarSection>
-            )}
-          </Stack>
+              {selectedPartyId && (
+                <ToolbarSection label="Ledger">
+                  <Button
+                    variant="outlined"
+                    size={btnSize}
+                    onClick={() => setLedgerDialogOpen(true)}
+                    sx={toolbarBtn}
+                  >
+                    Full Ledger
+                  </Button>
+                </ToolbarSection>
+              )}
+              {mainTab === 1 && (
+                <ToolbarSection label="Other">
+                  <Button
+                    variant="outlined"
+                    size={btnSize}
+                    onClick={requireAdmin(() => {
+                      setGeneralCashMode(false);
+                      setEditingId(null);
+                      setForm({
+                        entryKind: 'General',
+                        expenseGroup: 'Operations',
+                        expenseCategory: 'Miscellaneous',
+                        transactionType: 'Money Out',
+                        amount: '',
+                        paymentMethod: 'Cash',
+                        relatedTo: 'Customer',
+                        relatedId: selectedPartyId || dailyCustomers[0]?._id || '',
+                        relatedName: '',
+                        description: '',
+                        handledBy: '',
+                      });
+                      setDialogOpen(true);
+                    })}
+                    sx={toolbarBtn}
+                  >
+                    Add Transaction
+                  </Button>
+                </ToolbarSection>
+              )}
+              {mainTab === 2 && (
+                <ToolbarSection label="Sales & returns">
+                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
+                    Add Sale
+                  </Button>
+                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
+                    Return Wire
+                  </Button>
+                </ToolbarSection>
+              )}
+              {mainTab === 3 && (
+                <ToolbarSection label="Stock">
+                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
+                    Stock Arrival
+                  </Button>
+                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
+                    Return Coil
+                  </Button>
+                </ToolbarSection>
+              )}
+              {mainTab === 5 && (
+                <ToolbarSection label="Processing">
+                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
+                    Coil Arrival
+                  </Button>
+                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
+                    Return Wire
+                  </Button>
+                </ToolbarSection>
+              )}
+            </Stack>
+          </>
         )}
 
         {mainTab === 4 && (
-          <ToolbarSection label="Annealing">
-            <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
-              Send for Annealing
-            </Button>
-            <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
-              Arrival from Annealing
-            </Button>
-          </ToolbarSection>
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            <ToolbarSection label="Annealing">
+              <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
+                Send for Annealing
+              </Button>
+              <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
+                Arrival from Annealing
+              </Button>
+            </ToolbarSection>
+          </>
         )}
       </Paper>
 
-      {mainTab === 0 && cashBook && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 2,
-            mb: 2,
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 2,
-            bgcolor: 'grey.50',
-            minWidth: 0,
-          }}
-        >
-          <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-            Cash in Hand — {formatDate(entryDate)}
-          </Typography>
-          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap alignItems="flex-start" sx={{ minWidth: 0 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary">Opening Balance</Typography>
-              <Typography variant="h6">{formatCurrency(cashBook.openingBalance)}</Typography>
-              <Chip
-                size="small"
-                label={cashBook.openingSource === 'manual' ? 'Manual' : 'From previous day'}
-                variant="outlined"
-                sx={{ mt: 0.5 }}
-              />
-            </Box>
-            <Typography>+ Money In: <strong>{formatCurrency(cashBook.totalIn)}</strong></Typography>
-            <Typography>− Money Out: <strong>{formatCurrency(cashBook.totalOut)}</strong></Typography>
-            {((cashBook.bankIn || 0) + (cashBook.bankOut || 0)) > 0 && (
-              <Typography variant="caption" color="info.main">
-                Bank transfers excluded: +{formatCurrency(cashBook.bankIn || 0)} / −{formatCurrency(cashBook.bankOut || 0)}
-              </Typography>
-            )}
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -0.5 }}>
-              Includes factory ({formatCurrency(factoryCashOut)}) + self ({formatCurrency(selfCashOut)})
-              {otherMoneyOut > 0 ? ` + other (${formatCurrency(otherMoneyOut)})` : ''}
-            </Typography>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary">Closing Balance</Typography>
-              <Typography variant="h6" color="primary">{formatCurrency(cashBook.closingBalance)}</Typography>
-              <Typography variant="caption" color="text.secondary">Carried to next day as opening</Typography>
-            </Box>
-          </Stack>
-          {cashBook.cashBreakdown?.lines?.length > 0 && (
-            <Box mt={2} pt={2} borderTop={1} borderColor="divider" sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                Cash Breakdown — who holds cash
-              </Typography>
-              <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-start" sx={{ minWidth: 0 }}>
-                {cashBook.cashBreakdown.lines.map((line) => (
-                  <Box key={line.holder}>
-                    <Typography variant="caption" color="text.secondary">{line.holder}</Typography>
-                    <Typography variant="h6">{formatCurrency(line.amount)}</Typography>
-                  </Box>
-                ))}
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Breakdown Total</Typography>
-                  <Typography variant="h6" fontWeight={700}>{formatCurrency(cashBook.cashBreakdown.total)}</Typography>
-                  {Math.abs((cashBook.cashBreakdown.total || 0) - (cashBook.closingBalance || 0)) > 0.01 && (
-                    <Typography variant="caption" color="warning.main" display="block">
-                      Diff vs closing: {formatCurrency(cashBook.closingBalance - cashBook.cashBreakdown.total)}
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-              {cashBook.cashBreakdown.note && (
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                  Note: {cashBook.cashBreakdown.note}
-                </Typography>
-              )}
-            </Box>
-          )}
-          {cashBook.expenseTotals && (
-            <Box mt={2} pt={2} borderTop={1} borderColor="divider" sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                Money Out — Expense Breakdown for {formatDate(entryDate)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Only these day totals count as Money Out — individual expenses stay in the Expenses section.
-              </Typography>
-              <Box display="flex" gap={3} flexWrap="wrap" sx={{ minWidth: 0 }}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Factory Expense Total</Typography>
-                  <Typography variant="h6">{formatCurrency(factoryCashOut)}</Typography>
-                  {cashBook.expenseTotals.factoryFromDetails > 0 && (
-                    <Typography variant="caption" color="text.secondary">
-                      Classified entries: {formatCurrency(cashBook.expenseTotals.factoryFromDetails)}
-                    </Typography>
-                  )}
-                  {cashBook.expenseTotals.factoryDailyTotal > 0 && (
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Daily book entry: {formatCurrency(cashBook.expenseTotals.factoryDailyTotal)}
-                    </Typography>
-                  )}
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Self — Fayyaz</Typography>
-                  <Typography variant="h6">{formatCurrency(cashBook.expenseTotals.fayyaz)}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Self — Faisal</Typography>
-                  <Typography variant="h6">{formatCurrency(cashBook.expenseTotals.faisal)}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Self — Mutual</Typography>
-                  <Typography variant="h6">{formatCurrency(cashBook.expenseTotals.mutual)}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Self Total</Typography>
-                  <Typography variant="h6">{formatCurrency(selfCashOut)}</Typography>
-                </Box>
-                {otherMoneyOut > 0 && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Other Money Out</Typography>
-                    <Typography variant="h6">{formatCurrency(otherMoneyOut)}</Typography>
-                    <Typography variant="caption" color="text.secondary">Supplier payments, etc.</Typography>
-                  </Box>
-                )}
-              </Box>
-            </Box>
-          )}
-        </Paper>
+      {/* Main Tab 0 View: Cash Register or Bank Accounts */}
+      {mainTab === 0 && cashBankTab === 'cash' && (
+        <TwoColumnRokarLedger
+          openingBalance={cashBook?.openingBalance || 0}
+          closingBalance={cashBook?.closingBalance || 0}
+          inRows={(list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash')}
+          outRows={(list || []).filter((r) => r.transactionType === 'Money Out' && r.paymentMethod === 'Cash')}
+          onEditRow={openEditTransaction}
+          onDeleteRow={(row) => setDeleteConfirm({ open: true, id: row._id })}
+          onAddEntry={() => setQuickAddOpen(true)}
+          requireAdmin={requireAdmin}
+        />
       )}
 
-      {mainTab === 0 && bankBook && (
+      {mainTab === 0 && cashBankTab === 'bank' && bankBook && (
         <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main', minWidth: 0 }}>
           <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} flexWrap="wrap" gap={1} sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={600}>Bank Account Balance</Typography>
+            <Typography variant="subtitle1" fontWeight={700}>Bank Account Balance</Typography>
             <Chip
               label={`Net: ${formatCurrency(bankBook.closingBalance)}`}
               color={bankBook.closingBalance >= 0 ? 'info' : 'error'}
-              variant="outlined"
+              variant="filled"
+              sx={{ fontWeight: 700 }}
             />
           </Box>
           <Box display="flex" gap={3} flexWrap="wrap" mb={2} sx={{ minWidth: 0 }}>
@@ -2575,18 +2589,19 @@ export default function DailyBook() {
               <Typography variant="h6" color="info.main">{formatCurrency(bankBook.closingBalance)}</Typography>
             </Box>
           </Box>
-          {bankBook.transactions.length > 0 && (
+          {bankBook.transactions.length > 0 ? (
             <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'action.hover' }}>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Bank Account</TableCell>
-                  <TableCell>Person / Party</TableCell>
-                  <TableCell>Description</TableCell>
-                  <TableCell align="right" sx={{ color: 'success.main' }}>In (+)</TableCell>
-                  <TableCell align="right" sx={{ color: 'error.main' }}>Out (−)</TableCell>
-                  <TableCell align="right">Balance</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Bank Account</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Person / Party</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>In (+)</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Out (−)</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Balance</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -2600,22 +2615,29 @@ export default function DailyBook() {
                         variant="outlined"
                       />
                     </TableCell>
-                    <TableCell>{t.relatedName || t.relatedTo || '—'}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t.relatedName || t.relatedTo || '—'}</TableCell>
                     <TableCell>{t.description || '—'}</TableCell>
-                    <TableCell align="right" sx={{ color: 'success.main' }}>
+                    <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>
                       {t.transactionType === 'Money In' ? formatCurrency(t.amount) : ''}
                     </TableCell>
-                    <TableCell align="right" sx={{ color: 'error.main' }}>
+                    <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>
                       {t.transactionType === 'Money Out' ? formatCurrency(t.amount) : ''}
                     </TableCell>
                     <TableCell align="right"><strong>{formatCurrency(t.balance)}</strong></TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" onClick={requireAdmin(() => openEditTransaction(t))}>
+                        <EditIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                      <IconButton size="small" color="error" onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: t._id }))}>
+                        <DeleteIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
             </TableContainer>
-          )}
-          {bankBook.transactions.length === 0 && (
+          ) : (
             <Typography variant="body2" color="text.secondary">No bank transfers in this period.</Typography>
           )}
         </Paper>
@@ -2625,12 +2647,12 @@ export default function DailyBook() {
         <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
-              <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell align="right">Opening</TableCell>
-                <TableCell align="right">Money In</TableCell>
-                <TableCell align="right">Money Out</TableCell>
-                <TableCell align="right">Closing</TableCell>
+              <TableRow sx={{ bgcolor: 'action.hover' }}>
+                <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Opening</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Money In</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Money Out</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Closing</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -2638,8 +2660,8 @@ export default function DailyBook() {
                 <TableRow key={row.date}>
                   <TableCell>{formatDate(row.date)}</TableCell>
                   <TableCell align="right">{formatCurrency(row.openingBalance)}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.totalIn)}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.totalOut)}</TableCell>
+                  <TableCell align="right" sx={{ color: 'success.main' }}>+{formatCurrency(row.totalIn)}</TableCell>
+                  <TableCell align="right" sx={{ color: 'error.main' }}>−{formatCurrency(row.totalOut)}</TableCell>
                   <TableCell align="right"><strong>{formatCurrency(row.closingBalance)}</strong></TableCell>
                 </TableRow>
               ))}
@@ -5109,6 +5131,13 @@ export default function DailyBook() {
           <Button variant="contained" color="warning" onClick={handleSaveAtmWithdrawal}>Record ATM Withdrawal</Button>
         </DialogActions>
       </ResponsiveDialog>
+
+      {/* Quick Add Entry 5-Card Picker Dialog */}
+      <QuickAddEntryDialog
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onSelectOption={handleQuickAddSelect}
+      />
 
       {/* Daily Book Report Dialog */}
       <DailyBookReportDialog

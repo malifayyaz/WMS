@@ -28,3 +28,29 @@ export function formatDateTime(date) {
   if (Number.isNaN(d?.getTime?.())) return '';
   return format(d, 'dd/MM/yyyy HH:mm');
 }
+
+/**
+ * Display time as hh:mm a (e.g. 09:30 AM)
+ */
+export function formatTime(date) {
+  if (!date) return '';
+  const d = typeof date === 'string' ? parseISO(date) : date;
+  if (Number.isNaN(d?.getTime?.())) return '';
+  return format(d, 'hh:mm a');
+}
+
+/**
+ * Display date in full natural format: e.g. Thursday, 14 Aug 2026
+ */
+export function formatDayDate(date) {
+  if (!date) return '';
+  let d;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [y, m, day] = date.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = typeof date === 'string' ? parseISO(date) : date;
+  }
+  if (Number.isNaN(d?.getTime?.())) return '';
+  return format(d, 'EEEE, d MMM yyyy');
+}
