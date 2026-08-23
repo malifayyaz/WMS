@@ -155,19 +155,52 @@ function extractBankFromMessage(message) {
   const t = messageWithoutDescriptionNoise(message);
   if (!t) return null;
 
-  // Prefer destination phrasing: "to UBL", "via MBL", "into Faisal Bank"
+  // Specific bank shortcuts
   if (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?ubl\b/.test(t) || /\bubl\b/.test(t)) {
     return { bankAccount: "UBL" };
   }
   if (
     /\b(?:to|via|in|into|at|through)\s+(?:the\s+)?faisal\s*bank\b/.test(t) ||
-    /\bfaisal\s*bank\b/.test(t)
+    /\bfaisal\s*bank\b/.test(t) ||
+    /\bfaysal\s*bank\b/.test(t)
   ) {
     return { bankAccount: "Faisal Bank" };
   }
-  if (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?mbl\b/.test(t) || /\bmbl\b/.test(t)) {
+  if (/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?mbl\b/.test(t) || /\bmbl\b/.test(t) || /\bmeezan\b/.test(t)) {
     return { bankAccount: "MBL" };
   }
+  if (/\bal[- ]?falah\b|\balfalah\b/.test(t)) {
+    return { bankAccount: "Bank Al-Falah" };
+  }
+  if (/\bhabib\s*bank\b|\bhbl\b/.test(t)) {
+    return { bankAccount: "HBL" };
+  }
+  if (/\bmcb\b/.test(t)) {
+    return { bankAccount: "MCB" };
+  }
+  if (/\baskari\s*bank\b|\baskari\b/.test(t)) {
+    return { bankAccount: "Askari Bank" };
+  }
+  if (/\bjs\s*bank\b/.test(t)) {
+    return { bankAccount: "JS Bank" };
+  }
+
+  // Dynamic bank extraction e.g. "Bank Al-Falah", "Bank Alfalah", "Meezan Bank", "National Bank"
+  const bankMatch =
+    t.match(/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?([a-z0-9\s'-]+\s+bank)\b/i) ||
+    t.match(/\b(?:to|via|in|into|at|through)\s+(?:the\s+)?(bank\s+[a-z0-9\s'-]+)\b/i) ||
+    t.match(/\b(bank\s+[a-z0-9\s'-]{2,20})\b/i) ||
+    t.match(/\b([a-z0-9\s'-]{2,20}\s+bank)\b/i);
+
+  if (bankMatch) {
+    let extracted = bankMatch[1].trim();
+    extracted = extracted
+      .split(/\s+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+    return { bankAccount: extracted };
+  }
+
   if (/\b(?:any\s+)?other\s+bank\b|\bbank\s+other\b/.test(t)) {
     return { bankAccount: "Other" };
   }
@@ -189,14 +222,14 @@ function resolvePaymentMethodFromMessage(message, existing) {
   return existing || null;
 }
 
-/** Strip "to UBL" / "via MBL" etc. so party names stay clean */
+/** Strip "to UBL" / "via MBL" / "in Bank Al-Falah" etc. so party names stay clean */
 function stripBankPhrasesFromName(name) {
   return String(name || "")
     .replace(
-      /\s*(?:,?\s*)?(?:to|via|in|into|at|from|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank)\b/gi,
+      /\s*(?:,?\s*)?(?:to|via|in|into|at|from|through)\s+(?:the\s+)?(?:ubl|mbl|faisal\s*bank|faysal\s*bank|bank\s+[a-z0-9\s'-]+|[a-z0-9\s'-]+\s+bank|al[- ]?falah|alfalah|hbl|mcb|askari)\b/gi,
       " "
     )
-    .replace(/\s+(?:ubl|mbl|faisal\s*bank)\b/gi, " ")
+    .replace(/\s+(?:ubl|mbl|faisal\s*bank|faysal\s*bank|al[- ]?falah|alfalah|hbl|mcb|askari)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -272,6 +305,91 @@ function enrichParsedIntent(parsed, message, conversationHistory = []) {
 
   const text = String(message || "").toLowerCase();
   const data = result.extractedData;
+
+  // Multi-turn slot correction detection (e.g. "not mbl in bank al-falah", "not cash via bank transfer", "no, customer is akram")
+  const isCorrectionPhrase =
+    /^\s*(not|no|change|use|correct|make\s+it|instead\s+of)\b/i.test(text) ||
+    (/\bnot\b/i.test(text) && /\b(in|via|to|by|bank|cash|cheque)\b/i.test(text));
+
+  if (isCorrectionPhrase && Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+    const historyRev = conversationHistory.slice().reverse();
+    const lastUserMsg = historyRev.find((m) => m.role === "user");
+
+    const namedBank = extractBankFromMessage(message);
+    if (namedBank) {
+      data.bankAccount = namedBank.bankAccount;
+      data.paymentMethod = "Bank Transfer";
+
+      if (lastUserMsg && lastUserMsg.content) {
+        const prevText = lastUserMsg.content;
+        if (!data.amount) {
+          const amtMatch = prevText.match(/(?:rs\.?|pkr)?\s*([\d,]+(?:\.\d+)?)/i);
+          if (amtMatch) data.amount = Number(String(amtMatch[1]).replace(/,/g, ""));
+        }
+        if (!data.customerName && !data.relatedName) {
+          const fromMatch = prevText.match(/\bfrom\s+([A-Za-z0-9\s.'-]+?)(?:\s+of|\s+\d|\s+via|\s+in|$)/i);
+          if (fromMatch) {
+            data.customerName = stripBankPhrasesFromName(fromMatch[1]);
+            data.relatedName = data.customerName;
+          }
+        }
+      }
+
+      if (!result.intent || result.intent === "UNKNOWN") {
+        result.intent = "RECORD_CUSTOMER_PAYMENT";
+      }
+      result.confidence = "high";
+      result.clarificationNeeded = null;
+    }
+  }
+
+  // Technical order parameter extractions fallback (wireNumber, initialWeightKg, ratePerKg, customerName)
+  if (result.intent === "CREATE_ORDER" || /\b(daily\s*sale|becha|sale|order)\b/i.test(text)) {
+    if (!data.wireNumber) {
+      const wireMatch =
+        text.match(/wire\s*#?\s*(\d{1,2})\b/i) ||
+        text.match(/\b#\s*(\d{1,2})\b/i) ||
+        text.match(/(\d{1,2})\s*number\s*(?:taar|wire)/i) ||
+        text.match(/\b(\d{1,2})\s*wire\b/i);
+      if (wireMatch) data.wireNumber = Number(wireMatch[1]);
+    }
+    if (!data.initialWeightKg && data.weightKg) {
+      data.initialWeightKg = Number(data.weightKg);
+    }
+    if (!data.initialWeightKg) {
+      const kgMatch =
+        text.match(/(\d+(?:\.\d+)?)\s*kg\b/i) ||
+        text.match(/\b(\d+(?:\.\d+)?)\s*kilo\b/i);
+      if (kgMatch) data.initialWeightKg = Number(kgMatch[1]);
+    }
+    if (!data.ratePerKg && data.rate) {
+      data.ratePerKg = Number(data.rate);
+    }
+    if (!data.ratePerKg) {
+      const rateMatch =
+        text.match(/(?:@|rate|per\s*kg|perkg|\/kg)\s*(\d+(?:\.\d+)?)/i) ||
+        text.match(/(\d+(?:\.\d+)?)\s*(?:per\s*kg|perkg|\/kg)/i) ||
+        text.match(/\b(\d+)\s*perkg\b/i);
+      if (rateMatch) data.ratePerKg = Number(rateMatch[1]);
+    }
+    if (!data.customerName) {
+      const custMatch =
+        text.match(/(?:sale\s+of|sale\s+to|for|to)\s+([A-Za-z][A-Za-z\s.'-]{1,30}?)(?:\s+of\s+|\s+\d|\s+wire|\s+rs|$)/i) ||
+        text.match(/(?:daily\s+sale\s+of)\s+([A-Za-z][A-Za-z\s.'-]{1,30}?)(?:\s+of\s+|\s+\d|\s+wire|\s+rs|$)/i) ||
+        text.match(/\bsale\s+of\s+([A-Za-z][A-Za-z\s.'-]{1,30}?)\b/i);
+      if (custMatch) data.customerName = custMatch[1].trim();
+    }
+    if (
+      data.wireNumber &&
+      data.initialWeightKg &&
+      data.ratePerKg &&
+      (data.customerName || data.customerId)
+    ) {
+      result.intent = "CREATE_ORDER";
+      result.confidence = "high";
+      result.clarificationNeeded = null;
+    }
+  }
 
   // Shift/move date commands win over delete — compound phrasing like
   // "shift ... to ... and then delete the old date" is a move, not a delete.
@@ -1253,16 +1371,48 @@ For self expenses, expenseGroup/expenseCategory/selfExpensePerson are NOT missin
       ? conversationHistory.slice(-6)
       : [];
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: message },
-      ],
-      max_tokens: 400,
-      temperature: 0.1,
-    });
+    let response;
+    try {
+      response = await groq.chat.completions.create({
+        model: "groq/compound-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history,
+          { role: "user", content: message },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1000,
+        temperature: 0.1,
+      });
+    } catch (modelErr) {
+      console.warn("Primary Groq intent parser model failed, falling back to gpt-oss-120b:", modelErr.message);
+      try {
+        response = await groq.chat.completions.create({
+          model: "openai/gpt-oss-120b",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...history,
+            { role: "user", content: message },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1000,
+          temperature: 0.1,
+        });
+      } catch (fallbackErr) {
+        console.warn("Groq gpt-oss-120b failed, trying groq/compound:", fallbackErr.message);
+        response = await groq.chat.completions.create({
+          model: "groq/compound",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...history,
+            { role: "user", content: message },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1000,
+          temperature: 0.1,
+        });
+      }
+    }
 
     let raw = response.choices[0].message.content.trim();
     raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();

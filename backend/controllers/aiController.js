@@ -159,16 +159,16 @@ exports.chat = async (req, res) => {
     let answer;
     try {
       const response = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        model: "groq/compound",
         messages,
         max_tokens: 1024,
         temperature: 0.25,
       });
       answer = response.choices[0]?.message?.content;
     } catch (modelErr) {
-      console.warn("Primary Groq model failed, falling back to 8b:", modelErr.message);
+      console.warn("Primary Groq model failed, falling back to compound-mini:", modelErr.message);
       const response = await groq.chat.completions.create({
-        model: "llama-3.1-8b-instant",
+        model: "groq/compound-mini",
         messages,
         max_tokens: 1024,
         temperature: 0.25,
@@ -446,7 +446,7 @@ exports.getDailySummary = async (req, res) => {
     let answer;
     try {
       const response = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        model: "groq/compound",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
@@ -456,9 +456,9 @@ exports.getDailySummary = async (req, res) => {
       });
       answer = response.choices[0]?.message?.content;
     } catch (modelErr) {
-      console.warn("Primary Groq model failed for daily summary, falling back to 8b:", modelErr.message);
+      console.warn("Primary Groq model failed for daily summary, falling back to compound-mini:", modelErr.message);
       const response = await groq.chat.completions.create({
-        model: "llama-3.1-8b-instant",
+        model: "groq/compound-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
