@@ -18,6 +18,10 @@ import ReadyStock from './pages/ReadyStock';
 import Workers from './pages/Workers';
 import UserManagement from './pages/UserManagement';
 import SecuritySettings from './pages/SecuritySettings';
+import Receivables from './pages/Receivables';
+import Payables from './pages/Payables';
+import PersonalPayments from './pages/PersonalPayments';
+import BalanceSheet from './pages/BalanceSheet';
 
 export default function App() {
   return (
@@ -160,6 +164,46 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="User Management">
               <UserManagement />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/receivables"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Receivables">
+              <Receivables />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/payables"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Payables">
+              <Payables />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/personal-payments"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Personal Payments">
+              <PersonalPayments />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/balance-sheet"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Balance Sheet">
+              <BalanceSheet />
             </AppLayout>
           </ProtectedRoute>
         }

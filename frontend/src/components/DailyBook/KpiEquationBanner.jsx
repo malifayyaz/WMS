@@ -36,7 +36,11 @@ export default function KpiEquationBanner({
   inCount = 0,
   factoryExpense = 0,
   selfExpense = 0,
+  bankOut = 0,
+  bankIn = 0,
   entryDate = '',
+  mode = 'cash',
+  cashClosingBalance = 0,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -101,8 +105,12 @@ export default function KpiEquationBanner({
 
   const totalHolders = (Number(holders.safe) || 0) + (Number(holders.faisal) || 0) + (Number(holders.fayyaz) || 0);
   const hasEnteredHolders = totalHolders > 0;
-  const difference = totalHolders - (Number(closingBalance) || 0);
+  const targetPhysicalClosing = mode === 'combined' ? (cashClosingBalance || 0) : (Number(closingBalance) || 0);
+  const difference = totalHolders - targetPhysicalClosing;
   const isReconciled = hasEnteredHolders && Math.abs(difference) < 0.01;
+
+  const isCombined = mode === 'combined';
+  const isBank = mode === 'bank';
 
   return (
     <>
@@ -151,7 +159,7 @@ export default function KpiEquationBanner({
                   color: 'text.secondary',
                 }}
               >
-                Opening Balance
+                {isCombined ? 'Combined Opening' : isBank ? 'Bank Opening' : 'Opening Balance'}
               </Typography>
             </Stack>
 
@@ -170,7 +178,7 @@ export default function KpiEquationBanner({
             </Typography>
 
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.72rem', mt: 0.5 }}>
-              Previous day carryover
+              {isCombined ? 'Cash + Bank carryover' : 'Previous day carryover'}
             </Typography>
           </Box>
 
@@ -196,7 +204,7 @@ export default function KpiEquationBanner({
                   color: 'text.secondary',
                 }}
               >
-                Cash Received
+                {isCombined ? 'Total Received' : isBank ? 'Bank Received' : 'Cash Received'}
               </Typography>
               <Chip
                 size="small"
@@ -228,7 +236,11 @@ export default function KpiEquationBanner({
             </Typography>
 
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.72rem', mt: 0.5 }}>
-              {inCount > 0 ? `${inCount} cash receipt${inCount > 1 ? 's' : ''} today` : 'No cash received yet'}
+              {inCount > 0
+                ? isCombined
+                  ? `${inCount} receipts (Cash, Bank & Cheque)`
+                  : `${inCount} cash receipt${inCount > 1 ? 's' : ''} today`
+                : 'No receipts today'}
             </Typography>
           </Box>
 
@@ -254,7 +266,7 @@ export default function KpiEquationBanner({
                   color: 'text.secondary',
                 }}
               >
-                Cash Spent
+                {isCombined ? 'Total Spent' : isBank ? 'Bank Spent' : 'Cash Spent'}
               </Typography>
               <Chip
                 size="small"
@@ -287,10 +299,11 @@ export default function KpiEquationBanner({
 
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.72rem', mt: 0.5 }}>
               Factory: {formatCurrency(factoryExpense)} • Self: {formatCurrency(selfExpense)}
+              {isCombined && bankOut > 0 ? ` • Bank: ${formatCurrency(bankOut)}` : ''}
             </Typography>
           </Box>
 
-          {/* Col 4: Cash in Hand (Net Balance) */}
+          {/* Col 4: Cash in Hand (Physical Net Balance) */}
           <Box
             sx={{
               p: { xs: 2, sm: 2.5 },
@@ -310,7 +323,7 @@ export default function KpiEquationBanner({
                   color: isDark ? '#60A5FA' : '#1E40AF',
                 }}
               >
-                Cash in Hand
+                {isBank ? 'Bank Balance' : 'Cash in Hand'}
               </Typography>
               <Typography sx={{ fontSize: '0.72rem', color: isDark ? '#93C5FD' : '#2563EB', fontWeight: 600 }}>
                 Closing Balance
@@ -340,7 +353,7 @@ export default function KpiEquationBanner({
                 mt: 0.5,
               }}
             >
-              Physical cash closing balance
+              {isBank ? 'Bank account balance' : 'Physical cash closing balance'}
             </Typography>
           </Box>
         </Box>
@@ -389,7 +402,7 @@ export default function KpiEquationBanner({
             )}
           </Stack>
 
-          {/* Cash Holder Tags */}
+          {/* Cash Holder Tags & Bank Net Chip */}
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Typography variant="caption" sx={{ fontSize: '0.72rem', fontWeight: 600, color: 'text.secondary', mr: 0.25 }}>
               Cash With:

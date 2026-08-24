@@ -33,6 +33,7 @@ import {
   IconButton,
   ToggleButton,
   ToggleButtonGroup,
+  useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -52,7 +53,9 @@ import PeopleIcon from '@mui/icons-material/People';
 import FactoryIcon from '@mui/icons-material/Factory';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI } from '../services/api';
+import ReplayIcon from '@mui/icons-material/Replay';
+import SavingsIcon from '@mui/icons-material/Savings';
+import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI, personalPaymentsAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
 import DateRangePicker from '../components/Common/DateRangePicker';
@@ -242,6 +245,8 @@ function ToolbarSection({ label, children }) {
 const toolbarBtn = { textTransform: 'none', fontWeight: 600, borderRadius: 1.5, px: 1.5 };
 
 export default function DailyBook() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const { isViewer } = usePermissions();
   const isMobile = useIsMobile();
   const btnSize = isMobile ? 'medium' : 'small';
@@ -331,6 +336,13 @@ export default function DailyBook() {
   const [selectedPartyId, setSelectedPartyId] = useState('');
   const [partyLedger, setPartyLedger] = useState(null);
   const [inHandChequesList, setInHandChequesList] = useState([]);
+  const [returnChequeDialogOpen, setReturnChequeDialogOpen] = useState(false);
+  const [returnChequeTargetId, setReturnChequeTargetId] = useState(null);
+  const [returnChequeForm, setReturnChequeForm] = useState({
+    chequeReturnDate: '',
+    chequeReturnReason: '',
+    chequeReturnedBy: '',
+  });
   const [form, setForm] = useState({
     entryKind: 'General',
     expenseGroup: 'Operations',
@@ -357,6 +369,18 @@ export default function DailyBook() {
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [deleteOrderConfirm, setDeleteOrderConfirm] = useState({ open: false, id: null });
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [personalPaymentDialogOpen, setPersonalPaymentDialogOpen] = useState(false);
+  const [personalCategories, setPersonalCategories] = useState([]);
+  const [personalPaymentForm, setPersonalPaymentForm] = useState({
+    categoryId: '',
+    amount: '',
+    paymentDate: '',
+    paymentMethod: 'Cash',
+    chequeNumber: '',
+    bankName: '',
+    paidBy: '',
+    note: '',
+  });
   const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
   const [partyDialogOpen, setPartyDialogOpen] = useState(false);
   const [partyForm, setPartyForm] = useState(defaultCustomerForm);
@@ -954,9 +978,162 @@ export default function DailyBook() {
       relatedName: '',
       description: '',
       handledBy: '',
+      chequeNumber: '',
+      chequeBank: 'MBL',
     });
     setDialogOpen(true);
   };
+
+  // Build expense rows from cashBook.expenseTotals for display in TwoColumnRokarLedger
+  const buildExpenseRows = useCallback(() => {
+    const rows = [];
+    const expTotals = cashBook?.expenseTotals;
+    if (!expTotals) return rows;
+
+    if (expTotals.factoryTotal > 0) {
+      rows.push({
+        _id: 'exp-factory-total',
+        transactionType: 'Money Out',
+        amount: expTotals.factoryTotal,
+        paymentMethod: 'Cash',
+        relatedName: 'Factory Expense Total',
+        description: 'Factory Daily Expense Total',
+        expenseGroup: 'Factory Expense Total',
+        transactionDate: entryDate,
+        isExpenseRow: true,
+        entryKind: 'FactoryExpense',
+      });
+    }
+
+    if (expTotals.fayyaz > 0) {
+      rows.push({
+        _id: 'exp-self-fayyaz',
+        transactionType: 'Money Out',
+        amount: expTotals.fayyaz,
+        paymentMethod: 'Cash',
+        relatedName: 'Fayyaz Expense',
+        description: 'Self Expense — Fayyaz',
+        expenseGroup: 'Self Expense',
+        transactionDate: entryDate,
+        isExpenseRow: true,
+        entryKind: 'SelfExpense',
+        expenseCategory: 'Fayyaz Expense',
+      });
+    }
+
+    if (expTotals.faisal > 0) {
+      rows.push({
+        _id: 'exp-self-faisal',
+        transactionType: 'Money Out',
+        amount: expTotals.faisal,
+        paymentMethod: 'Cash',
+        relatedName: 'Faisal Expense',
+        description: 'Self Expense — Faisal',
+        expenseGroup: 'Self Expense',
+        transactionDate: entryDate,
+        isExpenseRow: true,
+        entryKind: 'SelfExpense',
+        expenseCategory: 'Faisal Expense',
+      });
+    }
+
+    if (expTotals.mutual > 0) {
+      rows.push({
+        _id: 'exp-self-mutual',
+        transactionType: 'Money Out',
+        amount: expTotals.mutual,
+        paymentMethod: 'Cash',
+        relatedName: 'Mutual Expense',
+        description: 'Self Expense — Mutual',
+        expenseGroup: 'Self Expense',
+        transactionDate: entryDate,
+        isExpenseRow: true,
+        entryKind: 'SelfExpense',
+        expenseCategory: 'Mutual Expense',
+      });
+    }
+
+    const specificSelf = (expTotals.fayyaz || 0) + (expTotals.faisal || 0) + (expTotals.mutual || 0);
+    const unassignedSelf = (expTotals.selfTotal || 0) - specificSelf;
+    if (unassignedSelf > 0) {
+      rows.push({
+        _id: 'exp-self-other',
+        transactionType: 'Money Out',
+        amount: unassignedSelf,
+        paymentMethod: 'Cash',
+        relatedName: 'Self Expense',
+        description: 'Self Expense — Daily Total',
+        expenseGroup: 'Self Expense',
+        transactionDate: entryDate,
+        isExpenseRow: true,
+        entryKind: 'SelfExpense',
+        expenseCategory: 'Other Expense',
+      });
+    }
+
+    return rows;
+  }, [cashBook, entryDate]);
+
+  // Build balanced Two-Column Rokar ledger rows (with Bank Contra entries & Expenses)
+  const buildRokarRows = useCallback((includeBank = false) => {
+    const inRows = [];
+    const outRows = [];
+
+    // 1. Cash, Cheque & Bank transactions
+    (list || []).forEach((t) => {
+      if (t.paymentMethod === 'Cash' || t.paymentMethod === 'Cheque') {
+        if (t.transactionType === 'Money In') {
+          inRows.push(t);
+        } else {
+          outRows.push(t);
+        }
+      } else if (t.paymentMethod === 'Bank Transfer' && includeBank) {
+        const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || 'MBL');
+        if (t.transactionType === 'Money In') {
+          // Inflow: Customer receipt in bank
+          inRows.push(t);
+          // Simultaneous contra Outflow: Deposited to Bank account (balances cash in hand)
+          outRows.push({
+            _id: `contra-bank-in-${t._id}`,
+            transactionType: 'Money Out',
+            amount: t.amount,
+            paymentMethod: 'Bank Transfer',
+            bankAccount: t.bankAccount,
+            bankAccountOtherName: t.bankAccountOtherName,
+            relatedName: `Bank Deposit (${bankName})`,
+            description: `Sent to bank · ${t.relatedName || t.relatedTo || t.description || 'Transfer in'}`,
+            expenseGroup: 'Bank Transfer',
+            transactionDate: t.transactionDate || t.date,
+            isContraRow: true,
+            originalTxn: t,
+          });
+        } else {
+          // Inflow: Drawn from bank account
+          inRows.push({
+            _id: `contra-bank-out-${t._id}`,
+            transactionType: 'Money In',
+            amount: t.amount,
+            paymentMethod: 'Bank Transfer',
+            bankAccount: t.bankAccount,
+            bankAccountOtherName: t.bankAccountOtherName,
+            relatedName: `Bank Withdrawal (${bankName})`,
+            description: `Drawn from bank · for ${t.relatedName || t.relatedTo || t.description || 'Transfer out'}`,
+            transactionDate: t.transactionDate || t.date,
+            isContraRow: true,
+            originalTxn: t,
+          });
+          // Outflow: Payment via bank
+          outRows.push(t);
+        }
+      }
+    });
+
+    // 2. Add Expenses (Factory Expense Total & Self Expense) to outRows
+    const expenseRows = buildExpenseRows();
+    outRows.push(...expenseRows);
+
+    return { inRows, outRows };
+  }, [list, buildExpenseRows]);
 
   /** Cash/cheque from anyone who is not a ledger customer — updates cash in hand. */
   const openGeneralCashDialog = (transactionType = 'Money In') => {
@@ -1049,6 +1226,34 @@ export default function DailyBook() {
     setGeneralCashMode(false);
   };
 
+  const openReturnChequeDialog = (row) => {
+    setReturnChequeTargetId(row._id);
+    setReturnChequeForm({
+      chequeReturnDate: new Date().toISOString().slice(0, 10),
+      chequeReturnReason: '',
+      chequeReturnedBy: '',
+    });
+    setReturnChequeDialogOpen(true);
+  };
+
+  const handleReturnCheque = async () => {
+    if (!returnChequeTargetId) return;
+    try {
+      const res = await transactionsAPI.returnCheque(returnChequeTargetId, {
+        chequeReturnDate: returnChequeForm.chequeReturnDate || undefined,
+        chequeReturnReason: returnChequeForm.chequeReturnReason || undefined,
+        chequeReturnedBy: returnChequeForm.chequeReturnedBy || undefined,
+      });
+      setSnack({ open: true, message: res.data.message || 'Cheque marked as returned', severity: 'success' });
+      setReturnChequeDialogOpen(false);
+      setReturnChequeTargetId(null);
+      fetchData();
+      fetchPartyLedger();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
+    }
+  };
+
   const customerSearchLabel = (c) => {
     if (!c) return '';
     if (c.customerType === 'Daily') return `${c.name} (Daily)`;
@@ -1092,10 +1297,49 @@ export default function DailyBook() {
       openExpenseDialog('FactoryExpense');
     } else if (optionId === 'personalDrawing') {
       openExpenseDialog('SelfExpense', 'Fayyaz Expense');
+    } else if (optionId === 'personalPayment') {
+      openPersonalPaymentQuickDialog();
     } else if (optionId === 'dailySale') {
       openDailySaleDialog();
     } else if (optionId === 'bankAtm') {
       openBankTransferDialog();
+    }
+  };
+
+  const openPersonalPaymentQuickDialog = async () => {
+    try {
+      const res = await personalPaymentsAPI.getAll({ status: 'Active' });
+      const cats = res.data.data || [];
+      setPersonalCategories(cats);
+      setPersonalPaymentForm({
+        categoryId: cats[0]?._id || '',
+        amount: cats[0]?.monthlyAmount ? String(cats[0].monthlyAmount) : '',
+        paymentDate: entryDate,
+        paymentMethod: 'Cash',
+        chequeNumber: '',
+        bankName: '',
+        paidBy: '',
+        note: '',
+      });
+      setPersonalPaymentDialogOpen(true);
+    } catch (err) {
+      console.error('Failed to load personal payment categories:', err);
+    }
+  };
+
+  const handleSavePersonalPayment = async () => {
+    if (!personalPaymentForm.categoryId || !personalPaymentForm.amount || Number(personalPaymentForm.amount) <= 0) {
+      setSnack({ open: true, message: 'Please select a category and enter a valid amount', severity: 'error' });
+      return;
+    }
+    try {
+      await personalPaymentsAPI.addPayment(personalPaymentForm.categoryId, personalPaymentForm);
+      setSnack({ open: true, message: 'Personal payment recorded successfully', severity: 'success' });
+      setPersonalPaymentDialogOpen(false);
+      fetchData();
+    } catch (err) {
+      console.error('Failed to record personal payment:', err);
+      setSnack({ open: true, message: err.response?.data?.message || 'Error recording personal payment', severity: 'error' });
     }
   };
 
@@ -1147,6 +1391,14 @@ export default function DailyBook() {
   };
 
   const openEditTransaction = (row) => {
+    if (row?.isExpenseRow) {
+      openExpenseDialog(row.entryKind || 'FactoryExpense', row.expenseCategory || 'Fayyaz Expense');
+      return;
+    }
+    if (row?.isContraRow && row.originalTxn) {
+      openEditBankTransfer(row.originalTxn);
+      return;
+    }
     if (mainTab >= 2 && row.sourceType === 'RawMaterial') {
       setSnack({ open: true, message: 'Raw material purchases are managed in Raw Materials section', severity: 'info' });
       return;
@@ -1188,6 +1440,8 @@ export default function DailyBook() {
       relatedName: row.relatedName || '',
       description: row.description || '',
       handledBy: row.handledBy || '',
+      chequeNumber: row.chequeNumber || '',
+      chequeBank: row.chequeBank || 'MBL',
     });
     setDialogOpen(true);
   };
@@ -1333,6 +1587,10 @@ export default function DailyBook() {
           handledBy: form.handledBy,
           transactionDate: entryDate,
           expenseCategory,
+          ...(form.paymentMethod === 'Cheque' && {
+            chequeNumber: form.chequeNumber || undefined,
+            chequeBank: form.chequeBank || undefined,
+          }),
         };
         if (editingId) {
           await transactionsAPI.update(editingId, {
@@ -2255,13 +2513,43 @@ export default function DailyBook() {
 
       {mainTab === 0 && (
         <KpiEquationBanner
-          openingBalance={cashBook?.openingBalance || 0}
-          totalIn={cashBook?.totalIn || 0}
-          totalOut={cashBook?.totalOut || 0}
-          closingBalance={cashBook?.closingBalance || 0}
-          inCount={(list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash').length}
+          mode={cashBankTab}
+          openingBalance={
+            cashBankTab === 'bank'
+              ? (bankBook?.openingBalance || 0)
+              : (cashBook?.openingBalance || 0)
+          }
+          totalIn={
+            cashBankTab === 'combined'
+              ? (cashBook?.totalIn || 0) + (bankBook?.totalIn || 0)
+              : cashBankTab === 'bank'
+              ? (bankBook?.totalIn || 0)
+              : (cashBook?.totalIn || 0)
+          }
+          totalOut={
+            cashBankTab === 'combined'
+              ? (cashBook?.totalOut || 0) + (bankBook?.totalIn || 0)
+              : cashBankTab === 'bank'
+              ? (bankBook?.totalOut || 0)
+              : (cashBook?.totalOut || 0)
+          }
+          closingBalance={
+            cashBankTab === 'bank'
+              ? (bankBook?.closingBalance || 0)
+              : (cashBook?.closingBalance || 0)
+          }
+          cashClosingBalance={cashBook?.closingBalance || 0}
+          inCount={
+            cashBankTab === 'combined'
+              ? (list || []).filter((r) => r.transactionType === 'Money In').length
+              : cashBankTab === 'bank'
+              ? (bankBook?.transactions || []).filter((t) => t.transactionType === 'Money In').length
+              : (list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash').length
+          }
           factoryExpense={factoryCashOut}
           selfExpense={selfCashOut}
+          bankOut={bankBook?.totalIn || 0}
+          bankIn={bankBook?.totalIn || 0}
           entryDate={entryDate}
         />
       )}
@@ -2302,6 +2590,7 @@ export default function DailyBook() {
             >
               <ToggleButton value="cash">💵 Cash in Hand</ToggleButton>
               <ToggleButton value="bank">🏦 Bank Accounts</ToggleButton>
+              <ToggleButton value="combined">📊 Combined</ToggleButton>
             </ToggleButtonGroup>
           ) : (
             <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
@@ -2432,6 +2721,17 @@ export default function DailyBook() {
                   ATM Withdrawal
                 </Button>
               </ToolbarSection>
+              <ToolbarSection label="Personal">
+                <Button
+                  variant="outlined"
+                  size={btnSize}
+                  startIcon={<SavingsIcon sx={{ color: '#818CF8' }} />}
+                  onClick={requireAdmin(openPersonalPaymentQuickDialog)}
+                  sx={{ ...toolbarBtn, borderColor: '#818CF8', color: isDark ? '#A5B4FC' : '#4F46E5' }}
+                >
+                  Personal Payment
+                </Button>
+              </ToolbarSection>
             </Stack>
           </>
         )}
@@ -2553,18 +2853,107 @@ export default function DailyBook() {
       </Paper>
 
       {/* Main Tab 0 View: Cash Register or Bank Accounts */}
-      {mainTab === 0 && cashBankTab === 'cash' && (
-        <TwoColumnRokarLedger
-          openingBalance={cashBook?.openingBalance || 0}
-          closingBalance={cashBook?.closingBalance || 0}
-          inRows={(list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash')}
-          outRows={(list || []).filter((r) => r.transactionType === 'Money Out' && r.paymentMethod === 'Cash')}
-          onEditRow={openEditTransaction}
-          onDeleteRow={(row) => setDeleteConfirm({ open: true, id: row._id })}
-          onAddEntry={() => setQuickAddOpen(true)}
-          requireAdmin={requireAdmin}
-        />
-      )}
+      {mainTab === 0 && cashBankTab === 'cash' && (() => {
+        const { inRows, outRows } = buildRokarRows(false);
+        return (
+          <TwoColumnRokarLedger
+            openingBalance={cashBook?.openingBalance || 0}
+            closingBalance={cashBook?.closingBalance || 0}
+            inRows={inRows}
+            outRows={outRows}
+            onEditRow={openEditTransaction}
+            onDeleteRow={(row) => !row.isExpenseRow && !row.isContraRow && setDeleteConfirm({ open: true, id: row._id })}
+            onReturnCheque={openReturnChequeDialog}
+            onAddEntry={() => setQuickAddOpen(true)}
+            requireAdmin={requireAdmin}
+            inTitle="Cash Received"
+            inSubtitle="Money In"
+            outTitle="Cash Spent"
+            outSubtitle="Money Out"
+          />
+        );
+      })()}
+
+      {/* Cheque Transactions section — visible when in cash or bank subtab if cheques exist */}
+      {mainTab === 0 && cashBankTab !== 'combined' && (() => {
+        const chequeRows = (list || []).filter((r) => r.paymentMethod === 'Cheque');
+        if (chequeRows.length === 0) return null;
+        return (
+          <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', minWidth: 0 }}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                🧾 Cheque Transactions
+              </Typography>
+              <Chip
+                label={`${chequeRows.length} cheque${chequeRows.length > 1 ? 's' : ''}`}
+                color="warning"
+                variant="outlined"
+                size="small"
+              />
+            </Box>
+            <TableContainer sx={{ overflowX: 'auto' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'action.hover' }}>
+                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Party / From</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Cheque #</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Bank</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>In (+)</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Out (−)</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>Status</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {chequeRows.map((t) => (
+                    <TableRow key={t._id} hover sx={t.isChequeReturned ? { opacity: 0.6 } : {}}>
+                      <TableCell>{formatDate(t.transactionDate)}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{t.relatedName || t.relatedTo || '—'}</TableCell>
+                      <TableCell>{t.chequeNumber || '—'}</TableCell>
+                      <TableCell>{t.chequeBank || '—'}</TableCell>
+                      <TableCell>{t.description || '—'}</TableCell>
+                      <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>
+                        {t.transactionType === 'Money In' ? formatCurrency(t.amount) : ''}
+                      </TableCell>
+                      <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>
+                        {t.transactionType === 'Money Out' ? formatCurrency(t.amount) : ''}
+                      </TableCell>
+                      <TableCell align="right">
+                        {t.isChequeReturned ? (
+                          <Chip size="small" label="Returned" color="error" variant="filled" />
+                        ) : (
+                          <Chip size="small" label="Active" color="success" variant="outlined" />
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" onClick={requireAdmin(() => openEditTransaction(t))}>
+                          <EditIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                        {!t.isChequeReturned && (
+                          <Tooltip title="Mark cheque as returned / bounced">
+                            <IconButton
+                              size="small"
+                              color="warning"
+                              onClick={requireAdmin(() => openReturnChequeDialog(t))}
+                            >
+                              <ReplayIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <IconButton size="small" color="error" onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: t._id }))}>
+                          <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        );
+      })()}
 
       {mainTab === 0 && cashBankTab === 'bank' && bankBook && (
         <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main', minWidth: 0 }}>
@@ -2625,9 +3014,19 @@ export default function DailyBook() {
                     </TableCell>
                     <TableCell align="right"><strong>{formatCurrency(t.balance)}</strong></TableCell>
                     <TableCell align="right">
+                      {t.isChequeReturned ? (
+                        <Chip size="small" label="Returned" color="error" variant="outlined" sx={{ mr: 0.5 }} />
+                      ) : null}
                       <IconButton size="small" onClick={requireAdmin(() => openEditTransaction(t))}>
                         <EditIcon sx={{ fontSize: 16 }} />
                       </IconButton>
+                      {t.paymentMethod === 'Cheque' && !t.isChequeReturned && (
+                        <Tooltip title="Mark cheque as returned / bounced">
+                          <IconButton size="small" color="warning" onClick={requireAdmin(() => openReturnChequeDialog(t))}>
+                            <ReplayIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <IconButton size="small" color="error" onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: t._id }))}>
                         <DeleteIcon sx={{ fontSize: 16 }} />
                       </IconButton>
@@ -2642,6 +3041,29 @@ export default function DailyBook() {
           )}
         </Paper>
       )}
+
+      {/* Combined View — Two-column Money In (Left) and Money Out (Right) with all Cash, Bank, Cheques & Expenses */}
+      {mainTab === 0 && cashBankTab === 'combined' && (() => {
+        const { inRows, outRows } = buildRokarRows(true);
+        return (
+          <TwoColumnRokarLedger
+            openingBalance={cashBook?.openingBalance || 0}
+            closingBalance={cashBook?.closingBalance || 0}
+            inRows={inRows}
+            outRows={outRows}
+            onEditRow={openEditTransaction}
+            onDeleteRow={(row) => !row.isExpenseRow && !row.isContraRow && setDeleteConfirm({ open: true, id: row._id })}
+            onReturnCheque={openReturnChequeDialog}
+            onAddEntry={() => setQuickAddOpen(true)}
+            requireAdmin={requireAdmin}
+            inTitle="Money In (Aamad)"
+            inSubtitle="Cash + Bank + Cheques"
+            outTitle="Money Out (Kharch)"
+            outSubtitle="Expenses + Bank Deposits + Payments"
+            mode="combined"
+          />
+        );
+      })()}
 
       {mainTab === 0 && startDate && endDate && cashBookRange.length > 0 && (
         <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
@@ -3647,6 +4069,31 @@ export default function DailyBook() {
               {paymentMethods.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
             </Select>
           </FormControl>
+          {form.entryKind === 'SelfExpense' && form.paymentMethod === 'Cheque' && (
+            <Box sx={{ p: 1.5, my: 0.5, borderRadius: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.light', display: 'block', mb: 1 }}>
+                Cheque Details
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="Cheque Number"
+                value={form.chequeNumber}
+                onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. 123456"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Bank Name"
+                value={form.chequeBank}
+                onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. MBL, UBL, HBL"
+              />
+            </Box>
+          )}
           <TextField fullWidth label="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} margin="dense" />
           <TextField fullWidth label="Handled By" value={form.handledBy} onChange={(e) => setForm((f) => ({ ...f, handledBy: e.target.value }))} margin="dense" />
             </>
@@ -5129,6 +5576,171 @@ export default function DailyBook() {
         <DialogActions>
           <Button onClick={() => setAtmDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="warning" onClick={handleSaveAtmWithdrawal}>Record ATM Withdrawal</Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Return Cheque Dialog */}
+      <ResponsiveDialog
+        open={returnChequeDialogOpen}
+        onClose={() => setReturnChequeDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ReplayIcon color="warning" />
+          Return / Bounce Cheque
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            This will mark the cheque as <strong>returned / bounced</strong> and create a reversal transaction to restore the balance.
+          </Alert>
+          <TextField
+            fullWidth
+            type="date"
+            label="Return Date"
+            value={returnChequeForm.chequeReturnDate}
+            onChange={(e) => setReturnChequeForm((f) => ({ ...f, chequeReturnDate: e.target.value }))}
+            margin="dense"
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            fullWidth
+            label="Reason (optional)"
+            value={returnChequeForm.chequeReturnReason}
+            onChange={(e) => setReturnChequeForm((f) => ({ ...f, chequeReturnReason: e.target.value }))}
+            margin="dense"
+            placeholder="e.g. Insufficient funds, Account closed"
+          />
+          <TextField
+            fullWidth
+            label="Recorded By (optional)"
+            value={returnChequeForm.chequeReturnedBy}
+            onChange={(e) => setReturnChequeForm((f) => ({ ...f, chequeReturnedBy: e.target.value }))}
+            margin="dense"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReturnChequeDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="warning" onClick={handleReturnCheque}>
+            Confirm Return
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Quick Add Personal Payment Dialog */}
+      <ResponsiveDialog
+        open={personalPaymentDialogOpen}
+        onClose={() => setPersonalPaymentDialogOpen(false)}
+        title="Record Personal Payment / Installment"
+        maxWidth="xs"
+      >
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {personalCategories.length === 0 ? (
+              <Alert severity="info">
+                No active personal categories found. Please create a Committee, Savings, or Loan category first under Personal Payments.
+              </Alert>
+            ) : (
+              <>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Category / Committee / Loan</InputLabel>
+                  <Select
+                    value={personalPaymentForm.categoryId}
+                    onChange={(e) => {
+                      const cat = personalCategories.find((c) => c._id === e.target.value);
+                      setPersonalPaymentForm({
+                        ...personalPaymentForm,
+                        categoryId: e.target.value,
+                        amount: cat?.monthlyAmount ? String(cat.monthlyAmount) : personalPaymentForm.amount,
+                      });
+                    }}
+                    label="Category / Committee / Loan"
+                  >
+                    {personalCategories.map((c) => (
+                      <MenuItem key={c._id} value={c._id}>
+                        {c.categoryName} ({c.paymentDirection} · {c.categoryType})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <TextField
+                  label="Payment Amount (Rs.)"
+                  type="number"
+                  value={personalPaymentForm.amount}
+                  onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, amount: e.target.value })}
+                  fullWidth
+                  required
+                />
+
+                <TextField
+                  label="Payment Date"
+                  type="date"
+                  value={personalPaymentForm.paymentDate}
+                  onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, paymentDate: e.target.value })}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+
+                <FormControl fullWidth size="small">
+                  <InputLabel>Payment Method</InputLabel>
+                  <Select
+                    value={personalPaymentForm.paymentMethod}
+                    onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, paymentMethod: e.target.value })}
+                    label="Payment Method"
+                  >
+                    <MenuItem value="Cash">Cash</MenuItem>
+                    <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                    <MenuItem value="Cheque">Cheque</MenuItem>
+                  </Select>
+                </FormControl>
+
+                {personalPaymentForm.paymentMethod === 'Cheque' && (
+                  <>
+                    <TextField
+                      label="Cheque Number"
+                      value={personalPaymentForm.chequeNumber}
+                      onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, chequeNumber: e.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                    <TextField
+                      label="Cheque Bank Name"
+                      value={personalPaymentForm.bankName}
+                      onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, bankName: e.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </>
+                )}
+
+                <TextField
+                  label="Paid By (Person / Account)"
+                  placeholder="e.g. Faisal, Fayyaz"
+                  value={personalPaymentForm.paidBy}
+                  onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, paidBy: e.target.value })}
+                  fullWidth
+                  size="small"
+                />
+
+                <TextField
+                  label="Note"
+                  value={personalPaymentForm.note}
+                  onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, note: e.target.value })}
+                  fullWidth
+                  size="small"
+                />
+              </>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPersonalPaymentDialogOpen(false)}>Cancel</Button>
+          {personalCategories.length > 0 && (
+            <Button variant="contained" color="primary" onClick={handleSavePersonalPayment}>
+              Save Payment
+            </Button>
+          )}
         </DialogActions>
       </ResponsiveDialog>
 

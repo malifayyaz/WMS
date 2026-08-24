@@ -16,6 +16,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import PersonIcon from '@mui/icons-material/Person';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import SavingsIcon from '@mui/icons-material/Savings';
 
 const ENTRY_OPTIONS = [
   {
@@ -50,6 +51,17 @@ const ENTRY_OPTIONS = [
     borderColor: '#DDD6FE',
     darkBgColor: 'rgba(124, 58, 237, 0.15)',
     darkBorderColor: '#7C3AED',
+  },
+  {
+    id: 'personalPayment',
+    title: 'Personal Payment',
+    description: 'Committee, savings, or personal loan installment',
+    icon: SavingsIcon,
+    color: '#4F46E5',
+    bgColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    darkBgColor: 'rgba(79, 70, 229, 0.15)',
+    darkBorderColor: '#4F46E5',
   },
   {
     id: 'dailySale',

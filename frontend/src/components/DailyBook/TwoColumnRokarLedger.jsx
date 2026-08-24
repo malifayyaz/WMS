@@ -22,6 +22,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import WbSunnyIcon from '@mui/icons-material/WbSunny';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { formatCurrency, formatTime, formatDate } from '../../utils/formatters';
 import { useIsMobile } from '../../hooks/useBreakpoint';
 
@@ -96,8 +97,14 @@ export default function TwoColumnRokarLedger({
   outRows = [],
   onEditRow,
   onDeleteRow,
+  onReturnCheque,
   onAddEntry,
   requireAdmin,
+  inTitle = 'Cash Received',
+  inSubtitle = 'Money In',
+  outTitle = 'Cash Spent',
+  outSubtitle = 'Money Out',
+  mode = 'cash',
 }) {
   const isMobile = useIsMobile();
   const theme = useTheme();
@@ -235,10 +242,10 @@ export default function TwoColumnRokarLedger({
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" fontWeight={700} color={isDark ? '#34D399' : '#047857'}>
-                      Cash Received
+                      {inTitle}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Money In
+                      {inSubtitle}
                     </Typography>
                   </Box>
                 </Stack>
@@ -338,6 +345,9 @@ export default function TwoColumnRokarLedger({
                         </Typography>
                         <Box display="flex" alignItems="center" justifyContent="flex-end" gap={0.5} mt={0.5}>
                           <PaymentBadge method={row.paymentMethod || 'Cash'} />
+                          {row.isChequeReturned && (
+                            <Chip size="small" label="Returned" color="error" variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />
+                          )}
                           {onEditRow && (
                             <Tooltip title="Edit">
                               <IconButton
@@ -349,7 +359,19 @@ export default function TwoColumnRokarLedger({
                               </IconButton>
                             </Tooltip>
                           )}
-                          {onDeleteRow && (
+                          {onReturnCheque && row.paymentMethod === 'Cheque' && !row.isChequeReturned && (
+                            <Tooltip title="Return / bounce this cheque">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={requireAdmin ? requireAdmin(() => onReturnCheque(row)) : () => onReturnCheque(row)}
+                                sx={{ p: 0.25 }}
+                              >
+                                <ReplayIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {onDeleteRow && !row.isContraRow && !row.isExpenseRow && (
                             <Tooltip title="Delete">
                               <IconButton
                                 size="small"
@@ -421,10 +443,10 @@ export default function TwoColumnRokarLedger({
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" fontWeight={700} color={isDark ? '#F87171' : '#B91C1C'}>
-                      Cash Spent
+                      {outTitle}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Money Out
+                      {outSubtitle}
                     </Typography>
                   </Box>
                 </Stack>
@@ -510,6 +532,9 @@ export default function TwoColumnRokarLedger({
                         </Typography>
                         <Box display="flex" alignItems="center" justifyContent="flex-end" gap={0.5} mt={0.5}>
                           <PaymentBadge method={row.paymentMethod || 'Cash'} />
+                          {row.isChequeReturned && (
+                            <Chip size="small" label="Returned" color="error" variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />
+                          )}
                           {onEditRow && (
                             <Tooltip title="Edit">
                               <IconButton
@@ -521,7 +546,19 @@ export default function TwoColumnRokarLedger({
                               </IconButton>
                             </Tooltip>
                           )}
-                          {onDeleteRow && (
+                          {onReturnCheque && row.paymentMethod === 'Cheque' && !row.isChequeReturned && (
+                            <Tooltip title="Return / bounce this cheque">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={requireAdmin ? requireAdmin(() => onReturnCheque(row)) : () => onReturnCheque(row)}
+                                sx={{ p: 0.25 }}
+                              >
+                                <ReplayIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {onDeleteRow && !row.isExpenseRow && (
                             <Tooltip title="Delete">
                               <IconButton
                                 size="small"

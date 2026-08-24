@@ -670,6 +670,81 @@ const getPrevClosing = async (req, res, next) => {
   }
 };
 
+/**
+ * Mark a cheque transaction as returned / bounced.
+ * Records returnDate, returnReason, returnedBy on the original transaction.
+ * Creates a reversal transaction to restore the financial balance.
+ */
+const returnCheque = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { chequeReturnDate, chequeReturnReason, chequeReturnedBy } = req.body;
+
+    const transaction = await Transaction.findById(id);
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+    if (transaction.paymentMethod !== 'Cheque') {
+      return res.status(400).json({ success: false, message: 'Only cheque transactions can be returned' });
+    }
+    if (transaction.isChequeReturned) {
+      return res.status(400).json({ success: false, message: 'This cheque has already been marked as returned' });
+    }
+
+    const returnDate = chequeReturnDate ? new Date(chequeReturnDate) : new Date();
+
+    // Mark original transaction as returned
+    await Transaction.findByIdAndUpdate(id, {
+      isChequeReturned: true,
+      chequeReturnDate: returnDate,
+      chequeReturnReason: chequeReturnReason || '',
+      chequeReturnedBy: chequeReturnedBy || '',
+    });
+
+    // Create a reversal transaction to restore financial balance
+    const reversalType = transaction.transactionType === 'Money In' ? 'Money Out' : 'Money In';
+    const reversal = await Transaction.create({
+      transactionType: reversalType,
+      amount: transaction.amount,
+      paymentMethod: 'Cheque',
+      relatedTo: transaction.relatedTo,
+      relatedId: transaction.relatedId,
+      relatedName: transaction.relatedName,
+      description: `Cheque Return — ${transaction.chequeNumber ? `#${transaction.chequeNumber}` : ''}${chequeReturnReason ? ` (${chequeReturnReason})` : ''}`.trim(),
+      handledBy: chequeReturnedBy || transaction.handledBy,
+      chequeNumber: transaction.chequeNumber,
+      chequeBank: transaction.chequeBank,
+      chequeDate: transaction.chequeDate,
+      chequeType: transaction.chequeType,
+      linkedTransactionId: transaction._id,
+      sourceType: 'Manual',
+      transactionDate: returnDate,
+    });
+
+    // Recalculate party totals if linked to a customer / supplier
+    if (transaction.relatedId && transaction.relatedTo) {
+      await syncPartyTotalsFromTransaction(transaction);
+    }
+
+    await logActivity({
+      req,
+      action: 'UPDATE',
+      module: 'Transaction',
+      description: `Cheque returned — ${transaction.chequeNumber ? `#${transaction.chequeNumber}` : 'unknown'}${chequeReturnReason ? ` — ${chequeReturnReason}` : ''}`,
+      documentId: transaction._id,
+      newValue: { isChequeReturned: true, chequeReturnDate: returnDate, chequeReturnReason, reversalId: reversal._id },
+    });
+
+    res.json({
+      success: true,
+      message: 'Cheque marked as returned and reversal recorded',
+      data: { transaction: await Transaction.findById(id), reversal },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createTransaction,
   updateTransaction,
@@ -686,5 +761,6 @@ module.exports = {
   setCashOpening,
   setCashBreakdownHandler,
   getPrevClosing,
+  returnCheque,
   applyRelatedBalanceImpact,
 };

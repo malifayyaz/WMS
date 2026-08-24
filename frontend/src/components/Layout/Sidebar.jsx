@@ -24,6 +24,9 @@ import FactoryIcon from '@mui/icons-material/Factory';
 import WarehouseIcon from '@mui/icons-material/Warehouse';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import SecurityIcon from '@mui/icons-material/Security';
+import CallReceivedIcon from '@mui/icons-material/CallReceived';
+import CallMadeIcon from '@mui/icons-material/CallMade';
+import SavingsIcon from '@mui/icons-material/Savings';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const drawerWidth = 260;
@@ -32,6 +35,15 @@ const menuGroups = [
   {
     title: 'Overview',
     items: [{ label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> }],
+  },
+  {
+    title: 'Finance Overview',
+    items: [
+      { label: 'Receivables', path: '/receivables', icon: <CallReceivedIcon sx={{ color: '#34D399' }} /> },
+      { label: 'Payables', path: '/payables', icon: <CallMadeIcon sx={{ color: '#F87171' }} /> },
+      { label: 'Personal Payments', path: '/personal-payments', icon: <SavingsIcon sx={{ color: '#818CF8' }} /> },
+      { label: 'Balance Sheet', path: '/balance-sheet', icon: <AccountBalanceIcon sx={{ color: '#60A5FA' }} /> },
+    ],
   },
   {
     title: 'Procurement',

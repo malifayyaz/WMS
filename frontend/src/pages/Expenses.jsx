@@ -436,6 +436,8 @@ export default function Expenses() {
       description: row.description || '',
       amount: row.amount,
       paymentMethod: row.paymentMethod || 'Cash',
+      chequeNumber: row.chequeNumber || '',
+      chequeBank: row.chequeBank || 'MBL',
       addedBy: row.addedBy || '',
       labourName: row.labourName || '',
       coilType: row.coilType || '',

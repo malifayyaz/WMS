@@ -35,6 +35,11 @@ const transactionSchema = new mongoose.Schema(
     chequeDate: Date,
     isEndorsedCheque: { type: Boolean, default: false },
     sourceChequeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cheque' },
+    /** Return / bounce cheque fields */
+    isChequeReturned: { type: Boolean, default: false },
+    chequeReturnDate: Date,
+    chequeReturnReason: String,
+    chequeReturnedBy: String,
     transactionDate: { type: Date, default: Date.now },
   },
   { timestamps: true }
@@ -44,3 +49,4 @@ transactionSchema.index({ transactionDate: -1 });
 transactionSchema.index({ sourceType: 1, sourceId: 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);
+

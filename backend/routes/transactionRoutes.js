@@ -15,6 +15,7 @@ const {
   setCashOpening,
   setCashBreakdownHandler,
   getPrevClosing,
+  returnCheque,
 } = require('../controllers/transactionController');
 const { blockViewer } = require('../middleware/roleMiddleware');
 
@@ -30,6 +31,8 @@ router.post('/bank-book/opening', blockViewer, setBankOpeningBalance);
 router.get('/summary', getSummary);
 router.get('/daily/:date', getDailyTransactions);
 router.route('/').get(getTransactions).post(blockViewer, createTransaction);
+router.put('/:id/return-cheque', blockViewer, returnCheque);
 router.route('/:id').get(getTransactionById).put(blockViewer, updateTransaction).delete(blockViewer, deleteTransaction);
 
 module.exports = router;
+

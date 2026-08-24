@@ -121,6 +121,7 @@ export const transactionsAPI = {
   create: (data) => api.post('/transactions', data),
   update: (id, data) => api.put(`/transactions/${id}`, data),
   delete: (id) => api.delete(`/transactions/${id}`),
+  returnCheque: (id, data) => api.put(`/transactions/${id}/return-cheque`, data),
 };
 
 // Cheques
@@ -224,3 +225,31 @@ export const aiAPI = {
   predictProfit: () => api.get("/ai/predict-profit"),
   parseOrder: (text) => api.post("/ai/parse-order", { text }),
 };
+
+// Receivables
+export const receivablesAPI = {
+  getSummary: (params) => api.get('/receivables/summary', { params }),
+};
+
+// Payables
+export const payablesAPI = {
+  getSummary: (params) => api.get('/payables/summary', { params }),
+};
+
+// Personal Payments
+export const personalPaymentsAPI = {
+  getAll: (params) => api.get('/personal-payments', { params }),
+  create: (data) => api.post('/personal-payments', data),
+  addPayment: (id, data) => api.post(`/personal-payments/${id}/payments`, data),
+  update: (id, data) => api.put(`/personal-payments/${id}`, data),
+  deletePayment: (id, paymentId) => api.delete(`/personal-payments/${id}/payments/${paymentId}`),
+  delete: (id) => api.delete(`/personal-payments/${id}`),
+};
+
+// Balance Sheet
+export const balanceSheetAPI = {
+  get: (params) => api.get('/balance-sheet', { params }),
+};
+
+
+

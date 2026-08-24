@@ -25,6 +25,10 @@ const aiRoutes = require("./routes/aiRoutes");
 const chequeRoutes = require('./routes/chequeRoutes');
 const userRoutes = require('./routes/userRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
+const receivablesRoutes = require('./routes/receivablesRoutes');
+const payablesRoutes = require('./routes/payablesRoutes');
+const personalPaymentRoutes = require('./routes/personalPaymentRoutes');
+const balanceSheetRoutes = require('./routes/balanceSheetRoutes');
 
 const { reconcileAllPendingOrders } = require('./utils/stockService');
 
@@ -81,6 +85,10 @@ app.use("/api/ai", authMiddleware, aiRoutes);
 app.use('/api/cheques', authMiddleware, chequeRoutes);
 app.use('/api/users', authMiddleware, userRoutes);
 app.use('/api/activity-logs', authMiddleware, activityLogRoutes);
+app.use('/api/receivables', authMiddleware, receivablesRoutes);
+app.use('/api/payables', authMiddleware, payablesRoutes);
+app.use('/api/personal-payments', authMiddleware, personalPaymentRoutes);
+app.use('/api/balance-sheet', authMiddleware, balanceSheetRoutes);
 
 app.use(errorHandler);
 
