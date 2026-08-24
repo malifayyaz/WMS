@@ -12,7 +12,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { expensesAPI, configAPI, consumptionAPI } from '../services/api';
+import { expensesAPI, configAPI, consumptionAPI, chequesAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
@@ -57,8 +57,13 @@ const defaultForm = {
   description: '',
   amount: '',
   paymentMethod: 'Cash',
+  chequeType: 'Company Cheque',
+  isEndorsedCheque: false,
+  sourceChequeId: '',
   chequeNumber: '',
   chequeBank: 'MBL',
+  chequeDate: new Date().toISOString().slice(0, 10),
+  receivedFromName: '',
   addedBy: '',
   labourName: '',
   coilType: '',
@@ -88,6 +93,7 @@ export default function Expenses() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [editingId, setEditingId] = useState(null);
+  const [inHandChequesList, setInHandChequesList] = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const [processSubTab, setProcessSubTab] = useState(0);
@@ -426,6 +432,7 @@ export default function Expenses() {
     }
     setForm(base);
     setEditingId(null);
+    chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
     setDialogOpen(true);
   };
 
@@ -436,8 +443,13 @@ export default function Expenses() {
       description: row.description || '',
       amount: row.amount,
       paymentMethod: row.paymentMethod || 'Cash',
+      chequeType: row.chequeType || 'Company Cheque',
+      isEndorsedCheque: Boolean(row.isEndorsedCheque),
+      sourceChequeId: row.sourceChequeId || '',
       chequeNumber: row.chequeNumber || '',
       chequeBank: row.chequeBank || 'MBL',
+      chequeDate: row.chequeDate ? new Date(row.chequeDate).toISOString().slice(0, 10) : (row.expenseDate ? new Date(row.expenseDate).toISOString().slice(0, 10) : ''),
+      receivedFromName: row.receivedFromName || '',
       addedBy: row.addedBy || '',
       labourName: row.labourName || '',
       coilType: row.coilType || '',
@@ -445,6 +457,7 @@ export default function Expenses() {
       expenseDate: row.expenseDate ? new Date(row.expenseDate).toISOString().slice(0, 10) : '',
     });
     setEditingId(row._id);
+    chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
     setDialogOpen(true);
   };
 
@@ -797,6 +810,15 @@ export default function Expenses() {
                     {row.rentalRoute && ` → ${row.rentalRoute}`}
                     {row.labourName && ` (${row.labourName})`}
                     {row.isProcessPurchase && `${row.quantity} ${row.unit || ''}`.trim()}
+                    {row.paymentMethod === 'Cheque' && (
+                      <Chip
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                        label={`Cheque #${row.chequeNumber || ''} (${row.isEndorsedCheque ? 'Endorsed' : row.chequeType || 'Issued'} · ${row.chequeBank || ''})`}
+                        sx={{ fontSize: '0.7rem', height: 20, my: 0.25 }}
+                      />
+                    )}
                     {row.bankTransactionId && (
                       <Typography variant="caption" color="info.main" display="block">Paid via bank transfer</Typography>
                     )}
@@ -1094,31 +1116,156 @@ export default function Expenses() {
           )}
           <FormControl fullWidth margin="dense">
             <InputLabel>Payment Method</InputLabel>
-            <Select value={form.paymentMethod} onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))} label="Payment Method">
+            <Select
+              value={form.paymentMethod}
+              onChange={(e) => {
+                const m = e.target.value;
+                setForm((f) => ({ ...f, paymentMethod: m }));
+                if (m === 'Cheque') {
+                  chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
+                }
+              }}
+              label="Payment Method"
+            >
               {paymentMethods.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
             </Select>
           </FormControl>
+
           {form.paymentMethod === 'Cheque' && (
-            <>
-              <TextField
-                fullWidth
-                size="small"
-                label="Cheque Number *"
-                value={form.chequeNumber}
-                onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
-                margin="dense"
-                placeholder="e.g. 123456"
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="Bank Account *"
-                value={form.chequeBank}
-                onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
-                margin="dense"
-                placeholder="e.g. MBL, UBL, Faisal Bank"
-              />
-            </>
+            <Box sx={{ p: 1.5, my: 1, borderRadius: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.light', display: 'block', mb: 1 }}>
+                Cheque Details
+              </Typography>
+
+              <FormControl fullWidth size="small" margin="dense">
+                <InputLabel>Cheque Source</InputLabel>
+                <Select
+                  value={form.isEndorsedCheque ? 'Customer Cheque' : form.chequeType}
+                  label="Cheque Source"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Customer Cheque') {
+                      setForm((f) => ({ ...f, isEndorsedCheque: true, chequeType: 'Customer Cheque' }));
+                      chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
+                    } else {
+                      setForm((f) => ({ ...f, isEndorsedCheque: false, sourceChequeId: '', chequeType: val }));
+                    }
+                  }}
+                >
+                  <MenuItem value="Customer Cheque">Customer Cheque (Passed / Endorsed)</MenuItem>
+                  <MenuItem value="Company Cheque">Our Company Cheque (Bank Account)</MenuItem>
+                  <MenuItem value="Personal Cheque">Our Personal Cheque</MenuItem>
+                </Select>
+              </FormControl>
+
+              {form.isEndorsedCheque ? (
+                <>
+                  <FormControl fullWidth size="small" margin="dense">
+                    <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                    <Select
+                      value={form.sourceChequeId || ''}
+                      label="Select from In-Hand Cheques (Optional)"
+                      onChange={(e) => {
+                        const chqId = e.target.value;
+                        if (!chqId) {
+                          setForm((f) => ({ ...f, sourceChequeId: '' }));
+                          return;
+                        }
+                        const chosen = inHandChequesList.find((c) => String(c._id) === String(chqId));
+                        setForm((f) => ({
+                          ...f,
+                          sourceChequeId: chqId,
+                          amount: chosen ? String(chosen.amount) : f.amount,
+                          chequeNumber: chosen ? chosen.chequeNumber : f.chequeNumber,
+                          chequeBank: chosen ? chosen.bankName : f.chequeBank,
+                          receivedFromName: chosen ? (chosen.receivedFrom?.partyName || '') : f.receivedFromName,
+                        }));
+                      }}
+                    >
+                      <MenuItem value=""><em>-- Enter Cheque Details Manually Below --</em></MenuItem>
+                      {inHandChequesList.length === 0 ? (
+                        <MenuItem value="" disabled>No in-hand cheques in system (Enter details below)</MenuItem>
+                      ) : (
+                        inHandChequesList.map((c) => (
+                          <MenuItem key={c._id} value={c._id}>
+                            Cheque #{c.chequeNumber} — {c.bankName} — Rs.{c.amount?.toLocaleString()} (from {c.receivedFrom?.partyName || 'Customer'})
+                          </MenuItem>
+                        ))
+                      )}
+                    </Select>
+                  </FormControl>
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Cheque Number *"
+                    value={form.chequeNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                    margin="dense"
+                    placeholder="e.g. 123456"
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Drawer Bank Name *"
+                    value={form.chequeBank}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                    margin="dense"
+                    placeholder="e.g. HBL, MCB, MBL"
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="Cheque Date (Maturity)"
+                    value={form.chequeDate || entryDate}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                    margin="dense"
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Received From Customer (optional)"
+                    value={form.receivedFromName || ''}
+                    onChange={(e) => setForm((f) => ({ ...f, receivedFromName: e.target.value }))}
+                    margin="dense"
+                    placeholder="e.g. Original customer name"
+                  />
+                </>
+              ) : (
+                <>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Our Cheque Number *"
+                    value={form.chequeNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                    margin="dense"
+                    placeholder="e.g. 0987654"
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Our Bank Account *"
+                    value={form.chequeBank}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                    margin="dense"
+                    placeholder="e.g. MBL, UBL, Faisal Bank"
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="Cheque Date (Maturity)"
+                    value={form.chequeDate || entryDate}
+                    onChange={(e) => setForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                    margin="dense"
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </>
+              )}
+            </Box>
           )}
           <TextField fullWidth label="Added By" value={form.addedBy} onChange={(e) => setForm((f) => ({ ...f, addedBy: e.target.value }))} margin="dense" />
         </DialogContent>

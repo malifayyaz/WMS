@@ -15,7 +15,7 @@ const expenseSchema = new mongoose.Schema(
     expenseType: { type: String, enum: ['Salary', 'Bills', 'Maintenance', 'Manufacturing', 'Other'] },
     description: String,
     amount: { type: Number, required: true },
-    paymentMethod: { type: String, enum: ['Cash', 'Bank Transfer', 'Cheque'] },
+    paymentMethod: { type: String, enum: ['Cash', 'Bank Transfer', 'Cheque'], default: 'Cash' },
     expenseDate: { type: Date, default: Date.now },
     addedBy: String,
     labourName: String,
@@ -23,6 +23,17 @@ const expenseSchema = new mongoose.Schema(
     rentalRoute: { type: String, enum: RENTAL_ROUTES },
     /** Set when this expense was created from a bank transfer — prevents double deduction */
     bankTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+    /** Cheque tracking fields */
+    chequeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cheque' },
+    chequeNumber: String,
+    chequeType: { type: String, enum: ['Customer Cheque', 'Company Cheque', 'Personal Cheque'] },
+    chequeBank: String,
+    chequeDate: Date,
+    bankAccount: { type: String, enum: ['MBL', 'UBL', 'Faisal Bank', 'Other'] },
+    bankAccountOtherName: String,
+    isEndorsedCheque: { type: Boolean, default: false },
+    sourceChequeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cheque' },
+    receivedFromName: String,
   },
   { timestamps: true }
 );
@@ -30,5 +41,6 @@ const expenseSchema = new mongoose.Schema(
 expenseSchema.index({ expenseDate: -1 });
 expenseSchema.index({ expenseGroup: 1 });
 expenseSchema.index({ expenseCategory: 1 });
+expenseSchema.index({ chequeId: 1 });
 
 module.exports = mongoose.model('Expense', expenseSchema);

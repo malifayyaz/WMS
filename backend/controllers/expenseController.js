@@ -1,5 +1,6 @@
 const Expense = require('../models/Expense');
 const Transaction = require('../models/Transaction');
+const Cheque = require('../models/Cheque');
 const ConsumptionMaterial = require('../models/ConsumptionMaterial');
 const { startOfDay, endOfDay } = require('date-fns');
 const { CONSUMPTION_MATERIAL_TYPES, SELF_EXPENSE_GROUP, FACTORY_EXPENSE_GROUPS } = require('../utils/wireConfig');
@@ -85,12 +86,73 @@ function buildExpenseFilter(query) {
 const createExpense = async (req, res, next) => {
   try {
     const body = normalizeExpensePayload(req.body);
+
+    if (body.paymentMethod === 'Cheque') {
+      const isEndorsed = body.isEndorsedCheque || body.chequeType === 'Customer Cheque';
+      const chqType = isEndorsed ? 'Customer Cheque' : (body.chequeType || 'Company Cheque');
+      const chqNumber = String(body.chequeNumber || '').trim() || `CHQ-${Date.now().toString().slice(-6)}`;
+      const chqBank = String(body.chequeBank || body.bankAccount || 'Bank').trim();
+      const chqDate = body.chequeDate ? new Date(body.chequeDate) : (body.expenseDate ? new Date(body.expenseDate) : new Date());
+
+      if (isEndorsed && body.sourceChequeId) {
+        const sourceCheque = await Cheque.findById(body.sourceChequeId);
+        if (sourceCheque) {
+          sourceCheque.status = 'Endorsed';
+          sourceCheque.givenTo = {
+            partyType: 'Expense',
+            partyName: body.description || body.expenseCategory || 'Expense',
+            expenseGroup: body.expenseGroup,
+            expenseCategory: body.expenseCategory,
+          };
+          sourceCheque.endorsedDate = body.expenseDate || new Date();
+          await sourceCheque.save();
+          body.chequeId = sourceCheque._id;
+          body.chequeNumber = sourceCheque.chequeNumber;
+          body.chequeBank = sourceCheque.bankName;
+          body.chequeDate = sourceCheque.chequeDate;
+          body.chequeType = 'Customer Cheque';
+          body.isEndorsedCheque = true;
+        }
+      } else if (!body.chequeId) {
+        const newCheque = await Cheque.create({
+          chequeNumber: chqNumber,
+          chequeType: chqType,
+          direction: isEndorsed ? 'Received' : 'Issued',
+          bankName: chqBank,
+          amount: Number(body.amount) || 0,
+          chequeDate: chqDate,
+          issueDate: body.expenseDate || new Date(),
+          status: isEndorsed ? 'Endorsed' : 'Issued',
+          receivedFrom: isEndorsed ? {
+            partyType: 'Customer',
+            partyName: body.receivedFromName || 'Customer',
+          } : undefined,
+          givenTo: {
+            partyType: 'Expense',
+            partyName: body.description || body.expenseCategory || 'Expense',
+            expenseGroup: body.expenseGroup,
+            expenseCategory: body.expenseCategory,
+          },
+          endorsedDate: isEndorsed ? (body.expenseDate || new Date()) : undefined,
+          notes: body.description || '',
+          handledBy: body.addedBy || '',
+        });
+        body.chequeId = newCheque._id;
+        body.chequeNumber = chqNumber;
+        body.chequeBank = chqBank;
+        body.chequeDate = chqDate;
+        body.chequeType = chqType;
+        if (isEndorsed) body.isEndorsedCheque = true;
+      }
+    }
+
     const expense = await Expense.create(body);
+
     await logActivity({
       req,
       action: 'CREATE',
       module: 'Expense',
-      description: `Recorded expense ${expense.expenseCategory || expense.expenseType || 'Expense'} — Rs.${expense.amount}`,
+      description: `Recorded expense ${expense.expenseCategory || expense.expenseType || 'Expense'} — Rs.${expense.amount} (${expense.paymentMethod || 'Cash'})`,
       documentId: expense._id,
       newValue: expense,
     });
@@ -104,7 +166,7 @@ const createExpense = async (req, res, next) => {
 };
 
 const EXPENSE_LIST_FIELDS =
-  'expenseGroup expenseCategory expenseType description amount paymentMethod expenseDate addedBy labourName coilType rentalRoute bankTransactionId';
+  'expenseGroup expenseCategory expenseType description amount paymentMethod expenseDate addedBy labourName coilType rentalRoute bankTransactionId chequeId chequeNumber chequeType chequeBank chequeDate isEndorsedCheque sourceChequeId receivedFromName';
 const PROCESS_LIST_FIELDS = 'materialType purchaseDate totalCost notes quantity unit';
 
 /**
@@ -407,6 +469,18 @@ const deleteExpense = async (req, res, next) => {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ success: false, error: 'Not found', message: 'Expense not found' });
+
+    if (expense.chequeId) {
+      if (expense.isEndorsedCheque) {
+        await Cheque.findByIdAndUpdate(expense.chequeId, {
+          status: 'In Hand',
+          givenTo: undefined,
+          endorsedDate: undefined,
+        });
+      } else {
+        await Cheque.findByIdAndDelete(expense.chequeId);
+      }
+    }
 
     if (expense.bankTransactionId) {
       const txn = await Transaction.findById(expense.bankTransactionId);
