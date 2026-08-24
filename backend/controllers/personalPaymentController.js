@@ -1,4 +1,5 @@
 const PersonalPayment = require('../models/PersonalPayment');
+const Cheque = require('../models/Cheque');
 const { logActivity } = require('../utils/activityLogService');
 
 /**
@@ -131,7 +132,21 @@ exports.create = async (req, res, next) => {
 exports.addPayment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { amount, paymentDate, paymentMethod, chequeNumber, bankName, paidBy, note } = req.body;
+    const {
+      amount,
+      paymentDate,
+      paymentMethod,
+      chequeNumber,
+      chequeType,
+      chequeBank,
+      chequeDate,
+      isEndorsedCheque,
+      sourceChequeId,
+      receivedFromName,
+      bankName,
+      paidBy,
+      note,
+    } = req.body;
 
     if (!amount || Number(amount) <= 0) {
       return res.status(400).json({ success: false, message: 'Valid payment amount is required.' });
@@ -142,12 +157,76 @@ exports.addPayment = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Personal payment category not found.' });
     }
 
+    let resolvedChequeId = null;
+    let finalChequeNum = chequeNumber || '';
+    let finalChequeBank = chequeBank || bankName || '';
+    let finalChequeType = chequeType || 'Company Cheque';
+    let finalIsEndorsed = Boolean(isEndorsedCheque || chequeType === 'Customer Cheque');
+
+    if (paymentMethod === 'Cheque') {
+      const chqDate = chequeDate ? new Date(chequeDate) : (paymentDate ? new Date(paymentDate) : new Date());
+      finalChequeNum = String(chequeNumber || '').trim() || `CHQ-${Date.now().toString().slice(-6)}`;
+      finalChequeBank = String(chequeBank || bankName || 'Bank').trim();
+
+      if (finalIsEndorsed && sourceChequeId) {
+        const sourceCheque = await Cheque.findById(sourceChequeId);
+        if (sourceCheque) {
+          sourceCheque.status = 'Endorsed';
+          sourceCheque.givenTo = {
+            partyType: 'Other',
+            partyName: item.categoryName,
+            expenseGroup: 'Personal',
+            expenseCategory: item.categoryType,
+          };
+          sourceCheque.endorsedDate = paymentDate || new Date();
+          await sourceCheque.save();
+          resolvedChequeId = sourceCheque._id;
+          finalChequeNum = sourceCheque.chequeNumber;
+          finalChequeBank = sourceCheque.bankName;
+          finalChequeType = 'Customer Cheque';
+          finalIsEndorsed = true;
+        }
+      } else {
+        const newCheque = await Cheque.create({
+          chequeNumber: finalChequeNum,
+          chequeType: finalIsEndorsed ? 'Customer Cheque' : finalChequeType,
+          direction: finalIsEndorsed ? 'Received' : 'Issued',
+          bankName: finalChequeBank,
+          amount: Number(amount) || 0,
+          chequeDate: chqDate,
+          issueDate: paymentDate || new Date(),
+          status: finalIsEndorsed ? 'Endorsed' : 'Issued',
+          receivedFrom: finalIsEndorsed ? {
+            partyType: 'Customer',
+            partyName: receivedFromName || 'Customer',
+          } : undefined,
+          givenTo: {
+            partyType: 'Other',
+            partyName: item.categoryName,
+            expenseGroup: 'Personal',
+            expenseCategory: item.categoryType,
+          },
+          endorsedDate: finalIsEndorsed ? (paymentDate || new Date()) : undefined,
+          notes: note || `Personal payment: ${item.categoryName}`,
+          handledBy: paidBy || '',
+        });
+        resolvedChequeId = newCheque._id;
+      }
+    }
+
     item.payments.push({
       amount: Number(amount),
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMethod: paymentMethod || 'Cash',
-      chequeNumber: chequeNumber || '',
-      bankName: bankName || '',
+      chequeId: resolvedChequeId,
+      chequeNumber: finalChequeNum,
+      chequeType: finalChequeType,
+      chequeBank: finalChequeBank,
+      chequeDate: chequeDate ? new Date(chequeDate) : undefined,
+      isEndorsedCheque: finalIsEndorsed,
+      sourceChequeId: sourceChequeId || undefined,
+      receivedFromName: receivedFromName || '',
+      bankName: finalChequeBank,
       paidBy: paidBy || req.user?.name || req.user?.username || '',
       note: note || '',
     });
@@ -158,7 +237,7 @@ exports.addPayment = async (req, res, next) => {
       req,
       action: 'UPDATE',
       module: 'PersonalPayment',
-      description: `Recorded payment of Rs. ${amount} for ${item.categoryName}`,
+      description: `Recorded payment of Rs. ${amount} for ${item.categoryName} (${paymentMethod || 'Cash'})`,
       documentId: item._id,
       newValue: item,
     });
@@ -241,6 +320,19 @@ exports.deletePayment = async (req, res, next) => {
     const item = await PersonalPayment.findById(id);
     if (!item) {
       return res.status(404).json({ success: false, message: 'Category not found.' });
+    }
+
+    const pEntry = item.payments.find((p) => String(p._id) === String(paymentId));
+    if (pEntry && pEntry.chequeId) {
+      if (pEntry.isEndorsedCheque) {
+        await Cheque.findByIdAndUpdate(pEntry.chequeId, {
+          status: 'In Hand',
+          givenTo: undefined,
+          endorsedDate: undefined,
+        });
+      } else {
+        await Cheque.findByIdAndDelete(pEntry.chequeId);
+      }
     }
 
     item.payments = item.payments.filter((p) => String(p._id) !== String(paymentId));
