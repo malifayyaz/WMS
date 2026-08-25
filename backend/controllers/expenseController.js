@@ -53,6 +53,23 @@ function normalizeExpensePayload(payload) {
     throw err;
   }
 
+  // Prevent enum / ObjectId validation errors from blank fields in UI.
+  if (!body.sourceChequeId || String(body.sourceChequeId).trim() === '') delete body.sourceChequeId;
+  if (!body.chequeId || String(body.chequeId).trim() === '') delete body.chequeId;
+  if (!body.bankTransactionId || String(body.bankTransactionId).trim() === '') delete body.bankTransactionId;
+  if (!body.chequeDate || String(body.chequeDate).trim() === '') delete body.chequeDate;
+
+  if (body.paymentMethod !== 'Cheque') {
+    delete body.sourceChequeId;
+    delete body.chequeId;
+    delete body.chequeNumber;
+    delete body.chequeType;
+    delete body.chequeBank;
+    delete body.chequeDate;
+    delete body.isEndorsedCheque;
+    delete body.receivedFromName;
+  }
+
   // Prevent enum validation errors from blank selects in UI.
   if (!body.coilType) delete body.coilType;
   if (!body.rentalRoute) delete body.rentalRoute;

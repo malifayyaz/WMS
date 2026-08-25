@@ -25,9 +25,7 @@ function sumTransactions(txs) {
       t.paymentMethod === 'Cheque' &&
       t.transactionType === 'Money Out' &&
       !t.isEndorsedCheque &&
-      t.chequeType !== 'Customer Cheque' &&
-      ['Company Cheque', 'Personal Cheque'].includes(t.chequeType) &&
-      Boolean(t.bankAccount);
+      t.chequeType !== 'Customer Cheque';
 
     if (isBankTransfer || isOurIssuedBankCheque) {
       // Bank balance tracking (Electronic transfers & our issued company/personal bank cheques)

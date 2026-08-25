@@ -85,6 +85,17 @@ const ENTRY_OPTIONS = [
     darkBgColor: 'rgba(217, 119, 6, 0.15)',
     darkBorderColor: '#D97706',
   },
+  {
+    id: 'selfCheque',
+    title: 'Draw Bank Cheque to Hand',
+    description: 'Issue own bank cheque into in-hand custody to use later',
+    icon: ReceiptLongIcon,
+    color: '#0D9488',
+    bgColor: '#F0FDFA',
+    borderColor: '#99F6E4',
+    darkBgColor: 'rgba(13, 148, 136, 0.15)',
+    darkBorderColor: '#0D9488',
+  },
 ];
 
 export default function QuickAddEntryDialog({ open, onClose, onSelectOption }) {

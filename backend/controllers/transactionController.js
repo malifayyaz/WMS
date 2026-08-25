@@ -144,6 +144,95 @@ const createTransaction = async (req, res, next) => {
       });
       return res.status(201).json({ success: true, data, message });
     }
+    if (body.entryKind === 'SelfChequeWithdrawal') {
+      const amount = Number(body.amount);
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid cheque amount required' });
+      }
+      const bankAccount = body.bankAccount || 'MBL';
+      if (bankAccount === 'Other' && !String(body.bankAccountOtherName || '').trim()) {
+        return res.status(400).json({ success: false, message: 'Please specify bank name for Other' });
+      }
+      const chqNumber = String(body.chequeNumber || '').trim();
+      if (!chqNumber) {
+        return res.status(400).json({ success: false, message: 'Cheque number is required' });
+      }
+      const chqType = body.chequeType || 'Company Cheque';
+      const note = String(body.description || '').trim();
+      const txnDate = body.transactionDate || new Date();
+      const chqDate = body.chequeDate ? new Date(body.chequeDate) : txnDate;
+      const bankLabel = bankAccount === 'Other' ? body.bankAccountOtherName.trim() : bankAccount;
+
+      // 1. Create Cheque document in 'In Hand' status
+      const inHandCheque = await Cheque.create({
+        chequeNumber: chqNumber,
+        chequeType: chqType,
+        direction: 'Received',
+        bankName: bankLabel,
+        amount,
+        chequeDate: chqDate,
+        receivedDate: txnDate,
+        issueDate: txnDate,
+        status: 'In Hand',
+        receivedFrom: {
+          partyType: 'Other',
+          partyName: `Own Bank (${bankLabel})`,
+        },
+        notes: note ? `Self Cheque drawn from ${bankLabel}: ${note}` : `Self Cheque drawn from ${bankLabel} to in-hand custody`,
+        handledBy: body.handledBy || '',
+      });
+
+      // 2. Create Bank Money Out Transaction (Money deducted from Bank)
+      const bankTxn = await Transaction.create({
+        transactionType: 'Money Out',
+        amount,
+        paymentMethod: 'Bank Transfer',
+        relatedTo: 'Other',
+        relatedName: 'Cheques in Hand',
+        description: note ? `Cheque #${chqNumber} drawn from ${bankLabel}: ${note}` : `Self Cheque #${chqNumber} drawn from ${bankLabel} to in-hand custody`,
+        handledBy: body.handledBy || '',
+        sourceType: 'Manual',
+        bankAccount,
+        bankAccountOtherName: bankAccount === 'Other' ? body.bankAccountOtherName.trim() : undefined,
+        chequeId: inHandCheque._id,
+        chequeNumber: chqNumber,
+        transactionDate: txnDate,
+      });
+
+      // 3. Create In-Hand Cheque Money In Transaction (Added to in-hand custody)
+      const cashTxn = await Transaction.create({
+        transactionType: 'Money In',
+        amount,
+        paymentMethod: 'Cheque',
+        chequeId: inHandCheque._id,
+        chequeNumber: chqNumber,
+        chequeType: chqType,
+        chequeBank: bankLabel,
+        chequeDate: chqDate,
+        relatedTo: 'Other',
+        relatedName: `Own Bank (${bankLabel})`,
+        description: note ? `Cheque #${chqNumber} (${bankLabel}) in hand: ${note}` : `Self Cheque #${chqNumber} (${bankLabel}) drawn into hand`,
+        handledBy: body.handledBy || '',
+        sourceType: 'Manual',
+        transactionDate: txnDate,
+        linkedTransactionId: bankTxn._id,
+      });
+
+      await Transaction.findByIdAndUpdate(bankTxn._id, { linkedTransactionId: cashTxn._id });
+      await Cheque.findByIdAndUpdate(inHandCheque._id, { transactionId: cashTxn._id });
+
+      const message = `Self Cheque #${chqNumber} (Rs.${amount}) drawn from ${bankLabel} — deducted from Bank and added to In-Hand Cheques`;
+
+      await logActivity({
+        req,
+        action: 'CREATE',
+        module: 'Transaction',
+        description: message,
+        documentId: bankTxn._id,
+      });
+
+      return res.status(201).json({ success: true, data: inHandCheque, message });
+    }
     if (['Customer', 'Supplier'].includes(body.relatedTo) && !body.relatedId) {
       return res.status(400).json({
         success: false,

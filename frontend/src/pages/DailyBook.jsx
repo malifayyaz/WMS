@@ -307,6 +307,18 @@ export default function DailyBook() {
     description: '',
     transactionDate: '',
   });
+  const [selfChequeDialogOpen, setSelfChequeDialogOpen] = useState(false);
+  const [selfChequeForm, setSelfChequeForm] = useState({
+    amount: '',
+    bankAccount: 'MBL',
+    bankAccountOtherName: '',
+    chequeType: 'Company Cheque',
+    chequeNumber: '',
+    chequeDate: '',
+    transactionDate: '',
+    handledBy: '',
+    description: '',
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [generalCashMode, setGeneralCashMode] = useState(false);
   const [selfExpenseMenuAnchor, setSelfExpenseMenuAnchor] = useState(null);
@@ -894,6 +906,56 @@ export default function DailyBook() {
     }
   };
 
+  const openSelfChequeDialog = () => {
+    setSelfChequeForm({
+      amount: '',
+      bankAccount: 'MBL',
+      bankAccountOtherName: '',
+      chequeType: 'Company Cheque',
+      chequeNumber: '',
+      chequeDate: entryDate,
+      transactionDate: entryDate,
+      handledBy: '',
+      description: '',
+    });
+    setSelfChequeDialogOpen(true);
+  };
+
+  const handleSaveSelfChequeWithdrawal = async () => {
+    if (!Number(selfChequeForm.amount) || Number(selfChequeForm.amount) <= 0) {
+      setSnack({ open: true, message: 'Valid cheque amount required', severity: 'error' });
+      return;
+    }
+    if (!selfChequeForm.chequeNumber?.trim()) {
+      setSnack({ open: true, message: 'Cheque number is required', severity: 'error' });
+      return;
+    }
+    if (selfChequeForm.bankAccount === 'Other' && !selfChequeForm.bankAccountOtherName?.trim()) {
+      setSnack({ open: true, message: 'Please write the bank name for Other', severity: 'error' });
+      return;
+    }
+    try {
+      const payload = {
+        entryKind: 'SelfChequeWithdrawal',
+        amount: Number(selfChequeForm.amount),
+        bankAccount: selfChequeForm.bankAccount || 'MBL',
+        bankAccountOtherName: selfChequeForm.bankAccount === 'Other' ? selfChequeForm.bankAccountOtherName.trim() : undefined,
+        chequeType: selfChequeForm.chequeType || 'Company Cheque',
+        chequeNumber: selfChequeForm.chequeNumber.trim(),
+        chequeDate: selfChequeForm.chequeDate || entryDate,
+        transactionDate: selfChequeForm.transactionDate || entryDate,
+        handledBy: selfChequeForm.handledBy || undefined,
+        description: selfChequeForm.description || undefined,
+      };
+      const res = await transactionsAPI.create(payload);
+      setSnack({ open: true, message: res.data.message || 'Self cheque drawn into in-hand custody', severity: 'success' });
+      setSelfChequeDialogOpen(false);
+      fetchData();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
+    }
+  };
+
   const handleSaveBankTransfer = async () => {
     const {
       transactionType, amount, personType, relatedId, relatedName,
@@ -1081,12 +1143,37 @@ export default function DailyBook() {
 
     // 1. Cash, Cheque & Bank transactions
     (list || []).forEach((t) => {
-      if (t.paymentMethod === 'Cash' || t.paymentMethod === 'Cheque') {
+      const isOurIssuedBankCheque =
+        t.paymentMethod === 'Cheque' &&
+        t.transactionType === 'Money Out' &&
+        !t.isEndorsedCheque &&
+        t.chequeType !== 'Customer Cheque';
+
+      if (t.paymentMethod === 'Cash' || (t.paymentMethod === 'Cheque' && !isOurIssuedBankCheque)) {
+        // Physical cash & in-hand customer cheques passed/received
         if (t.transactionType === 'Money In') {
           inRows.push(t);
         } else {
           outRows.push(t);
         }
+      } else if (isOurIssuedBankCheque && includeBank) {
+        const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || t.chequeBank || t.bankName || 'MBL');
+        // Inflow contra: Drawn from bank account
+        inRows.push({
+          _id: `contra-chq-out-${t._id}`,
+          transactionType: 'Money In',
+          amount: t.amount,
+          paymentMethod: 'Bank Transfer',
+          bankAccount: t.bankAccount || t.chequeBank || 'MBL',
+          bankAccountOtherName: t.bankAccountOtherName,
+          relatedName: `Bank Cheque (${bankName})`,
+          description: `Cheque #${t.chequeNumber || ''} · ${t.relatedName || t.relatedTo || t.description || 'Cheque Payment'}`,
+          transactionDate: t.transactionDate || t.date,
+          isContraRow: true,
+          originalTxn: t,
+        });
+        // Outflow: Paid via our bank cheque
+        outRows.push(t);
       } else if (t.paymentMethod === 'Bank Transfer' && includeBank) {
         const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || 'MBL');
         if (t.transactionType === 'Money In') {
@@ -1303,6 +1390,8 @@ export default function DailyBook() {
       openDailySaleDialog();
     } else if (optionId === 'bankAtm') {
       openBankTransferDialog();
+    } else if (optionId === 'selfCheque') {
+      openSelfChequeDialog();
     }
   };
 
@@ -2535,7 +2624,7 @@ export default function DailyBook() {
           }
           totalOut={
             cashBankTab === 'combined'
-              ? (cashBook?.totalOut || 0) + (bankBook?.totalIn || 0)
+              ? (cashBook?.totalOut || 0) + (bankBook?.totalOut || 0)
               : cashBankTab === 'bank'
               ? (bankBook?.totalOut || 0)
               : (cashBook?.totalOut || 0)
@@ -2555,7 +2644,7 @@ export default function DailyBook() {
           }
           factoryExpense={factoryCashOut}
           selfExpense={selfCashOut}
-          bankOut={bankBook?.totalIn || 0}
+          bankOut={bankBook?.totalOut || 0}
           bankIn={bankBook?.totalIn || 0}
           entryDate={entryDate}
         />
@@ -2726,6 +2815,15 @@ export default function DailyBook() {
                 </Button>
                 <Button variant="outlined" size={btnSize} startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
                   ATM Withdrawal
+                </Button>
+                <Button
+                  variant="outlined"
+                  size={btnSize}
+                  startIcon={<ReceiptLongIcon sx={{ color: '#0D9488' }} />}
+                  onClick={requireAdmin(openSelfChequeDialog)}
+                  sx={{ ...toolbarBtn, borderColor: '#0D9488', color: isDark ? '#5EEAD4' : '#0F766E' }}
+                >
+                  Draw Self Cheque
                 </Button>
               </ToolbarSection>
               <ToolbarSection label="Personal">
@@ -5695,6 +5793,117 @@ export default function DailyBook() {
         <DialogActions>
           <Button onClick={() => setAtmDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="warning" onClick={handleSaveAtmWithdrawal}>Record ATM Withdrawal</Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Draw Self Bank Cheque to In-Hand Dialog */}
+      <ResponsiveDialog
+        open={selfChequeDialogOpen}
+        onClose={() => setSelfChequeDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ReceiptLongIcon sx={{ color: '#0D9488' }} />
+          Draw Bank Cheque to In-Hand
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This writes a cheque from your bank account, deducts the amount from your bank balance, and keeps the cheque active in your <strong>In-Hand Cheques</strong> list so you can pass/endorse it later to any supplier, customer, or expense.
+          </Alert>
+          <TextField
+            fullWidth
+            type="number"
+            label="Cheque Amount (Rs.) *"
+            value={selfChequeForm.amount}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, amount: e.target.value }))}
+            margin="dense"
+            autoFocus
+            required
+          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Drawn From Bank Account</InputLabel>
+            <Select
+              value={selfChequeForm.bankAccount}
+              label="Drawn From Bank Account"
+              onChange={(e) => setSelfChequeForm((f) => ({ ...f, bankAccount: e.target.value }))}
+            >
+              {BANK_ACCOUNTS.map((b) => (
+                <MenuItem key={b} value={b}>{b === 'Other' ? 'Other Bank' : b}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {selfChequeForm.bankAccount === 'Other' && (
+            <TextField
+              fullWidth
+              label="Other Bank Name *"
+              value={selfChequeForm.bankAccountOtherName}
+              onChange={(e) => setSelfChequeForm((f) => ({ ...f, bankAccountOtherName: e.target.value }))}
+              margin="dense"
+              placeholder="e.g. HBL, MCB"
+              required
+            />
+          )}
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Cheque Type</InputLabel>
+            <Select
+              value={selfChequeForm.chequeType}
+              label="Cheque Type"
+              onChange={(e) => setSelfChequeForm((f) => ({ ...f, chequeType: e.target.value }))}
+            >
+              <MenuItem value="Company Cheque">Company Cheque</MenuItem>
+              <MenuItem value="Personal Cheque">Personal Cheque</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            fullWidth
+            label="Cheque Number *"
+            value={selfChequeForm.chequeNumber}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+            margin="dense"
+            placeholder="e.g. 048291"
+            required
+          />
+          <TextField
+            fullWidth
+            type="date"
+            label="Cheque Maturity Date"
+            value={selfChequeForm.chequeDate}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, chequeDate: e.target.value }))}
+            margin="dense"
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            fullWidth
+            type="date"
+            label="Issue / Transaction Date"
+            value={selfChequeForm.transactionDate}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, transactionDate: e.target.value }))}
+            margin="dense"
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            fullWidth
+            label="Handled By / Drawn By (optional)"
+            value={selfChequeForm.handledBy}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, handledBy: e.target.value }))}
+            margin="dense"
+            placeholder="e.g. Faisal, Fayyaz"
+          />
+          <TextField
+            fullWidth
+            label="Description / Notes (optional)"
+            value={selfChequeForm.description}
+            onChange={(e) => setSelfChequeForm((f) => ({ ...f, description: e.target.value }))}
+            margin="dense"
+            placeholder="e.g. Drawn for upcoming raw material purchase"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelfChequeDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" sx={{ bgcolor: '#0D9488', '&:hover': { bgcolor: '#0F766E' } }} onClick={handleSaveSelfChequeWithdrawal}>
+            Draw Cheque to Hand
+          </Button>
         </DialogActions>
       </ResponsiveDialog>
 

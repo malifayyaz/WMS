@@ -82,7 +82,6 @@ const getCheques = async (req, res, next) => {
 const getInHandCheques = async (req, res, next) => {
   try {
     const cheques = await Cheque.find({
-      direction: 'Received',
       status: 'In Hand',
     })
       .sort({ chequeDate: 1, createdAt: 1 })

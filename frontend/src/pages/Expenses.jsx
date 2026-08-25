@@ -467,7 +467,15 @@ export default function Expenses() {
       return;
     }
     try {
-      const payload = { ...form, amount: Number(form.amount), expenseDate: editingId ? form.expenseDate : entryDate };
+      const payload = {
+        ...form,
+        amount: Number(form.amount),
+        expenseDate: editingId ? form.expenseDate : entryDate,
+        sourceChequeId: form.sourceChequeId ? form.sourceChequeId : undefined,
+        chequeId: form.chequeId ? form.chequeId : undefined,
+        bankTransactionId: form.bankTransactionId ? form.bankTransactionId : undefined,
+        chequeDate: form.chequeDate ? form.chequeDate : undefined,
+      };
       if (editingId) await expensesAPI.update(editingId, payload);
       else await expensesAPI.create(payload);
       setSnack({ open: true, message: editingId ? 'Updated' : 'Recorded', severity: 'success' });
