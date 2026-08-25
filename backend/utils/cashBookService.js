@@ -20,19 +20,11 @@ function sumTransactions(txs) {
   let bankIn = 0;
   let bankOut = 0;
   txs.forEach((t) => {
-    const isBankTransfer = t.paymentMethod === 'Bank Transfer';
-    const isOurIssuedBankCheque =
-      t.paymentMethod === 'Cheque' &&
-      t.transactionType === 'Money Out' &&
-      !t.isEndorsedCheque &&
-      t.chequeType !== 'Customer Cheque';
-
-    if (isBankTransfer || isOurIssuedBankCheque) {
-      // Bank balance tracking (Electronic transfers & our issued company/personal bank cheques)
+    if (t.paymentMethod === 'Bank Transfer') {
+      // Bank transfers track a separate balance — excluded from cash in hand
       if (t.transactionType === 'Money In') bankIn += t.amount || 0;
       else bankOut += t.amount || 0;
     } else {
-      // Physical Cash and all Customer Cheques (received in & passed/endorsed out) count in Cash in Hand!
       if (t.transactionType === 'Money In') totalIn += t.amount || 0;
       else totalOut += t.amount || 0;
     }
