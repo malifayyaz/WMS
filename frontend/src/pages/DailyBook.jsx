@@ -5814,11 +5814,43 @@ export default function DailyBook() {
                     }}
                     label="Payment Method"
                   >
-                    <MenuItem value="Cash">Cash</MenuItem>
-                    <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                    <MenuItem value="Cash">Cash (Cash in Hand)</MenuItem>
+                    <MenuItem value="Bank Transfer">Bank Transfer (Bank Account)</MenuItem>
                     <MenuItem value="Cheque">Cheque</MenuItem>
                   </Select>
                 </FormControl>
+
+                {personalPaymentForm.paymentMethod === 'Bank Transfer' && (
+                  <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF', border: '1px solid', borderColor: isDark ? 'rgba(59, 130, 246, 0.25)' : '#BFDBFE' }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block', mb: 1 }}>
+                      Bank Account Selection
+                    </Typography>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Paid From Bank Account</InputLabel>
+                      <Select
+                        value={personalPaymentForm.bankAccount || 'MBL'}
+                        onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, bankAccount: e.target.value })}
+                        label="Paid From Bank Account"
+                      >
+                        <MenuItem value="MBL">Meezan Bank (MBL)</MenuItem>
+                        <MenuItem value="UBL">United Bank (UBL)</MenuItem>
+                        <MenuItem value="Faisal Bank">Faisal Bank</MenuItem>
+                        <MenuItem value="Other">Other Bank</MenuItem>
+                      </Select>
+                    </FormControl>
+                    {personalPaymentForm.bankAccount === 'Other' && (
+                      <TextField
+                        label="Other Bank Account Name"
+                        value={personalPaymentForm.bankAccountOtherName || ''}
+                        onChange={(e) => setPersonalPaymentForm({ ...personalPaymentForm, bankAccountOtherName: e.target.value })}
+                        fullWidth
+                        size="small"
+                        sx={{ mt: 1 }}
+                        placeholder="e.g. HBL, MCB"
+                      />
+                    )}
+                  </Box>
+                )}
 
                 {personalPaymentForm.paymentMethod === 'Cheque' && (
                   <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>

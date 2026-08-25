@@ -13,7 +13,7 @@ const transactionSchema = new mongoose.Schema(
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
     sourceType: {
       type: String,
-      enum: ['Expense', 'Order', 'RawMaterial', 'ConsumptionMaterial', 'Manual'],
+      enum: ['Expense', 'Order', 'RawMaterial', 'ConsumptionMaterial', 'PersonalPayment', 'Manual'],
     },
     sourceId: mongoose.Schema.Types.ObjectId,
     expenseGroup: String,

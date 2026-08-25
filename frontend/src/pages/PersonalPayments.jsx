@@ -95,6 +95,7 @@ export default function PersonalPayments() {
     personName: '',
     expectedLumpSum: '',
     monthlyAmount: '',
+    startDate: new Date().toISOString().slice(0, 10),
     expectedReceiveDate: '',
     receivedVia: 'Cash',
     receivedBankAccount: 'MBL',
@@ -113,6 +114,8 @@ export default function PersonalPayments() {
     amount: '',
     paymentDate: new Date().toISOString().slice(0, 10),
     paymentMethod: 'Cash',
+    bankAccount: 'MBL',
+    bankAccountOtherName: '',
     chequeType: 'Company Cheque',
     isEndorsedCheque: false,
     sourceChequeId: '',
@@ -168,6 +171,7 @@ export default function PersonalPayments() {
       personName: '',
       expectedLumpSum: '',
       monthlyAmount: '',
+      startDate: new Date().toISOString().slice(0, 10),
       expectedReceiveDate: '',
       receivedVia: 'Cash',
       receivedBankAccount: 'MBL',
@@ -189,6 +193,7 @@ export default function PersonalPayments() {
       personName: cat.personName || '',
       expectedLumpSum: String(cat.expectedLumpSum || ''),
       monthlyAmount: String(cat.monthlyAmount || ''),
+      startDate: cat.startDate ? new Date(cat.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       expectedReceiveDate: cat.expectedReceiveDate ? new Date(cat.expectedReceiveDate).toISOString().slice(0, 10) : '',
       receivedVia: cat.receivedVia || 'Cash',
       receivedBankAccount: cat.receivedBankAccount || 'MBL',
@@ -227,6 +232,8 @@ export default function PersonalPayments() {
       amount: cat.monthlyAmount ? String(cat.monthlyAmount) : '',
       paymentDate: new Date().toISOString().slice(0, 10),
       paymentMethod: 'Cash',
+      bankAccount: 'MBL',
+      bankAccountOtherName: '',
       chequeType: 'Company Cheque',
       isEndorsedCheque: false,
       sourceChequeId: '',
@@ -782,14 +789,28 @@ export default function PersonalPayments() {
               </Grid>
             </Grid>
 
-            <TextField
-              label="Expected Return / Due Date"
-              type="date"
-              value={categoryForm.expectedReceiveDate}
-              onChange={(e) => setCategoryForm({ ...categoryForm, expectedReceiveDate: e.target.value })}
-              fullWidth
-              InputLabelProps={{ shrink: true }}
-            />
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  label={categoryForm.paymentDirection === 'Payable' ? 'Date Loan Received / Taken *' : 'Date Started / Given *'}
+                  type="date"
+                  value={categoryForm.startDate || ''}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, startDate: e.target.value })}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="Expected Return / Due Date"
+                  type="date"
+                  value={categoryForm.expectedReceiveDate || ''}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, expectedReceiveDate: e.target.value })}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+            </Grid>
 
             {/* Loan Received Method Options (For Payable / Loan Taken) */}
             {categoryForm.paymentDirection === 'Payable' && (
@@ -944,11 +965,43 @@ export default function PersonalPayments() {
                 }}
                 label="Payment Method"
               >
-                <MenuItem value="Cash">Cash</MenuItem>
-                <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                <MenuItem value="Cash">Cash (Cash in Hand)</MenuItem>
+                <MenuItem value="Bank Transfer">Bank Transfer (Bank Account)</MenuItem>
                 <MenuItem value="Cheque">Cheque</MenuItem>
               </Select>
             </FormControl>
+
+            {paymentForm.paymentMethod === 'Bank Transfer' && (
+              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF', border: '1px solid', borderColor: isDark ? 'rgba(59, 130, 246, 0.25)' : '#BFDBFE' }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block', mb: 1 }}>
+                  Bank Account Selection
+                </Typography>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Paid From Bank Account</InputLabel>
+                  <Select
+                    value={paymentForm.bankAccount || 'MBL'}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, bankAccount: e.target.value })}
+                    label="Paid From Bank Account"
+                  >
+                    <MenuItem value="MBL">Meezan Bank (MBL)</MenuItem>
+                    <MenuItem value="UBL">United Bank (UBL)</MenuItem>
+                    <MenuItem value="Faisal Bank">Faisal Bank</MenuItem>
+                    <MenuItem value="Other">Other Bank</MenuItem>
+                  </Select>
+                </FormControl>
+                {paymentForm.bankAccount === 'Other' && (
+                  <TextField
+                    label="Other Bank Account Name"
+                    value={paymentForm.bankAccountOtherName || ''}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountOtherName: e.target.value })}
+                    fullWidth
+                    size="small"
+                    sx={{ mt: 1 }}
+                    placeholder="e.g. HBL, MCB"
+                  />
+                )}
+              </Box>
+            )}
 
             {paymentForm.paymentMethod === 'Cheque' && (
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>

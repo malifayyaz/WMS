@@ -1,6 +1,8 @@
 const PersonalPayment = require('../models/PersonalPayment');
 const Cheque = require('../models/Cheque');
+const Transaction = require('../models/Transaction');
 const { logActivity } = require('../utils/activityLogService');
+const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
 
 /**
  * GET /api/personal-payments
@@ -80,6 +82,7 @@ exports.create = async (req, res, next) => {
       categoryType = 'Committee',
       personName,
       expectedLumpSum,
+      startDate,
       expectedReceiveDate,
       monthlyAmount,
       receivedVia = 'Cash',
@@ -88,6 +91,7 @@ exports.create = async (req, res, next) => {
       receivedChequeNumber,
       receivedChequeBank,
       receivedChequeDate,
+      recordInitialReceipt = true,
       notes,
     } = req.body;
 
@@ -104,6 +108,7 @@ exports.create = async (req, res, next) => {
       categoryType,
       personName,
       expectedLumpSum: Number(expectedLumpSum),
+      startDate: startDate ? new Date(startDate) : new Date(),
       expectedReceiveDate: expectedReceiveDate ? new Date(expectedReceiveDate) : null,
       monthlyAmount: Number(monthlyAmount) || 0,
       receivedVia,
@@ -112,11 +117,40 @@ exports.create = async (req, res, next) => {
       receivedChequeNumber,
       receivedChequeBank,
       receivedChequeDate: receivedChequeDate ? new Date(receivedChequeDate) : null,
+      recordInitialReceipt: Boolean(recordInitialReceipt),
       notes,
       createdBy: req.user?.username || req.user?.name || 'User',
     });
 
     await item.save();
+
+    // If this is a Payable (Loan Taken) and we received funds, record Money In transaction in Daily Book & Bank Account!
+    if (paymentDirection === 'Payable' && recordInitialReceipt !== false) {
+      try {
+        const txnMethod = receivedVia === 'Bank Transfer' ? 'Bank Transfer' : receivedVia === 'Cheque' ? 'Cheque' : 'Cash';
+        const initialTxn = await Transaction.create({
+          transactionType: 'Money In',
+          amount: Number(expectedLumpSum),
+          paymentMethod: txnMethod,
+          bankAccount: receivedVia === 'Bank Transfer' ? (receivedBankAccount || 'MBL') : 'MBL',
+          bankAccountOtherName: receivedVia === 'Bank Transfer' && receivedBankAccount === 'Other' ? receivedBankAccountOtherName : undefined,
+          chequeNumber: receivedVia === 'Cheque' ? receivedChequeNumber : undefined,
+          chequeBank: receivedVia === 'Cheque' ? receivedChequeBank : undefined,
+          chequeDate: receivedVia === 'Cheque' && receivedChequeDate ? new Date(receivedChequeDate) : undefined,
+          relatedTo: 'Other',
+          relatedName: personName || categoryName,
+          description: `Loan Received: ${categoryName}${personName ? ` (from ${personName})` : ''}`,
+          transactionDate: startDate ? new Date(startDate) : new Date(),
+          sourceType: 'PersonalPayment',
+          sourceId: item._id,
+          handledBy: req.user?.name || req.user?.username || '',
+        });
+        item.initialTransactionId = initialTxn._id;
+        await item.save();
+      } catch (txnErr) {
+        console.error('Failed to create initial loan receipt transaction:', txnErr);
+      }
+    }
 
     await logActivity({
       req,
@@ -147,7 +181,9 @@ exports.addPayment = async (req, res, next) => {
     const {
       amount,
       paymentDate,
-      paymentMethod,
+      paymentMethod = 'Cash',
+      bankAccount = 'MBL',
+      bankAccountOtherName,
       chequeNumber,
       chequeType,
       chequeBank,
@@ -226,10 +262,44 @@ exports.addPayment = async (req, res, next) => {
       }
     }
 
+    // Record Money Out Transaction in Daily Book / Bank Account
+    let linkedTxnId = null;
+    try {
+      const isBank = paymentMethod === 'Bank Transfer';
+      const resolvedBank = isBank ? (bankAccount || bankName || 'MBL') : 'MBL';
+      const txn = await Transaction.create({
+        transactionType: 'Money Out',
+        amount: Number(amount),
+        paymentMethod: paymentMethod || 'Cash',
+        bankAccount: isBank ? resolvedBank : 'MBL',
+        bankAccountOtherName: isBank && resolvedBank === 'Other' ? (bankAccountOtherName || bankName) : undefined,
+        chequeId: resolvedChequeId,
+        chequeNumber: finalChequeNum,
+        chequeType: finalChequeType,
+        chequeBank: finalChequeBank,
+        chequeDate: chequeDate ? new Date(chequeDate) : undefined,
+        isEndorsedCheque: finalIsEndorsed,
+        sourceChequeId: sourceChequeId || undefined,
+        relatedTo: 'Other',
+        relatedName: item.personName || item.categoryName,
+        description: `${item.paymentDirection === 'Payable' ? 'Loan Repayment' : 'Personal Contribution'}: ${item.categoryName}${note ? ` (${note})` : ''}`,
+        transactionDate: paymentDate ? new Date(paymentDate) : new Date(),
+        sourceType: 'PersonalPayment',
+        sourceId: item._id,
+        handledBy: paidBy || req.user?.name || '',
+      });
+      linkedTxnId = txn._id;
+    } catch (txnErr) {
+      console.error('Failed to create installment transaction:', txnErr);
+    }
+
     item.payments.push({
       amount: Number(amount),
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMethod: paymentMethod || 'Cash',
+      bankAccount: paymentMethod === 'Bank Transfer' ? (bankAccount || bankName || 'MBL') : 'MBL',
+      bankAccountOtherName,
+      transactionId: linkedTxnId,
       chequeId: resolvedChequeId,
       chequeNumber: finalChequeNum,
       chequeType: finalChequeType,
@@ -277,6 +347,7 @@ exports.update = async (req, res, next) => {
       categoryType,
       personName,
       expectedLumpSum,
+      startDate,
       expectedReceiveDate,
       monthlyAmount,
       status,
@@ -293,6 +364,9 @@ exports.update = async (req, res, next) => {
     if (categoryType !== undefined) item.categoryType = categoryType;
     if (personName !== undefined) item.personName = personName;
     if (expectedLumpSum !== undefined) item.expectedLumpSum = Number(expectedLumpSum);
+    if (startDate !== undefined) {
+      item.startDate = startDate ? new Date(startDate) : item.startDate;
+    }
     if (expectedReceiveDate !== undefined) {
       item.expectedReceiveDate = expectedReceiveDate ? new Date(expectedReceiveDate) : null;
     }
@@ -343,15 +417,20 @@ exports.deletePayment = async (req, res, next) => {
     }
 
     const pEntry = item.payments.find((p) => String(p._id) === String(paymentId));
-    if (pEntry && pEntry.chequeId) {
-      if (pEntry.isEndorsedCheque) {
-        await Cheque.findByIdAndUpdate(pEntry.chequeId, {
-          status: 'In Hand',
-          givenTo: undefined,
-          endorsedDate: undefined,
-        });
-      } else {
-        await Cheque.findByIdAndDelete(pEntry.chequeId);
+    if (pEntry) {
+      if (pEntry.chequeId) {
+        if (pEntry.isEndorsedCheque) {
+          await Cheque.findByIdAndUpdate(pEntry.chequeId, {
+            status: 'In Hand',
+            givenTo: undefined,
+            endorsedDate: undefined,
+          });
+        } else {
+          await Cheque.findByIdAndDelete(pEntry.chequeId);
+        }
+      }
+      if (pEntry.transactionId) {
+        await Transaction.findByIdAndDelete(pEntry.transactionId);
       }
     }
 
@@ -388,6 +467,11 @@ exports.delete = async (req, res, next) => {
     if (!item) {
       return res.status(404).json({ success: false, message: 'Category not found.' });
     }
+
+    if (item.initialTransactionId) {
+      await Transaction.findByIdAndDelete(item.initialTransactionId);
+    }
+    await deleteTransactionsForSource('PersonalPayment', item._id);
 
     if (item.payments && item.payments.length > 0) {
       item.status = 'Cancelled';
