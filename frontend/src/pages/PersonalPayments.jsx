@@ -96,6 +96,12 @@ export default function PersonalPayments() {
     expectedLumpSum: '',
     monthlyAmount: '',
     expectedReceiveDate: '',
+    receivedVia: 'Cash',
+    receivedBankAccount: 'MBL',
+    receivedBankAccountOtherName: '',
+    receivedChequeNumber: '',
+    receivedChequeBank: '',
+    receivedChequeDate: '',
     notes: '',
   });
 
@@ -152,16 +158,23 @@ export default function PersonalPayments() {
   }, [fetchData]);
 
   // Open Category Dialog
-  const openAddCategory = () => {
+  const openAddCategory = (defaultDirection = null) => {
+    const dir = defaultDirection || (directionTab === 2 ? 'Payable' : 'Receivable');
     setEditingCategory(null);
     setCategoryForm({
       categoryName: '',
-      paymentDirection: directionTab === 2 ? 'Payable' : 'Receivable',
-      categoryType: directionTab === 2 ? 'Loan Taken' : 'Committee',
+      paymentDirection: dir,
+      categoryType: dir === 'Payable' ? 'Loan Taken' : 'Committee',
       personName: '',
       expectedLumpSum: '',
       monthlyAmount: '',
       expectedReceiveDate: '',
+      receivedVia: 'Cash',
+      receivedBankAccount: 'MBL',
+      receivedBankAccountOtherName: '',
+      receivedChequeNumber: '',
+      receivedChequeBank: '',
+      receivedChequeDate: '',
       notes: '',
     });
     setCategoryDialog(true);
@@ -177,6 +190,12 @@ export default function PersonalPayments() {
       expectedLumpSum: String(cat.expectedLumpSum || ''),
       monthlyAmount: String(cat.monthlyAmount || ''),
       expectedReceiveDate: cat.expectedReceiveDate ? new Date(cat.expectedReceiveDate).toISOString().slice(0, 10) : '',
+      receivedVia: cat.receivedVia || 'Cash',
+      receivedBankAccount: cat.receivedBankAccount || 'MBL',
+      receivedBankAccountOtherName: cat.receivedBankAccountOtherName || '',
+      receivedChequeNumber: cat.receivedChequeNumber || '',
+      receivedChequeBank: cat.receivedChequeBank || '',
+      receivedChequeDate: cat.receivedChequeDate ? new Date(cat.receivedChequeDate).toISOString().slice(0, 10) : '',
       notes: cat.notes || '',
     });
     setCategoryDialog(true);
@@ -400,7 +419,7 @@ export default function PersonalPayments() {
 
       {/* Filter and Direction Tabs */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
           <Tabs
             value={directionTab}
             onChange={(_, val) => setDirectionTab(val)}
@@ -415,25 +434,37 @@ export default function PersonalPayments() {
               },
             }}
           >
-            <Tab label="All Categories" />
+            <Tab label={`All Categories (${summary.totalActiveCount || 0})`} />
             <Tab label={`Receivables (${summary.receivableCount || 0})`} />
             <Tab label={`Payables / Loans (${summary.payableCount || 0})`} />
           </Tabs>
 
-          <TextField
-            size="small"
-            placeholder="Search category, person, type..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ width: { xs: '100%', sm: 300 } }}
-          />
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', md: 'auto' } }}>
+            <TextField
+              size="small"
+              placeholder="Search category, person, type..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ width: { xs: '100%', sm: 240 } }}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={requireAdmin(() => openAddCategory())}
+              sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+            >
+              + Add Category
+            </Button>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -499,11 +530,26 @@ export default function PersonalPayments() {
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" justifyContent="flex-end">
                         <Chip
                           size="small"
-                          label={isPayable ? 'Payable (Loan)' : 'Receivable'}
+                          label={isPayable ? 'Payable' : 'Receivable'}
                           color={isPayable ? 'error' : 'success'}
                           variant="filled"
                           sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
                         />
+                        <Chip
+                          size="small"
+                          label={item.categoryType}
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.65rem' }}
+                        />
+                        {isPayable && item.receivedVia && (
+                          <Chip
+                            size="small"
+                            label={`Via: ${item.receivedVia}${item.receivedVia === 'Bank Transfer' ? ` (${item.receivedBankAccountOtherName || item.receivedBankAccount || 'MBL'})` : item.receivedVia === 'Cheque' && item.receivedChequeNumber ? ` (#${item.receivedChequeNumber})` : ''}`}
+                            color="info"
+                            variant="outlined"
+                            sx={{ height: 20, fontSize: '0.65rem' }}
+                          />
+                        )}
                         <Chip
                           size="small"
                           label={item.status}
@@ -744,6 +790,99 @@ export default function PersonalPayments() {
               fullWidth
               InputLabelProps={{ shrink: true }}
             />
+
+            {/* Loan Received Method Options (For Payable / Loan Taken) */}
+            {categoryForm.paymentDirection === 'Payable' && (
+              <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2', border: '1px solid', borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA' }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: 'error.main', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', mb: 1.5 }}>
+                  How Was This Loan / Amount Received?
+                </Typography>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={categoryForm.receivedVia === 'Bank Transfer' ? 6 : 12}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Received Via</InputLabel>
+                      <Select
+                        value={categoryForm.receivedVia || 'Cash'}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, receivedVia: e.target.value })}
+                        label="Received Via"
+                      >
+                        <MenuItem value="Cash">Cash in Hand</MenuItem>
+                        <MenuItem value="Bank Transfer">Bank Transfer / Online Deposit</MenuItem>
+                        <MenuItem value="Cheque">Received by Cheque</MenuItem>
+                        <MenuItem value="Other">Other / Direct Settlement</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  {categoryForm.receivedVia === 'Bank Transfer' && (
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Deposited Into Bank</InputLabel>
+                        <Select
+                          value={categoryForm.receivedBankAccount || 'MBL'}
+                          onChange={(e) => setCategoryForm({ ...categoryForm, receivedBankAccount: e.target.value })}
+                          label="Deposited Into Bank"
+                        >
+                          <MenuItem value="MBL">Meezan Bank (MBL)</MenuItem>
+                          <MenuItem value="UBL">United Bank (UBL)</MenuItem>
+                          <MenuItem value="Faisal Bank">Faisal Bank</MenuItem>
+                          <MenuItem value="Other">Other Bank</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+                </Grid>
+
+                {categoryForm.receivedVia === 'Bank Transfer' && categoryForm.receivedBankAccount === 'Other' && (
+                  <TextField
+                    label="Other Bank Name"
+                    value={categoryForm.receivedBankAccountOtherName || ''}
+                    onChange={(e) => setCategoryForm({ ...categoryForm, receivedBankAccountOtherName: e.target.value })}
+                    fullWidth
+                    size="small"
+                    sx={{ mt: 1.5 }}
+                    placeholder="e.g. HBL, MCB, Allied Bank"
+                  />
+                )}
+
+                {categoryForm.receivedVia === 'Cheque' && (
+                  <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        label="Cheque Number"
+                        value={categoryForm.receivedChequeNumber || ''}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, receivedChequeNumber: e.target.value })}
+                        fullWidth
+                        size="small"
+                        placeholder="e.g. 123456"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        label="Cheque Bank Name"
+                        value={categoryForm.receivedChequeBank || ''}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, receivedChequeBank: e.target.value })}
+                        fullWidth
+                        size="small"
+                        placeholder="e.g. HBL, MCB, MBL"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        label="Cheque Date"
+                        type="date"
+                        value={categoryForm.receivedChequeDate || ''}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, receivedChequeDate: e.target.value })}
+                        fullWidth
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                  </Grid>
+                )}
+              </Box>
+            )}
 
             <TextField
               label="Notes / Description"

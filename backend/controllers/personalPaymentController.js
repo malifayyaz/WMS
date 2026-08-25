@@ -82,6 +82,12 @@ exports.create = async (req, res, next) => {
       expectedLumpSum,
       expectedReceiveDate,
       monthlyAmount,
+      receivedVia = 'Cash',
+      receivedBankAccount = 'MBL',
+      receivedBankAccountOtherName,
+      receivedChequeNumber,
+      receivedChequeBank,
+      receivedChequeDate,
       notes,
     } = req.body;
 
@@ -100,6 +106,12 @@ exports.create = async (req, res, next) => {
       expectedLumpSum: Number(expectedLumpSum),
       expectedReceiveDate: expectedReceiveDate ? new Date(expectedReceiveDate) : null,
       monthlyAmount: Number(monthlyAmount) || 0,
+      receivedVia,
+      receivedBankAccount,
+      receivedBankAccountOtherName,
+      receivedChequeNumber,
+      receivedChequeBank,
+      receivedChequeDate: receivedChequeDate ? new Date(receivedChequeDate) : null,
       notes,
       createdBy: req.user?.username || req.user?.name || 'User',
     });
@@ -286,6 +298,14 @@ exports.update = async (req, res, next) => {
     }
     if (monthlyAmount !== undefined) item.monthlyAmount = Number(monthlyAmount) || 0;
     if (status !== undefined) item.status = status;
+    if (req.body.receivedVia !== undefined) item.receivedVia = req.body.receivedVia;
+    if (req.body.receivedBankAccount !== undefined) item.receivedBankAccount = req.body.receivedBankAccount;
+    if (req.body.receivedBankAccountOtherName !== undefined) item.receivedBankAccountOtherName = req.body.receivedBankAccountOtherName;
+    if (req.body.receivedChequeNumber !== undefined) item.receivedChequeNumber = req.body.receivedChequeNumber;
+    if (req.body.receivedChequeBank !== undefined) item.receivedChequeBank = req.body.receivedChequeBank;
+    if (req.body.receivedChequeDate !== undefined) {
+      item.receivedChequeDate = req.body.receivedChequeDate ? new Date(req.body.receivedChequeDate) : null;
+    }
     if (notes !== undefined) item.notes = notes;
 
     await item.save();

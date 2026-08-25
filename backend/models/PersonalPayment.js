@@ -45,6 +45,23 @@ const personalPaymentSchema = new mongoose.Schema(
       enum: ['Active', 'Completed', 'Cancelled'],
       default: 'Active',
     },
+    /** For Loan Taken / Payables: How the loan amount was received */
+    receivedVia: {
+      type: String,
+      enum: ['Cash', 'Bank Transfer', 'Cheque', 'Other'],
+      default: 'Cash',
+    },
+    receivedBankAccount: {
+      type: String,
+      enum: ['MBL', 'UBL', 'Faisal Bank', 'Other'],
+      default: 'MBL',
+    },
+    receivedBankAccountOtherName: String,
+    receivedChequeNumber: String,
+    receivedChequeBank: String,
+    receivedChequeDate: Date,
+    recordInitialReceipt: { type: Boolean, default: false },
+    initialTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     payments: [personalPaymentEntrySchema],
     notes: String,
     createdBy: String,
