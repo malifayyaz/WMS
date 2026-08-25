@@ -1143,37 +1143,12 @@ export default function DailyBook() {
 
     // 1. Cash, Cheque & Bank transactions
     (list || []).forEach((t) => {
-      const isOurIssuedBankCheque =
-        t.paymentMethod === 'Cheque' &&
-        t.transactionType === 'Money Out' &&
-        !t.isEndorsedCheque &&
-        t.chequeType !== 'Customer Cheque';
-
-      if (t.paymentMethod === 'Cash' || (t.paymentMethod === 'Cheque' && !isOurIssuedBankCheque)) {
-        // Physical cash & in-hand customer cheques passed/received
+      if (t.paymentMethod === 'Cash' || t.paymentMethod === 'Cheque') {
         if (t.transactionType === 'Money In') {
           inRows.push(t);
         } else {
           outRows.push(t);
         }
-      } else if (isOurIssuedBankCheque && includeBank) {
-        const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || t.chequeBank || t.bankName || 'MBL');
-        // Inflow contra: Drawn from bank account
-        inRows.push({
-          _id: `contra-chq-out-${t._id}`,
-          transactionType: 'Money In',
-          amount: t.amount,
-          paymentMethod: 'Bank Transfer',
-          bankAccount: t.bankAccount || t.chequeBank || 'MBL',
-          bankAccountOtherName: t.bankAccountOtherName,
-          relatedName: `Bank Cheque (${bankName})`,
-          description: `Cheque #${t.chequeNumber || ''} · ${t.relatedName || t.relatedTo || t.description || 'Cheque Payment'}`,
-          transactionDate: t.transactionDate || t.date,
-          isContraRow: true,
-          originalTxn: t,
-        });
-        // Outflow: Paid via our bank cheque
-        outRows.push(t);
       } else if (t.paymentMethod === 'Bank Transfer' && includeBank) {
         const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || 'MBL');
         if (t.transactionType === 'Money In') {

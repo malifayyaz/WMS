@@ -71,33 +71,11 @@ function filterTxnsAfterOpening(txns, openingDoc) {
 }
 
 async function loadBankTxns(filter = {}) {
-  const txs = await Transaction.find({
-    $or: [
-      { paymentMethod: 'Bank Transfer' },
-      {
-        paymentMethod: 'Cheque',
-        transactionType: 'Money Out',
-        isEndorsedCheque: { $ne: true },
-        chequeType: { $ne: 'Customer Cheque' },
-      },
-    ],
+  return Transaction.find({
+    paymentMethod: 'Bank Transfer',
     sourceType: { $nin: BANK_SOURCE_EXCLUDE },
     ...filter,
   }).sort({ transactionDate: 1 });
-
-  return txs.map((t) => {
-    if (!t.bankAccount && t.paymentMethod === 'Cheque') {
-      const b = (t.chequeBank || t.bankName || 'MBL').trim();
-      const standard = ['MBL', 'UBL', 'Faisal Bank'].find((s) => s.toLowerCase() === b.toLowerCase());
-      if (standard) {
-        t.bankAccount = standard;
-      } else {
-        t.bankAccount = 'Other';
-        t.bankAccountOtherName = b;
-      }
-    }
-    return t;
-  });
 }
 
 /**

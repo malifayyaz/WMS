@@ -346,9 +346,8 @@ function computeExpenseTotalsFromRecords(expenses, processPurchases) {
   let mutual = 0;
 
   (expenses || []).forEach((e) => {
-    // Bank-paid expenses & company bank cheques are deducted from bank balance, not cash in hand
+    // Bank-paid expenses are deducted from bank balance, not cash in hand
     if (e.paymentMethod === 'Bank Transfer') return;
-    if (e.paymentMethod === 'Cheque' && !e.isEndorsedCheque && e.chequeType !== 'Customer Cheque') return;
 
     const amount = e.amount || 0;
     if (e.expenseGroup === SELF_EXPENSE_GROUP) {

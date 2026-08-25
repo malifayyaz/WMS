@@ -14,7 +14,7 @@ async function run() {
   console.log('Connected.');
 
   const targetDate = startOfDay(new Date('2026-01-01'));
-  
+
   // Update or set opening on 2026-01-01
   await DailyCashOpening.deleteMany({});
   const doc = await DailyCashOpening.create({
