@@ -5,11 +5,102 @@ const { logActivity } = require('../utils/activityLogService');
 const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
 
 /**
+ * Auto-syncs any PersonalPayment or installment that is missing its Daily Book / Bank Transaction
+ */
+async function syncPersonalPaymentTransactions() {
+  try {
+    const all = await PersonalPayment.find({});
+    for (const item of all) {
+      let changed = false;
+
+      // 1. Initial receipt for loans taken / payables
+      if (item.paymentDirection === 'Payable' && (item.expectedLumpSum || 0) > 0) {
+        let hasInitialTxn = false;
+        if (item.initialTransactionId) {
+          const existing = await Transaction.findById(item.initialTransactionId);
+          if (existing) hasInitialTxn = true;
+        }
+        if (!hasInitialTxn) {
+          const txnMethod = item.receivedVia === 'Bank Transfer' ? 'Bank Transfer' : item.receivedVia === 'Cheque' ? 'Cheque' : 'Cash';
+          const newTxn = await Transaction.create({
+            transactionType: 'Money In',
+            amount: Number(item.expectedLumpSum),
+            paymentMethod: txnMethod,
+            bankAccount: item.receivedVia === 'Bank Transfer' ? (item.receivedBankAccount || 'MBL') : 'MBL',
+            bankAccountOtherName: item.receivedVia === 'Bank Transfer' && item.receivedBankAccount === 'Other' ? item.receivedBankAccountOtherName : undefined,
+            chequeNumber: item.receivedVia === 'Cheque' ? item.receivedChequeNumber : undefined,
+            chequeBank: item.receivedVia === 'Cheque' ? item.receivedChequeBank : undefined,
+            chequeDate: item.receivedVia === 'Cheque' && item.receivedChequeDate ? new Date(item.receivedChequeDate) : undefined,
+            relatedTo: 'Other',
+            relatedName: item.personName || item.categoryName,
+            description: `Loan Received: ${item.categoryName}${item.personName ? ` (from ${item.personName})` : ''}`,
+            transactionDate: item.startDate || item.createdAt || new Date(),
+            sourceType: 'PersonalPayment',
+            sourceId: item._id,
+            handledBy: item.createdBy || '',
+          });
+          item.initialTransactionId = newTxn._id;
+          changed = true;
+        }
+      }
+
+      // 2. Installments / contributions
+      if (item.payments && item.payments.length > 0) {
+        for (const p of item.payments) {
+          let hasTxn = false;
+          if (p.transactionId) {
+            const existing = await Transaction.findById(p.transactionId);
+            if (existing) hasTxn = true;
+          }
+          if (!hasTxn) {
+            const isBank = p.paymentMethod === 'Bank Transfer';
+            const resolvedBank = isBank ? (p.bankAccount || p.bankName || 'MBL') : 'MBL';
+            const newTxn = await Transaction.create({
+              transactionType: 'Money Out',
+              amount: Number(p.amount),
+              paymentMethod: p.paymentMethod || 'Cash',
+              bankAccount: isBank ? resolvedBank : 'MBL',
+              bankAccountOtherName: isBank && (resolvedBank === 'Other' || p.bankName === 'Other') ? (p.bankAccountOtherName || p.bankName) : undefined,
+              chequeId: p.chequeId,
+              chequeNumber: p.chequeNumber,
+              chequeType: p.chequeType,
+              chequeBank: p.chequeBank || p.bankName,
+              chequeDate: p.chequeDate ? new Date(p.chequeDate) : undefined,
+              isEndorsedCheque: p.isEndorsedCheque,
+              sourceChequeId: p.sourceChequeId,
+              relatedTo: 'Other',
+              relatedName: item.personName || item.categoryName,
+              description: `${item.paymentDirection === 'Payable' ? 'Loan Repayment' : 'Personal Contribution'}: ${item.categoryName}${p.note ? ` (${p.note})` : ''}`,
+              transactionDate: p.paymentDate ? new Date(p.paymentDate) : new Date(),
+              sourceType: 'PersonalPayment',
+              sourceId: item._id,
+              handledBy: p.paidBy || '',
+            });
+            p.transactionId = newTxn._id;
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        await item.save();
+      }
+    }
+  } catch (err) {
+    console.error('Error syncing personal payment transactions:', err);
+  }
+}
+
+// Run sync immediately on module load
+syncPersonalPaymentTransactions();
+
+/**
  * GET /api/personal-payments
  * List all personal payments / committees / loans with summary metrics
  */
 exports.getAll = async (req, res, next) => {
   try {
+    await syncPersonalPaymentTransactions();
     const { status, direction, search } = req.query;
 
     const filter = {};
