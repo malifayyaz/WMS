@@ -2,7 +2,7 @@ const { startOfDay, endOfDay } = require('date-fns');
 const Transaction = require('../models/Transaction');
 const BankAccountOpening = require('../models/BankAccountOpening');
 
-const BANK_SOURCE_EXCLUDE = ['Expense', 'ConsumptionMaterial'];
+const BANK_SOURCE_EXCLUDE = ['ConsumptionMaterial'];
 
 function accountKey(bankAccount, otherName = '') {
   const acct = bankAccount || 'MBL';

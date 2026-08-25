@@ -344,7 +344,7 @@ const createTransaction = async (req, res, next) => {
     if (
       body.recordAsExpense
       && body.transactionType === 'Money Out'
-      && body.paymentMethod === 'Bank Transfer'
+      && (body.paymentMethod === 'Bank Transfer' || (body.paymentMethod === 'Cheque' && !body.isEndorsedCheque && body.chequeType !== 'Customer Cheque'))
       && body.expenseGroup
       && body.expenseCategory
     ) {
@@ -354,7 +354,7 @@ const createTransaction = async (req, res, next) => {
         description: body.description,
         handledBy: body.handledBy,
       });
-      message = `Bank transfer recorded — also added to ${body.expenseGroup} / ${body.expenseCategory} expenses`;
+      message = `${body.paymentMethod} recorded — also added to ${body.expenseGroup} / ${body.expenseCategory} expenses`;
     }
 
     const data = await Transaction.findById(transaction._id);

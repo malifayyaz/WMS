@@ -161,6 +161,58 @@ const createExpense = async (req, res, next) => {
         body.chequeType = chqType;
         if (isEndorsed) body.isEndorsedCheque = true;
       }
+
+      if (!isEndorsed && chqType !== 'Customer Cheque') {
+        const allowed = ['MBL', 'UBL', 'Faisal Bank', 'Other'];
+        let bAcc = allowed.find((a) => a.toLowerCase() === chqBank.toLowerCase());
+        let bOther = undefined;
+        if (!bAcc) {
+          bAcc = 'Other';
+          bOther = chqBank;
+        }
+        const txn = await Transaction.create({
+          transactionType: 'Money Out',
+          amount: Number(body.amount) || 0,
+          paymentMethod: 'Cheque',
+          chequeId: body.chequeId,
+          chequeNumber: body.chequeNumber,
+          chequeType: chqType,
+          chequeBank: chqBank,
+          chequeDate: chqDate,
+          relatedTo: 'Other',
+          relatedName: body.expenseGroup || 'Expense',
+          description: body.description || `${body.expenseGroup} — ${body.expenseCategory} (Cheque #${body.chequeNumber})`,
+          handledBy: body.addedBy || '',
+          sourceType: 'Expense',
+          bankAccount: bAcc,
+          bankAccountOtherName: bOther,
+          expenseGroup: body.expenseGroup,
+          expenseCategory: body.expenseCategory,
+          transactionDate: body.expenseDate || new Date(),
+        });
+        body.bankTransactionId = txn._id;
+      }
+    } else if (body.paymentMethod === 'Bank Transfer') {
+      const allowed = ['MBL', 'UBL', 'Faisal Bank', 'Other'];
+      if (!body.bankAccount || !allowed.includes(body.bankAccount)) {
+        body.bankAccount = 'MBL';
+      }
+      const txn = await Transaction.create({
+        transactionType: 'Money Out',
+        amount: Number(body.amount) || 0,
+        paymentMethod: 'Bank Transfer',
+        relatedTo: 'Other',
+        relatedName: body.expenseGroup || 'Expense',
+        description: body.description || `${body.expenseGroup} — ${body.expenseCategory}`,
+        handledBy: body.addedBy || '',
+        sourceType: 'Expense',
+        bankAccount: body.bankAccount,
+        bankAccountOtherName: body.bankAccount === 'Other' ? body.bankAccountOtherName : undefined,
+        expenseGroup: body.expenseGroup,
+        expenseCategory: body.expenseCategory,
+        transactionDate: body.expenseDate || new Date(),
+      });
+      body.bankTransactionId = txn._id;
     }
 
     const expense = await Expense.create(body);

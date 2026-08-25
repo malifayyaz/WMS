@@ -346,8 +346,15 @@ function computeExpenseTotalsFromRecords(expenses, processPurchases) {
   let mutual = 0;
 
   (expenses || []).forEach((e) => {
-    // Bank-paid expenses are deducted from bank balance, not cash in hand
+    // Bank-paid expenses & company/personal bank cheques are deducted from bank balance, not cash in hand
     if (e.paymentMethod === 'Bank Transfer') return;
+    if (
+      e.paymentMethod === 'Cheque' &&
+      !e.isEndorsedCheque &&
+      ['Company Cheque', 'Personal Cheque'].includes(e.chequeType || (e.isEndorsedCheque ? 'Customer Cheque' : 'Company Cheque'))
+    ) {
+      return;
+    }
 
     const amount = e.amount || 0;
     if (e.expenseGroup === SELF_EXPENSE_GROUP) {
@@ -455,15 +462,22 @@ function computeExpenseBreakdown(transactions) {
  * The expense appears in Expenses (e.g. Annealing) but is excluded from cash-book totals.
  */
 async function createLinkedExpenseForBankTransfer(transaction, { expenseGroup, expenseCategory, description, handledBy }) {
+  const isCheque = transaction.paymentMethod === 'Cheque';
   const expense = await Expense.create({
     expenseGroup,
     expenseCategory,
     amount: transaction.amount,
-    paymentMethod: 'Bank Transfer',
+    paymentMethod: transaction.paymentMethod || 'Bank Transfer',
     expenseDate: transaction.transactionDate || new Date(),
-    description: description || `Bank payment — ${expenseCategory}${transaction.relatedName ? ` (${transaction.relatedName})` : ''}`,
+    description: description || `${isCheque ? 'Cheque' : 'Bank'} payment — ${expenseCategory}${transaction.relatedName ? ` (${transaction.relatedName})` : ''}`,
     addedBy: handledBy || '',
     bankTransactionId: transaction._id,
+    chequeId: transaction.chequeId,
+    chequeNumber: transaction.chequeNumber,
+    chequeType: transaction.chequeType,
+    chequeBank: transaction.chequeBank || transaction.bankAccount,
+    chequeDate: transaction.chequeDate,
+    isEndorsedCheque: transaction.isEndorsedCheque,
   });
   await Transaction.findByIdAndUpdate(transaction._id, {
     linkedExpenseId: expense._id,
