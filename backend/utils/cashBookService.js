@@ -14,18 +14,30 @@ function dayKey(d) {
   return normalizeDate(d).getTime();
 }
 
+function isCompanyBankCheque(t) {
+  return (
+    t.paymentMethod === 'Cheque' &&
+    t.transactionType === 'Money Out' &&
+    !t.isEndorsedCheque &&
+    ['Company Cheque', 'Personal Cheque'].includes(t.chequeType)
+  );
+}
+
 function sumTransactions(txs) {
   let totalIn = 0;
   let totalOut = 0;
   let bankIn = 0;
   let bankOut = 0;
   txs.forEach((t) => {
-    if (t.paymentMethod === 'Bank Transfer') {
-      // Bank transfers track separate bank balance — excluded from cash in hand
+    const isBankTransfer = t.paymentMethod === 'Bank Transfer';
+    const isBankCheque = isCompanyBankCheque(t);
+
+    if (isBankTransfer || isBankCheque) {
+      // Deducted from Bank Account, NEVER from Cash in Hand!
       if (t.transactionType === 'Money In') bankIn += t.amount || 0;
       else bankOut += t.amount || 0;
     } else {
-      // All Cash and all traditional cheques count in Cash in Hand!
+      // Physical Cash and in-hand customer cheques
       if (t.transactionType === 'Money In') totalIn += t.amount || 0;
       else totalOut += t.amount || 0;
     }
