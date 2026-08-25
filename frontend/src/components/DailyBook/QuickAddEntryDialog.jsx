@@ -17,6 +17,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import SavingsIcon from '@mui/icons-material/Savings';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 const ENTRY_OPTIONS = [
   {
