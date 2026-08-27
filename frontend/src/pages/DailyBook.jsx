@@ -55,7 +55,7 @@ import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SavingsIcon from '@mui/icons-material/Savings';
-import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI, personalPaymentsAPI } from '../services/api';
+import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI, personalPaymentsAPI, expensesAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
 import DateRangePicker from '../components/Common/DateRangePicker';
@@ -267,6 +267,7 @@ export default function DailyBook() {
   const [cashBook, setCashBook] = useState(null);
   const [cashBookRange, setCashBookRange] = useState([]);
   const [bankBook, setBankBook] = useState(null);
+  const [dayExpenses, setDayExpenses] = useState([]);
   const [bankTransferDialogOpen, setBankTransferDialogOpen] = useState(false);
   const [bankTransferEditingId, setBankTransferEditingId] = useState(null);
   const [bankTransferForm, setBankTransferForm] = useState({
@@ -616,6 +617,21 @@ export default function DailyBook() {
     }
   }, [mainTab, entryDate, startDate, endDate]);
 
+  const fetchDayExpenses = useCallback(async () => {
+    if (mainTab !== 0) return;
+    try {
+      const res = await expensesAPI.getAll({
+        startDate: entryDate,
+        endDate: entryDate,
+        includeProcess: true,
+        limit: 500,
+      });
+      setDayExpenses(res.data.data || []);
+    } catch {
+      setDayExpenses([]);
+    }
+  }, [mainTab, entryDate]);
+
   const filterForPartyTab = (rows, tab) => {
     if (tab === 2) {
       const ledgerIds = new Set(ledgerCustomers.map((c) => String(c._id)));
@@ -699,6 +715,7 @@ export default function DailyBook() {
       }
       await fetchCashBook();
       await fetchBankBook();
+      await fetchDayExpenses();
       chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load', severity: 'error' });
@@ -1046,9 +1063,73 @@ export default function DailyBook() {
     setDialogOpen(true);
   };
 
-  // Build expense rows from cashBook.expenseTotals for display in TwoColumnRokarLedger
-  const buildExpenseRows = useCallback(() => {
+  // Build expense rows (displaying individual categorized expenses from Expenses section or summary totals)
+  const buildExpenseRows = useCallback((includeBank = false) => {
     const rows = [];
+
+    // If individual dayExpenses are loaded, render each detailed expense
+    if (dayExpenses && dayExpenses.length > 0) {
+      const existingTxnSourceIds = new Set(
+        (list || []).map((t) => String(t.sourceId || t.linkedExpenseId || t.bankTransactionId || t._id))
+      );
+
+      dayExpenses.forEach((e) => {
+        // Prevent duplicate if already present in transaction list
+        if (
+          existingTxnSourceIds.has(String(e._id)) ||
+          (e.bankTransactionId && existingTxnSourceIds.has(String(e.bankTransactionId)))
+        ) {
+          return;
+        }
+
+        const isBank = e.paymentMethod === 'Bank Transfer';
+        const isOurBankCheque =
+          e.paymentMethod === 'Cheque' &&
+          !e.isEndorsedCheque &&
+          ['Company Cheque', 'Personal Cheque'].includes(e.chequeType || 'Company Cheque');
+
+        // In physical Cash view, bank transfers and company bank cheques are excluded from cash in hand
+        if (!includeBank && (isBank || isOurBankCheque)) {
+          return;
+        }
+
+        const bankName = e.bankAccount === 'Other'
+          ? (e.bankAccountOtherName || 'Other')
+          : (e.bankAccount || e.chequeBank || 'MBL');
+
+        const descParts = [];
+        if (e.description) descParts.push(e.description);
+        if (e.labourName) descParts.push(`Labour: ${e.labourName}`);
+        if (e.chequeNumber) descParts.push(`Cheque #${e.chequeNumber} (${e.chequeBank || bankName})`);
+        if (isBank) descParts.push(`Bank Transfer (${bankName})`);
+
+        const label = e.expenseCategory || e.materialType || e.expenseGroup || 'Expense';
+
+        rows.push({
+          _id: `exp-item-${e._id || e.id}`,
+          transactionType: 'Money Out',
+          amount: Number(e.amount || e.totalCost) || 0,
+          paymentMethod: e.paymentMethod || 'Cash',
+          bankAccount: e.bankAccount || e.chequeBank || 'MBL',
+          bankAccountOtherName: e.bankAccountOtherName,
+          chequeType: e.chequeType,
+          chequeNumber: e.chequeNumber,
+          chequeBank: e.chequeBank || bankName,
+          isEndorsedCheque: e.isEndorsedCheque,
+          relatedName: label,
+          description: descParts.length > 0 ? descParts.join(' · ') : (e.expenseGroup || 'Expense'),
+          expenseGroup: e.expenseGroup || 'Operations',
+          expenseCategory: e.expenseCategory || e.materialType,
+          transactionDate: e.expenseDate || e.purchaseDate || entryDate,
+          isExpenseRow: true,
+          originalExpense: e,
+        });
+      });
+
+      return rows;
+    }
+
+    // Fallback to cashBook summary totals if no itemized expenses are available
     const expTotals = cashBook?.expenseTotals;
     if (!expTotals) return rows;
 
@@ -1134,7 +1215,7 @@ export default function DailyBook() {
     }
 
     return rows;
-  }, [cashBook, entryDate]);
+  }, [dayExpenses, list, cashBook, entryDate]);
 
   // Build balanced Two-Column Rokar ledger rows (with Bank Contra entries & Expenses)
   const buildRokarRows = useCallback((includeBank = false) => {
@@ -1143,12 +1224,37 @@ export default function DailyBook() {
 
     // 1. Cash, Cheque & Bank transactions
     (list || []).forEach((t) => {
-      if (t.paymentMethod === 'Cash' || t.paymentMethod === 'Cheque') {
+      const isOurBankCheque =
+        t.paymentMethod === 'Cheque' &&
+        t.transactionType === 'Money Out' &&
+        !t.isEndorsedCheque &&
+        ['Company Cheque', 'Personal Cheque'].includes(t.chequeType || 'Company Cheque');
+
+      if (t.paymentMethod === 'Cash' || (t.paymentMethod === 'Cheque' && !isOurBankCheque)) {
         if (t.transactionType === 'Money In') {
           inRows.push(t);
         } else {
           outRows.push(t);
         }
+      } else if (isOurBankCheque && includeBank) {
+        const bankName = t.bankAccount === 'Other'
+          ? (t.bankAccountOtherName || 'Other')
+          : (t.bankAccount || t.chequeBank || t.bankName || 'MBL');
+        // Inflow contra: Drawn from bank account
+        inRows.push({
+          _id: `contra-chq-out-${t._id}`,
+          transactionType: 'Money In',
+          amount: t.amount,
+          paymentMethod: 'Bank Transfer',
+          bankAccount: t.bankAccount || t.chequeBank || 'MBL',
+          bankAccountOtherName: t.bankAccountOtherName,
+          relatedName: `Bank Cheque (${bankName})`,
+          description: `Cheque #${t.chequeNumber || ''} · ${t.relatedName || t.relatedTo || t.description || 'Cheque Payment'}`,
+          transactionDate: t.transactionDate || t.date,
+          isContraRow: true,
+          originalTxn: t,
+        });
+        outRows.push(t);
       } else if (t.paymentMethod === 'Bank Transfer' && includeBank) {
         const bankName = t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || 'MBL');
         if (t.transactionType === 'Money In') {
@@ -1190,9 +1296,35 @@ export default function DailyBook() {
       }
     });
 
-    // 2. Add Expenses (Factory Expense Total & Self Expense) to outRows
-    const expenseRows = buildExpenseRows();
-    outRows.push(...expenseRows);
+    // 2. Add Expenses (Factory, Self & Other categorized expenses) to outRows
+    const expenseRows = buildExpenseRows(includeBank);
+    expenseRows.forEach((r) => {
+      const isBank = r.paymentMethod === 'Bank Transfer';
+      const isOurBankCheque =
+        r.paymentMethod === 'Cheque' &&
+        !r.isEndorsedCheque &&
+        ['Company Cheque', 'Personal Cheque'].includes(r.chequeType || 'Company Cheque');
+
+      if (includeBank && (isBank || isOurBankCheque)) {
+        const bankName = r.bankAccount === 'Other'
+          ? (r.bankAccountOtherName || 'Other')
+          : (r.bankAccount || r.chequeBank || 'MBL');
+        // Add Contra Inflow to balance combined statement
+        inRows.push({
+          _id: `contra-exp-bank-${r._id}`,
+          transactionType: 'Money In',
+          amount: r.amount,
+          paymentMethod: 'Bank Transfer',
+          bankAccount: r.bankAccount || 'MBL',
+          bankAccountOtherName: r.bankAccountOtherName,
+          relatedName: isOurBankCheque ? `Bank Cheque (${bankName})` : `Bank Payment (${bankName})`,
+          description: `Drawn from ${bankName} · for ${r.relatedName} expense`,
+          transactionDate: r.transactionDate,
+          isContraRow: true,
+        });
+      }
+      outRows.push(r);
+    });
 
     return { inRows, outRows };
   }, [list, buildExpenseRows]);
