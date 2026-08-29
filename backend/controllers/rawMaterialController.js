@@ -152,6 +152,15 @@ const getRawMaterials = async (req, res, next) => {
     if (req.query.supplierId) filter.supplierId = req.query.supplierId;
     if (req.query.coilCategory) filter.coilCategory = req.query.coilCategory;
     if (req.query.materialType) filter.materialType = req.query.materialType;
+    if (req.query.startDate || req.query.endDate) {
+      filter.purchaseDate = {};
+      if (req.query.startDate) filter.purchaseDate.$gte = new Date(req.query.startDate);
+      if (req.query.endDate) {
+        const end = new Date(req.query.endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.purchaseDate.$lte = end;
+      }
+    }
     const limitRaw = parseInt(req.query.limit, 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
     const [total, list] = await Promise.all([

@@ -69,6 +69,7 @@ import KpiEquationBanner from '../components/DailyBook/KpiEquationBanner';
 import CashReconciliationBar from '../components/DailyBook/CashReconciliationBar';
 import QuickAddEntryDialog from '../components/DailyBook/QuickAddEntryDialog';
 import TwoColumnRokarLedger from '../components/DailyBook/TwoColumnRokarLedger';
+import TwoColumnStockLedger from '../components/DailyBook/TwoColumnStockLedger';
 import ResponsiveDialog from '../components/Common/ResponsiveDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
 import { usePermissions } from '../hooks/usePermissions';
@@ -260,8 +261,12 @@ export default function DailyBook() {
   };
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [cashBankTab, setCashBankTab] = useState('cash');
+  const [registerViewMode, setRegisterViewMode] = useState('both'); // 'both' | 'cash' | 'stock'
   const [list, setList] = useState([]);
   const [dailyOrders, setDailyOrders] = useState([]);
+  const [dayPurchases, setDayPurchases] = useState([]);
+  const [dayJobWorksAll, setDayJobWorksAll] = useState([]);
+  const [dayAllOrders, setDayAllOrders] = useState([]);
   const [wires, setWires] = useState([]);
   const [stockPreview, setStockPreview] = useState(null);
   const [cashBook, setCashBook] = useState(null);
@@ -699,19 +704,30 @@ export default function DailyBook() {
         if (mainTab === 0) {
           params.startDate = entryDate;
           params.endDate = entryDate;
+          const [txnRes, rawRes, orderRes, jwRes] = await Promise.all([
+            transactionsAPI.getAll(params),
+            rawMaterialsAPI.getAll({ startDate: entryDate, endDate: entryDate }),
+            ordersAPI.getAll({ startDate: entryDate, endDate: entryDate }),
+            jobWorkAPI.getAll({ startDate: entryDate, endDate: entryDate }),
+          ]);
+          setList(txnRes.data.data || []);
+          setDayPurchases(rawRes.data.data || []);
+          setDayAllOrders(orderRes.data.data || []);
+          setDayJobWorksAll(jwRes.data.data || []);
+          setDailyOrders([]);
         } else {
           params.startDate = startDate || entryDate;
           params.endDate = endDate || entryDate;
           params.relatedTo = partyType;
           if (selectedPartyId) params.relatedId = selectedPartyId;
+          const res = await transactionsAPI.getAll(params);
+          let data = res.data.data || [];
+          if (mainTab === 2 || mainTab === 3) {
+            data = filterForPartyTab(data, mainTab);
+          }
+          setList(data);
+          setDailyOrders([]);
         }
-        const res = await transactionsAPI.getAll(params);
-        let data = res.data.data || [];
-        if (mainTab === 2 || mainTab === 3) {
-          data = filterForPartyTab(data, mainTab);
-        }
-        setList(data);
-        setDailyOrders([]);
       }
       await fetchCashBook();
       await fetchBankBook();
@@ -1329,6 +1345,104 @@ export default function DailyBook() {
     return { inRows, outRows };
   }, [list, buildExpenseRows]);
 
+  // Build balanced Two-Column Stock Movement rows (Purchases & Processing vs Sales & Deliveries)
+  const buildDailyStockRows = useCallback(() => {
+    const inStockRows = [];
+    const outStockRows = [];
+
+    // Helper: checks if a date matches the active entryDate (YYYY-MM-DD)
+    const matchesEntryDate = (dateVal) => {
+      if (!dateVal) return true; // If no date, assume today
+      const d = new Date(dateVal);
+      if (Number.isNaN(d.getTime())) return true;
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const localDate = `${yyyy}-${mm}-${dd}`;
+      return localDate === entryDate || d.toISOString().slice(0, 10) === entryDate;
+    };
+
+    // 1. Raw Material Purchases (Stock In) & Coil Returns (Stock Out)
+    (dayPurchases || []).forEach((rm) => {
+      if (rm.purchaseDate && !matchesEntryDate(rm.purchaseDate)) return;
+
+      if (rm.isReturn) {
+        // Coil return to supplier -> Outward
+        outStockRows.push({
+          ...rm,
+          sourceKind: 'CoilReturn',
+          supplierName: rm.supplierName || rm.supplierId?.name || 'Supplier',
+          weightKg: Number(rm.weightInKg) || 0,
+        });
+      } else {
+        // Raw material stock inward from supplier -> Inward
+        inStockRows.push({
+          ...rm,
+          sourceKind: 'RawMaterial',
+          supplierName: rm.supplierName || rm.supplierId?.name || 'Supplier',
+          weightKg: Number(rm.weightInKg) || 0,
+        });
+      }
+    });
+
+    // 2. Job Work / Processing: Customer Coil Arrivals (Stock In) & Finished Deliveries (Wire Out)
+    (dayJobWorksAll || []).forEach((jw) => {
+      // Coil arrival on this date -> Inward
+      if (jw.arrivalDate && matchesEntryDate(jw.arrivalDate)) {
+        inStockRows.push({
+          ...jw,
+          sourceKind: 'ProcessingArrival',
+          customerName: jw.customerName || jw.customerId?.name || 'Processing Customer',
+          weightKg: Number(jw.arrivedWeightKg) || 0,
+          bundles: 0,
+        });
+      }
+
+      // Finished Wire Deliveries on this date -> Outward
+      (jw.deliveries || []).forEach((d) => {
+        if (d.deliveredDate && matchesEntryDate(d.deliveredDate)) {
+          outStockRows.push({
+            ...d,
+            _id: d._id || d.deliveryGroupId || `${jw._id}-${d.wireNumber}`,
+            deliveryId: d._id,
+            jobWorkId: jw._id,
+            customerId: jw.customerId,
+            customerName: jw.customerName || jw.customerId?.name || 'Processing Customer',
+            sourceKind: 'ProcessingDelivery',
+            weightKg: Number(d.weightKg) || 0,
+            labourRatePerKg: Number(d.labourRatePerKg) || 0,
+            labourAmount: Number(d.labourAmount) || 0,
+          });
+        }
+      });
+    });
+
+    // 3. Sales Orders: Wire Sold (Wire Out) & Customer Sales Returns (Stock In)
+    (dayAllOrders || []).forEach((o) => {
+      if (o.orderDate && !matchesEntryDate(o.orderDate)) return;
+
+      if (o.isReturn) {
+        // Wire defect returned from customer -> Inward
+        inStockRows.push({
+          ...o,
+          sourceKind: 'SalesReturn',
+          customerName: o.customerName || o.customerId?.name || 'Customer',
+          weightKg: Number(o.finalWeightKg ?? o.initialWeightKg) || 0,
+        });
+      } else {
+        // Wire Sale / Dispatch -> Outward
+        outStockRows.push({
+          ...o,
+          sourceKind: 'Order',
+          customerName: o.customerName || o.customerId?.name || 'Customer',
+          weightKg: Number(o.finalWeightKg ?? o.initialWeightKg) || 0,
+        });
+      }
+    });
+
+    return { inStockRows, outStockRows };
+  }, [dayPurchases, dayJobWorksAll, dayAllOrders, entryDate]);
+
   /** Cash/cheque from anyone who is not a ledger customer — updates cash in hand. */
   const openGeneralCashDialog = (transactionType = 'Money In') => {
     setGeneralCashMode(true);
@@ -1872,9 +1986,13 @@ export default function DailyBook() {
   const handleDelete = async () => {
     if (!deleteConfirm.id) return;
     try {
-      await transactionsAPI.delete(deleteConfirm.id);
+      if (deleteConfirm.isRawMaterial) {
+        await rawMaterialsAPI.delete(deleteConfirm.id);
+      } else {
+        await transactionsAPI.delete(deleteConfirm.id);
+      }
       setSnack({ open: true, message: 'Deleted', severity: 'success' });
-      setDeleteConfirm({ open: false, id: null });
+      setDeleteConfirm({ open: false, id: null, isRawMaterial: false });
       fetchData();
       fetchPartyLedger();
     } catch (err) {
@@ -2714,7 +2832,7 @@ export default function DailyBook() {
         ))}
       </Tabs>
 
-      {mainTab === 0 && (
+      {mainTab === 0 && registerViewMode !== 'stock' && (
         <KpiEquationBanner
           mode={cashBankTab}
           openingBalance={
@@ -2776,25 +2894,49 @@ export default function DailyBook() {
           justifyContent="space-between"
         >
           {mainTab === 0 ? (
-            <ToggleButtonGroup
-              value={cashBankTab}
-              exclusive
-              onChange={(_, v) => v && setCashBankTab(v)}
-              size="small"
-              sx={{
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  fontSize: '0.85rem',
-                  px: 2,
-                  py: 0.6,
-                },
-              }}
-            >
-              <ToggleButton value="cash">💵 Cash in Hand</ToggleButton>
-              <ToggleButton value="bank">🏦 Bank Accounts</ToggleButton>
-              <ToggleButton value="combined">📊 Combined</ToggleButton>
-            </ToggleButtonGroup>
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center">
+              <ToggleButtonGroup
+                value={registerViewMode}
+                exclusive
+                onChange={(_, v) => v && setRegisterViewMode(v)}
+                size="small"
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    px: 1.5,
+                    py: 0.5,
+                  },
+                }}
+              >
+                <ToggleButton value="both">📊 All-in-One</ToggleButton>
+                <ToggleButton value="cash">💰 Money In/Out</ToggleButton>
+                <ToggleButton value="stock">📦 Stock Movement</ToggleButton>
+              </ToggleButtonGroup>
+
+              {registerViewMode !== 'stock' && (
+                <ToggleButtonGroup
+                  value={cashBankTab}
+                  exclusive
+                  onChange={(_, v) => v && setCashBankTab(v)}
+                  size="small"
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      fontSize: '0.78rem',
+                      px: 1.25,
+                      py: 0.4,
+                    },
+                  }}
+                >
+                  <ToggleButton value="cash">💵 Cash in Hand</ToggleButton>
+                  <ToggleButton value="bank">🏦 Bank Accounts</ToggleButton>
+                  <ToggleButton value="combined">Combined</ToggleButton>
+                </ToggleButtonGroup>
+              )}
+            </Stack>
           ) : (
             <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
               <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
@@ -3065,7 +3207,7 @@ export default function DailyBook() {
       </Paper>
 
       {/* Main Tab 0 View: Cash Register or Bank Accounts */}
-      {mainTab === 0 && cashBankTab === 'cash' && (() => {
+      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'cash' && (() => {
         const { inRows, outRows } = buildRokarRows(false);
         return (
           <TwoColumnRokarLedger
@@ -3087,7 +3229,7 @@ export default function DailyBook() {
       })()}
 
       {/* Cheque Transactions section — visible when in cash or bank subtab if cheques exist */}
-      {mainTab === 0 && cashBankTab !== 'combined' && (() => {
+      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab !== 'combined' && (() => {
         const chequeRows = (list || []).filter((r) => r.paymentMethod === 'Cheque');
         if (chequeRows.length === 0) return null;
         return (
@@ -3167,7 +3309,7 @@ export default function DailyBook() {
         );
       })()}
 
-      {mainTab === 0 && cashBankTab === 'bank' && bankBook && (
+      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'bank' && bankBook && (
         <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main', minWidth: 0 }}>
           <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} flexWrap="wrap" gap={1} sx={{ minWidth: 0 }}>
             <Typography variant="subtitle1" fontWeight={700}>Bank Account Balance</Typography>
@@ -3255,7 +3397,7 @@ export default function DailyBook() {
       )}
 
       {/* Combined View — Two-column Money In (Left) and Money Out (Right) with all Cash, Bank, Cheques & Expenses */}
-      {mainTab === 0 && cashBankTab === 'combined' && (() => {
+      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'combined' && (() => {
         const { inRows, outRows } = buildRokarRows(true);
         return (
           <TwoColumnRokarLedger
@@ -3274,6 +3416,170 @@ export default function DailyBook() {
             outSubtitle="Expenses + Bank Deposits + Payments"
             mode="combined"
           />
+        );
+      })()}
+
+      {/* Daily Physical Stock Movement: Stock In (Purchases & Processing) vs Wire Out (Sales & Deliveries) */}
+      {mainTab === 0 && (registerViewMode === 'both' || registerViewMode === 'stock') && (() => {
+        const { inStockRows, outStockRows } = buildDailyStockRows();
+        return (
+          <Box sx={{ mt: registerViewMode === 'both' ? 3.5 : 0 }}>
+            {registerViewMode === 'both' && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  mb: 1.5,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                  pb: 1,
+                  borderBottom: '2px dashed',
+                  borderColor: 'divider',
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="subtitle1" fontWeight={800} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📦 Daily Material Movement (Maal Aamad / Rawana)
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={`${inStockRows.length + outStockRows.length} movement${inStockRows.length + outStockRows.length !== 1 ? 's' : ''}`}
+                    color="primary"
+                    variant="outlined"
+                    sx={{ fontWeight: 700, height: 20, fontSize: '0.7rem' }}
+                  />
+                </Stack>
+
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={requireAdmin(openStockArrivalDialog)}
+                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
+                  >
+                    + Stock Arrival
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={requireAdmin(openLedgerSaleDialog)}
+                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
+                  >
+                    + Wire Sale
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="info"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={requireAdmin(() => openJobWorkDialog())}
+                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
+                  >
+                    + Processing Inward
+                  </Button>
+                </Stack>
+              </Box>
+            )}
+
+            <TwoColumnStockLedger
+              inRows={inStockRows}
+              outRows={outStockRows}
+              onEditInRow={(row) => {
+                if (row.sourceKind === 'ProcessingArrival') {
+                  openJobWorkDialog(row);
+                } else if (row.sourceKind === 'SalesReturn') {
+                  setReturnForm({
+                    customerId: row.customerId?._id || row.customerId || '',
+                    wireNumber: row.wireNumber || '',
+                    coilCategory: row.coilCategory || '',
+                    initialWeightKg: row.initialWeightKg || row.weightKg || '',
+                    bundles: row.bundles || '',
+                    ratePerKg: row.ratePerKg || '',
+                    orderDate: row.orderDate ? new Date(row.orderDate).toISOString().slice(0, 10) : entryDate,
+                    notes: row.notes || '',
+                  });
+                  setReturnDialogOpen(true);
+                } else {
+                  // Raw material purchase
+                  setStockArrivalForm({
+                    supplierId: row.supplierId?._id || row.supplierId || '',
+                    coilCategory: row.coilCategory || 'Shiplet Coil',
+                    weightInKg: row.weightInKg || row.weightKg || '',
+                    bundles: row.bundles || '',
+                    ratePerKg: row.ratePerKg || '',
+                    amountPaid: row.amountPaid || '',
+                    paymentMethod: row.paymentMethod || 'Cash',
+                    purchaseDate: row.purchaseDate ? new Date(row.purchaseDate).toISOString().slice(0, 10) : entryDate,
+                    notes: row.notes || '',
+                  });
+                  setStockArrivalDialogOpen(true);
+                }
+              }}
+              onDeleteInRow={(row) => {
+                if (row.sourceKind === 'ProcessingArrival') {
+                  setDeleteJobWorkConfirm({ open: true, id: row._id });
+                } else if (row.sourceKind === 'SalesReturn') {
+                  setDeleteOrderConfirm({ open: true, id: row._id });
+                } else {
+                  // Raw material purchase delete
+                  setDeleteConfirm({ open: true, id: row._id, isRawMaterial: true });
+                }
+              }}
+              onEditOutRow={(row) => {
+                if (row.sourceKind === 'ProcessingDelivery') {
+                  openJobWorkDeliveryDialog(row.customerId, {
+                    jobWorkId: row.jobWorkId,
+                    deliveryId: row.deliveryId || row._id,
+                    weightKg: row.weightKg,
+                    bundles: row.bundles,
+                    wireNumber: row.wireNumber,
+                    labourRatePerKg: row.labourRatePerKg,
+                    deliveredDate: row.deliveredDate,
+                    notes: row.notes,
+                  });
+                } else if (row.sourceKind === 'CoilReturn') {
+                  setCoilReturnForm({
+                    supplierId: row.supplierId?._id || row.supplierId || '',
+                    coilCategory: row.coilCategory || 'Shiplet Coil',
+                    weightInKg: row.weightInKg || row.weightKg || '',
+                    bundles: row.bundles || '',
+                    ratePerKg: row.ratePerKg || '',
+                    purchaseDate: row.purchaseDate ? new Date(row.purchaseDate).toISOString().slice(0, 10) : entryDate,
+                    notes: row.notes || '',
+                  });
+                  setCoilReturnDialogOpen(true);
+                } else {
+                  // Sales Order
+                  openEditDailySale(row);
+                }
+              }}
+              onDeleteOutRow={(row) => {
+                if (row.sourceKind === 'ProcessingDelivery') {
+                  setDeleteJobWorkDeliveryConfirm({
+                    open: true,
+                    jobWorkId: row.jobWorkId,
+                    deliveryId: row.deliveryId || row._id,
+                  });
+                } else if (row.sourceKind === 'CoilReturn') {
+                  setDeleteConfirm({ open: true, id: row._id, isRawMaterial: true });
+                } else {
+                  setDeleteOrderConfirm({ open: true, id: row._id });
+                }
+              }}
+              onAddStockIn={openStockArrivalDialog}
+              onAddWireOut={openLedgerSaleDialog}
+              requireAdmin={requireAdmin}
+              inTitle="Stock In / Purchases (Maal Aamad)"
+              inSubtitle="Raw Material Purchases + Processing Customer Coils"
+              outTitle="Wire Out / Sales (Maal Rawana)"
+              outSubtitle="Wire Sales Orders + Processing Deliveries"
+            />
+          </Box>
         );
       })()}
 

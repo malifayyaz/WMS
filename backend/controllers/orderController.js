@@ -135,7 +135,11 @@ const getOrders = async (req, res, next) => {
     if (req.query.startDate || req.query.endDate) {
       filter.orderDate = {};
       if (req.query.startDate) filter.orderDate.$gte = new Date(req.query.startDate);
-      if (req.query.endDate) filter.orderDate.$lte = new Date(req.query.endDate);
+      if (req.query.endDate) {
+        const end = new Date(req.query.endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = end;
+      }
     }
     const limitRaw = parseInt(req.query.limit, 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 2000) : 500;
