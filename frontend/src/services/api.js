@@ -68,6 +68,8 @@ export const consumptionAPI = {
   getUsage: (params) => api.get('/consumption/usage', { params }),
   recordUsage: (data) => api.post('/consumption/usage', data),
   getAnalysis: (params) => api.get('/consumption/analysis', { params }),
+  addPayment: (id, data) => api.post(`/consumption/materials/${id}/payments`, data),
+  getLedger: (params) => api.get('/consumption/ledger', { params }),
 };
 
 export const readyStockAPI = {
@@ -169,6 +171,7 @@ export const jobWorkAPI = {
   addDelivery: (id, data) => api.post(`/jobwork/${id}/delivery`, data),
   updateDelivery: (id, deliveryId, data) => api.put(`/jobwork/${id}/delivery/${deliveryId}`, data),
   deleteDelivery: (id, deliveryId) => api.delete(`/jobwork/${id}/delivery/${deliveryId}`),
+  addReturn: (id, data) => api.post(`/jobwork/${id}/returns`, data),
   update: (id, data) => api.put(`/jobwork/${id}`, data),
   delete: (id) => api.delete(`/jobwork/${id}`),
 };

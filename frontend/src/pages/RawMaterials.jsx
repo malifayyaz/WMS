@@ -5,6 +5,10 @@ import {
   FormControl, InputLabel, Select, MenuItem, Tabs, Tab, Card, CardContent, Typography, Grid, Chip,
   TablePagination,
   Stack,
+  FormControlLabel,
+  Switch,
+  Collapse,
+  Divider,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -35,6 +39,12 @@ export default function RawMaterials() {
   const [form, setForm] = useState({
     supplierId: '', coilCategory: 'Shiplet Coil', materialType: '', weightInKg: '', ratePerKg: '',
     amountPaid: 0, paymentMethod: 'Cash', paidBy: '', purchaseDate: '', notes: '',
+    bundles: '',
+    sendForAnnealing: false,
+    annealingWeightKg: '',
+    annealingBundles: '',
+    annealingSentDate: '',
+    annealingNotes: '',
   });
   const [editingId, setEditingId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
@@ -64,10 +74,17 @@ export default function RawMaterials() {
   useEffect(() => { setPage(0); fetchList(); }, [tab]);
 
   const handleOpenAdd = (coilCategory = 'Shiplet Coil') => {
+    const today = new Date().toISOString().slice(0, 10);
     setForm({
       supplierId: suppliers[0]?._id || '', coilCategory, materialType: coilCategory,
       weightInKg: '', ratePerKg: '', amountPaid: 0, paymentMethod: 'Cash', paidBy: '',
-      purchaseDate: new Date().toISOString().slice(0, 10), notes: '',
+      purchaseDate: today, notes: '',
+      bundles: '',
+      sendForAnnealing: false,
+      annealingWeightKg: '',
+      annealingBundles: '',
+      annealingSentDate: today,
+      annealingNotes: '',
     });
     setEditingId(null);
     setDialogOpen(true);
@@ -85,6 +102,12 @@ export default function RawMaterials() {
       paidBy: row.paidBy || '',
       purchaseDate: toInputDate(row.purchaseDate),
       notes: row.notes || '',
+      bundles: row.bundles || '',
+      sendForAnnealing: false,
+      annealingWeightKg: '',
+      annealingBundles: '',
+      annealingSentDate: '',
+      annealingNotes: '',
     });
     setEditingId(row._id);
     setDialogOpen(true);
@@ -101,16 +124,34 @@ export default function RawMaterials() {
       weightInKg: Number(form.weightInKg),
       ratePerKg: Number(form.ratePerKg),
       amountPaid: Number(form.amountPaid) || 0,
+      bundles: Number(form.bundles) || 0,
       purchaseDate: form.purchaseDate || undefined,
     };
+    if (!editingId && form.sendForAnnealing) {
+      payload.sendForAnnealing = true;
+      payload.annealingWeightKg = Number(form.annealingWeightKg) || Number(form.weightInKg);
+      payload.annealingBundles = Number(form.annealingBundles) || Number(form.bundles) || 0;
+      payload.annealingSentDate = form.annealingSentDate || new Date().toISOString().slice(0, 10);
+      payload.annealingNotes = form.annealingNotes || '';
+    } else {
+      delete payload.sendForAnnealing;
+      delete payload.annealingWeightKg;
+      delete payload.annealingBundles;
+      delete payload.annealingSentDate;
+      delete payload.annealingNotes;
+    }
     try {
       let msg;
       if (editingId) {
         await rawMaterialsAPI.update(editingId, payload);
-        msg = 'Updated';
+        msg = 'Stock recorded successfully';
       } else {
         const res = await rawMaterialsAPI.create(payload);
-        msg = res.data.message || 'Recorded';
+        if (payload.sendForAnnealing || res.data?.data?.annealingRecord) {
+          msg = 'Stock recorded and sent for annealing successfully';
+        } else {
+          msg = 'Stock recorded successfully';
+        }
       }
       setSnack({ open: true, message: msg, severity: 'success' });
       setDialogOpen(false);
@@ -335,6 +376,71 @@ export default function RawMaterials() {
           </FormControl>
           <TextField fullWidth label="Paid By" value={form.paidBy} onChange={(e) => setForm((f) => ({ ...f, paidBy: e.target.value }))} margin="dense" />
           <TextField fullWidth label="Notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
+
+          {!editingId && (
+            <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.sendForAnnealing}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setForm((f) => ({
+                        ...f,
+                        sendForAnnealing: checked,
+                        annealingWeightKg: checked && !f.annealingWeightKg ? f.weightInKg : f.annealingWeightKg,
+                        annealingBundles: checked && !f.annealingBundles ? f.bundles : f.annealingBundles,
+                        annealingSentDate: f.annealingSentDate || new Date().toISOString().slice(0, 10),
+                      }));
+                    }}
+                    color="primary"
+                  />
+                }
+                label="Send for Annealing immediately after arrival"
+              />
+              <Collapse in={form.sendForAnnealing}>
+                <Box sx={{ mt: 1, p: 2, borderRadius: 1, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Weight to send for annealing (kg)"
+                    value={form.annealingWeightKg !== '' ? form.annealingWeightKg : form.weightInKg}
+                    onChange={(e) => setForm((f) => ({ ...f, annealingWeightKg: e.target.value }))}
+                    margin="dense"
+                    helperText="Default: same as arrival weight. Change if sending partial stock."
+                  />
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Number of bundles"
+                    value={form.annealingBundles !== '' ? form.annealingBundles : form.bundles}
+                    onChange={(e) => setForm((f) => ({ ...f, annealingBundles: e.target.value }))}
+                    margin="dense"
+                  />
+                  <TextField
+                    fullWidth
+                    type="date"
+                    label="Sent date"
+                    value={form.annealingSentDate || new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setForm((f) => ({ ...f, annealingSentDate: e.target.value }))}
+                    margin="dense"
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Notes (optional)"
+                    placeholder="Any notes about this annealing batch"
+                    value={form.annealingNotes}
+                    onChange={(e) => setForm((f) => ({ ...f, annealingNotes: e.target.value }))}
+                    margin="dense"
+                  />
+                  <Alert severity="info" sx={{ mt: 1.5 }}>
+                    This will automatically create an annealing send record. You can track it in the Bhatti / Heating section.
+                  </Alert>
+                </Box>
+              </Collapse>
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>

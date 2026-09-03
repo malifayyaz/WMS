@@ -130,25 +130,54 @@ const createMaterial = async (req, res, next) => {
 
 
     body.costPerUnit = costs.costPerUnit;
-
     body.totalCost = costs.totalCost;
-
     body.currentQuantity = quantity;
 
+    const totalAmount = costs.totalCost;
+    let amountPaid;
+    if (body.amountPaid !== undefined && body.amountPaid !== '') {
+      amountPaid = Math.max(0, Number(body.amountPaid) || 0);
+    } else {
+      amountPaid = totalAmount;
+    }
 
+    const amountDue = Math.max(0, totalAmount - amountPaid);
+    let paymentStatus;
+    if (amountPaid >= totalAmount) {
+      paymentStatus = 'Paid';
+    } else if (amountPaid > 0) {
+      paymentStatus = 'Partial';
+    } else {
+      paymentStatus = 'Unpaid';
+    }
+
+    body.amountPaid = amountPaid;
+    body.amountDue = amountDue;
+    body.paymentStatus = paymentStatus;
+    body.supplierName = body.supplierName || '';
+    body.supplierContact = body.supplierContact || '';
+
+    if (amountPaid > 0) {
+      body.paymentHistory = [
+        {
+          amount: amountPaid,
+          paymentDate: body.purchaseDate ? new Date(body.purchaseDate) : new Date(),
+          paymentMethod: body.paymentMethod || 'Cash',
+          paidBy: body.paidBy || '',
+          note: body.notes || 'Initial payment',
+          createdAt: new Date(),
+        },
+      ];
+    } else {
+      body.paymentHistory = [];
+    }
 
     const doc = await ConsumptionMaterial.create(body);
-
     await syncUsageForMaterial(doc);
-
     res.status(201).json({ success: true, data: doc, message: 'Process material recorded' });
-
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
@@ -510,25 +539,112 @@ const getConsumptionAnalysis = async (req, res, next) => {
   }
 };
 
+/** Record payment towards an unpaid or partial process material purchase. */
+const addPayment = async (req, res, next) => {
+  try {
+    const { amount, paymentMethod, paidBy, note } = req.body;
+    const paymentAmount = Number(amount);
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid payment amount is required and must be greater than 0' });
+    }
 
+    const record = await ConsumptionMaterial.findById(req.params.id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Process material record not found' });
+    }
+
+    const currentDue = Number(record.amountDue ?? (record.totalCost || 0) - (record.amountPaid || 0));
+    if (paymentAmount > currentDue + 0.001) {
+      return res.status(400).json({
+        success: false,
+        message: `Payment amount cannot exceed outstanding due of Rs. ${currentDue}`,
+      });
+    }
+
+    record.paymentHistory.push({
+      amount: paymentAmount,
+      paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : new Date(),
+      paymentMethod: paymentMethod || 'Cash',
+      paidBy: paidBy || '',
+      note: note || '',
+      createdAt: new Date(),
+    });
+
+    record.amountPaid = (record.amountPaid || 0) + paymentAmount;
+    record.amountDue = Math.max(0, currentDue - paymentAmount);
+
+    if (record.amountDue <= 0.001) {
+      record.paymentStatus = 'Paid';
+    } else if (record.amountPaid > 0) {
+      record.paymentStatus = 'Partial';
+    } else {
+      record.paymentStatus = 'Unpaid';
+    }
+
+    await record.save();
+
+    res.json({
+      success: true,
+      data: record,
+      message: `Payment of Rs. ${paymentAmount} recorded successfully`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Get material ledger filtered by materialType and date range with summary totals. */
+const getLedger = async (req, res, next) => {
+  try {
+    const { materialType, startDate, endDate } = req.query;
+    const filter = {};
+    if (materialType) {
+      filter.materialType = materialType;
+    }
+    if (startDate || endDate) {
+      filter.purchaseDate = {};
+      if (startDate) filter.purchaseDate.$gte = startOfDay(new Date(startDate));
+      if (endDate) filter.purchaseDate.$lte = endOfDay(new Date(endDate));
+    }
+
+    const records = await ConsumptionMaterial.find(filter).sort({ purchaseDate: -1, createdAt: -1 });
+
+    const totalPurchasedQuantity = records.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+    const totalPurchasedAmount = records.reduce((sum, r) => sum + (Number(r.totalCost) || 0), 0);
+    const totalPaid = records.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
+    const totalDue = records.reduce((sum, r) => sum + (Number(r.amountDue) || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          totalPurchasedQuantity,
+          totalPurchasedAmount,
+          totalPurchased: {
+            quantity: totalPurchasedQuantity,
+            amount: totalPurchasedAmount,
+          },
+          totalPaid,
+          totalDue,
+        },
+        records,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports = {
-
   createMaterial,
-
   updateMaterial,
-
   deleteMaterial,
-
   getMaterials,
-
   getMaterialStock,
-
   recordUsage,
-
   getUsage,
-
   getConsumptionAnalysis,
-
+  addPayment,
+  getLedger,
 };
 

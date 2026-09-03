@@ -471,6 +471,63 @@ const getJobWorkStock = async (req, res, next) => {
   }
 };
 
+/** Record returned coil from processing customer and add back to factory stock. */
+const addReturn = async (req, res, next) => {
+  try {
+    const jobWorkId = req.params.id;
+    const { weightKg, returnDate, coilType, reason, returnedBy, note } = req.body;
+
+    const parsedWeight = Number(weightKg);
+    if (!parsedWeight || parsedWeight <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid returned weight is required and must be greater than 0' });
+    }
+
+    const jobWork = await JobWork.findById(jobWorkId);
+    if (!jobWork) {
+      return res.status(404).json({ success: false, message: 'Job work record not found' });
+    }
+
+    const resolvedCoilType = coilType || jobWork.coilCategory || 'Shiplet Coil';
+    const parsedReturnDate = returnDate ? new Date(returnDate) : new Date();
+
+    jobWork.returns.push({
+      weightKg: parsedWeight,
+      returnDate: parsedReturnDate,
+      coilType: resolvedCoilType,
+      reason: reason || '',
+      returnedBy: returnedBy || '',
+      note: note || '',
+      createdAt: new Date(),
+    });
+
+    await jobWork.save();
+
+    const rawMaterial = await RawMaterial.create({
+      supplierId: jobWork.customerId,
+      supplierName: jobWork.customerName || 'Processing Customer',
+      coilCategory: resolvedCoilType,
+      materialType: resolvedCoilType,
+      weightInKg: parsedWeight,
+      ratePerKg: jobWork.coilRatePerKg || 0,
+      totalAmount: Math.round(parsedWeight * (jobWork.coilRatePerKg || 0) * 100) / 100,
+      amountPaid: 0,
+      amountDue: 0,
+      currentStock: parsedWeight,
+      isReturn: false,
+      purchaseDate: parsedReturnDate,
+      notes: 'Returned by processing customer — ' + (jobWork.customerName || 'Processing Customer') + (note ? ' — ' + note : ''),
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { jobWork, rawMaterial },
+      message: 'Return recorded and stock updated',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createJobWork,
   getJobWorks,
@@ -482,4 +539,5 @@ module.exports = {
   updateJobWork,
   deleteJobWork,
   getJobWorkStock,
+  addReturn,
 };

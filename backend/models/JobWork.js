@@ -30,6 +30,16 @@ const jobWorkDeliverySchema = new mongoose.Schema({
   isGroupPrimary: { type: Boolean, default: true },
 });
 
+const jobWorkReturnSchema = new mongoose.Schema({
+  weightKg: { type: Number, required: true },
+  returnDate: { type: Date, default: Date.now },
+  coilType: String,
+  reason: String,
+  returnedBy: String,
+  note: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
 const jobWorkSchema = new mongoose.Schema(
   {
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -51,6 +61,7 @@ const jobWorkSchema = new mongoose.Schema(
     arrivalDate: { type: Date, default: Date.now },
 
     deliveries: [jobWorkDeliverySchema],
+    returns: [jobWorkReturnSchema],
     deliveredWeightKg: { type: Number, default: 0 },
     labourTotal: { type: Number, default: 0 },
     status: { type: String, enum: ['In Stock', 'Partially Delivered', 'Delivered'], default: 'In Stock' },
@@ -75,9 +86,11 @@ jobWorkSchema.pre('save', function syncTotals(next) {
     this.sellingRatePerKg = (this.coilRatePerKg || 0) + (this.labourRatePerKg || 0);
   }
 
-  if (this.deliveredWeightKg >= this.arrivedWeightKg && this.arrivedWeightKg > 0) {
+  const returnedWeightKg = (this.returns || []).reduce((s, r) => s + (r.weightKg || 0), 0);
+  const totalOutKg = this.deliveredWeightKg + returnedWeightKg;
+  if (totalOutKg >= this.arrivedWeightKg && this.arrivedWeightKg > 0) {
     this.status = 'Delivered';
-  } else if (this.deliveredWeightKg > 0) {
+  } else if (totalOutKg > 0) {
     this.status = 'Partially Delivered';
   } else {
     this.status = 'In Stock';

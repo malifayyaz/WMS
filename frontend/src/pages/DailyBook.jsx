@@ -34,6 +34,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   useTheme,
+  Switch,
+  Collapse,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -55,6 +57,7 @@ import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SavingsIcon from '@mui/icons-material/Savings';
+import AssignmentReturnIcon from '@mui/icons-material/AssignmentReturn';
 import { customersAPI, suppliersAPI, transactionsAPI, ordersAPI, configAPI, rawMaterialsAPI, annealingAPI, jobWorkAPI, chequesAPI, personalPaymentsAPI, expensesAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
@@ -415,6 +418,11 @@ export default function DailyBook() {
     paymentMethod: 'Cash',
     purchaseDate: '',
     notes: '',
+    sendForAnnealing: false,
+    annealingWeightKg: '',
+    annealingBundles: '',
+    annealingSentDate: '',
+    annealingNotes: '',
   });
   const [coilReturnDialogOpen, setCoilReturnDialogOpen] = useState(false);
   const [coilReturnForm, setCoilReturnForm] = useState({
@@ -512,6 +520,17 @@ export default function DailyBook() {
     deliveryId: null,
   });
   const [deleteJobWorkConfirm, setDeleteJobWorkConfirm] = useState({ open: false, id: null });
+  const [jobWorkReturnDialogOpen, setJobWorkReturnDialogOpen] = useState(false);
+  const [jobWorkReturnTarget, setJobWorkReturnTarget] = useState(null);
+  const [jobWorkReturnForm, setJobWorkReturnForm] = useState({
+    weightKg: '',
+    coilType: 'Shiplet Coil',
+    returnDate: new Date().toISOString().slice(0, 10),
+    reason: '',
+    returnedBy: '',
+    note: '',
+  });
+  const [submittingJobWorkReturn, setSubmittingJobWorkReturn] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnForm, setReturnForm] = useState({
     customerId: '',
@@ -2143,6 +2162,11 @@ export default function DailyBook() {
       paymentMethod: 'Cash',
       purchaseDate: entryDate,
       notes: '',
+      sendForAnnealing: false,
+      annealingWeightKg: '',
+      annealingBundles: '',
+      annealingSentDate: entryDate,
+      annealingNotes: '',
     });
     setStockArrivalDialogOpen(true);
   };
@@ -2190,17 +2214,34 @@ export default function DailyBook() {
       setSnack({ open: true, message: 'Supplier, weight and rate required', severity: 'error' });
       return;
     }
+    const payload = {
+      ...stockArrivalForm,
+      materialType: stockArrivalForm.coilCategory,
+      weightInKg: Number(stockArrivalForm.weightInKg),
+      bundles: Number(stockArrivalForm.bundles) || 0,
+      ratePerKg: Number(stockArrivalForm.ratePerKg),
+      amountPaid: stockArrivalForm.amountPaid ? Number(stockArrivalForm.amountPaid) : 0,
+      purchaseDate: stockArrivalForm.purchaseDate || entryDate,
+    };
+    if (stockArrivalForm.sendForAnnealing) {
+      payload.sendForAnnealing = true;
+      payload.annealingWeightKg = Number(stockArrivalForm.annealingWeightKg) || Number(stockArrivalForm.weightInKg);
+      payload.annealingBundles = Number(stockArrivalForm.annealingBundles) || Number(stockArrivalForm.bundles) || 0;
+      payload.annealingSentDate = stockArrivalForm.annealingSentDate || stockArrivalForm.purchaseDate || entryDate;
+      payload.annealingNotes = stockArrivalForm.annealingNotes || '';
+    } else {
+      delete payload.sendForAnnealing;
+      delete payload.annealingWeightKg;
+      delete payload.annealingBundles;
+      delete payload.annealingSentDate;
+      delete payload.annealingNotes;
+    }
     try {
-      await rawMaterialsAPI.create({
-        ...stockArrivalForm,
-        materialType: stockArrivalForm.coilCategory,
-        weightInKg: Number(stockArrivalForm.weightInKg),
-        bundles: Number(stockArrivalForm.bundles) || 0,
-        ratePerKg: Number(stockArrivalForm.ratePerKg),
-        amountPaid: stockArrivalForm.amountPaid ? Number(stockArrivalForm.amountPaid) : 0,
-        purchaseDate: stockArrivalForm.purchaseDate || entryDate,
-      });
-      setSnack({ open: true, message: 'Stock arrival recorded in ledger', severity: 'success' });
+      const res = await rawMaterialsAPI.create(payload);
+      const msg = payload.sendForAnnealing || res.data?.data?.annealingRecord
+        ? 'Stock recorded and sent for annealing successfully'
+        : 'Stock arrival recorded in ledger';
+      setSnack({ open: true, message: msg, severity: 'success' });
       setStockArrivalDialogOpen(false);
       fetchData();
       fetchPartyLedger();
@@ -2636,6 +2677,79 @@ export default function DailyBook() {
       fetchPartyLedger();
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
+    }
+  };
+
+  const openJobWorkReturnDialog = (jobWorkRow = null) => {
+    if (jobWorkRow) {
+      setJobWorkReturnTarget(jobWorkRow);
+      setJobWorkReturnForm({
+        customerId: jobWorkRow.customerId?._id || jobWorkRow.customerId,
+        jobWorkId: jobWorkRow._id,
+        weightKg: '',
+        coilType: jobWorkRow.coilCategory || 'Shiplet Coil',
+        returnDate: new Date().toISOString().slice(0, 10),
+        reason: '',
+        returnedBy: '',
+        note: '',
+      });
+    } else {
+      const cid = selectedPartyId || processingCustomers[0]?._id || '';
+      const custLots = jobWorks.filter(
+        (j) => String(j.customerId?._id || j.customerId) === String(cid)
+      );
+      const targetLot = custLots.find((j) => j.status !== 'Delivered') || custLots[0] || null;
+      setJobWorkReturnTarget(targetLot);
+      setJobWorkReturnForm({
+        customerId: cid,
+        jobWorkId: targetLot?._id || '',
+        weightKg: '',
+        coilType: targetLot?.coilCategory || 'Shiplet Coil',
+        returnDate: new Date().toISOString().slice(0, 10),
+        reason: '',
+        returnedBy: '',
+        note: '',
+      });
+    }
+    setJobWorkReturnDialogOpen(true);
+  };
+
+  const handleJobWorkReturnSubmit = async () => {
+    let targetLotId = jobWorkReturnTarget?._id || jobWorkReturnForm.jobWorkId;
+    if (!targetLotId && jobWorkReturnForm.customerId) {
+      const custLots = jobWorks.filter(
+        (j) => String(j.customerId?._id || j.customerId) === String(jobWorkReturnForm.customerId)
+      );
+      const found = custLots.find((j) => j.status !== 'Delivered') || custLots[0];
+      targetLotId = found?._id;
+    }
+    if (!targetLotId) {
+      setSnack({ open: true, message: 'Please select a customer with an existing coil arrival record', severity: 'error' });
+      return;
+    }
+    const weight = Number(jobWorkReturnForm.weightKg);
+    if (!weight || weight <= 0) {
+      setSnack({ open: true, message: 'Valid returned weight is required', severity: 'error' });
+      return;
+    }
+    setSubmittingJobWorkReturn(true);
+    try {
+      await jobWorkAPI.addReturn(targetLotId, {
+        weightKg: weight,
+        coilType: jobWorkReturnForm.coilType,
+        returnDate: jobWorkReturnForm.returnDate || entryDate,
+        reason: jobWorkReturnForm.reason,
+        returnedBy: jobWorkReturnForm.returnedBy,
+        note: jobWorkReturnForm.note,
+      });
+      setSnack({ open: true, message: 'Return recorded. Stock updated.', severity: 'success' });
+      setJobWorkReturnDialogOpen(false);
+      setJobWorkReturnTarget(null);
+      await fetchJobWorkData();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to record return', severity: 'error' });
+    } finally {
+      setSubmittingJobWorkReturn(false);
     }
   };
 
@@ -3181,6 +3295,9 @@ export default function DailyBook() {
                 <ToolbarSection label="Processing">
                   <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
                     Coil Arrival
+                  </Button>
+                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AssignmentReturnIcon />} onClick={requireAdmin(() => openJobWorkReturnDialog())} sx={toolbarBtn}>
+                    Return Coil
                   </Button>
                   <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
                     Return Wire
@@ -4060,6 +4177,51 @@ export default function DailyBook() {
               </Box>
             </Paper>
           )}
+          {(() => {
+            const customerReturns = selectedPartyId
+              ? jobWorks.filter((jw) => String(jw.customerId?._id || jw.customerId) === String(selectedPartyId)).flatMap((jw) => (jw.returns || []).map((r) => ({ ...r, customerName: jw.customerName })))
+              : [];
+            if (!customerReturns.length) return null;
+            const totalRetKg = customerReturns.reduce((sum, r) => sum + (Number(r.weightKg) || 0), 0);
+            return (
+              <Paper sx={{ p: 2, mb: 2, border: '1px solid', borderColor: 'warning.light' }}>
+                <Typography variant="subtitle2" fontWeight={700} color="warning.dark" gutterBottom>
+                  Coil Returns — {selectedParty?.name || 'Customer'}
+                </Typography>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Date</TableCell>
+                        <TableCell align="right">Weight (kg)</TableCell>
+                        <TableCell>Coil Type</TableCell>
+                        <TableCell>Reason</TableCell>
+                        <TableCell>Returned By</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {customerReturns.map((ret, idx) => (
+                        <TableRow key={ret._id || idx}>
+                          <TableCell>{formatDate(ret.returnDate)}</TableCell>
+                          <TableCell align="right">{(Number(ret.weightKg) || 0).toFixed(2)}</TableCell>
+                          <TableCell>{ret.coilType || '—'}</TableCell>
+                          <TableCell>{ret.reason || ret.note || '—'}</TableCell>
+                          <TableCell>{ret.returnedBy || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow sx={{ bgcolor: 'action.hover' }}>
+                        <TableCell sx={{ fontWeight: 700 }}>Total Returned Weight</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, color: 'warning.main' }}>
+                          {totalRetKg.toFixed(2)} kg
+                        </TableCell>
+                        <TableCell colSpan={3} />
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            );
+          })()}
           <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
             <Typography variant="subtitle2" fontWeight={600} sx={{ p: 2, pb: 0 }}>
               Processing Work — Customer Coil to Wire {selectedParty ? `(${selectedParty.name})` : '(all customers)'}
@@ -4083,7 +4245,8 @@ export default function DailyBook() {
                 {(() => {
                   const deliveriesByLot = buildJobWorkDeliveryDisplayByLot(jobWorks);
                   return jobWorks.map((row) => {
-                  const remaining = Math.max(0, (row.arrivedWeightKg || 0) - (row.deliveredWeightKg || 0));
+                  const totalReturned = (row.returns || []).reduce((s, r) => s + (Number(r.weightKg) || 0), 0);
+                  const remaining = Math.max(0, (row.arrivedWeightKg || 0) - (row.deliveredWeightKg || 0) - totalReturned);
                   const statusColor = row.status === 'Delivered' ? 'success' : row.status === 'Partially Delivered' ? 'info' : 'warning';
                   const displayDeliveries = deliveriesByLot.get(String(row._id)) || [];
                   return (
@@ -4103,6 +4266,16 @@ export default function DailyBook() {
                         <TableCell align="right">
                           {(
                             <>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                startIcon={<AssignmentReturnIcon />}
+                                onClick={requireAdmin(() => openJobWorkReturnDialog(row))}
+                                sx={{ mr: 0.5 }}
+                              >
+                                Return Coil
+                              </Button>
                               <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openJobWorkDialog(row))} sx={{ mr: 0.5 }}>Edit</Button>
                               <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteJobWorkConfirm({ open: true, id: row._id }))}>Delete</Button>
                             </>
@@ -4159,6 +4332,35 @@ export default function DailyBook() {
                           </TableCell>
                         </TableRow>
                       ))}
+                      {row.returns && row.returns.length > 0 && (
+                        <>
+                          {row.returns.map((ret, rIdx) => (
+                            <TableRow key={ret._id || `${row._id}-ret-${rIdx}`} sx={{ bgcolor: 'rgba(237, 108, 2, 0.05)' }}>
+                              <TableCell colSpan={3} sx={{ pl: 4, fontSize: '0.85rem', color: 'warning.main' }}>
+                                ↩ Returned Coil {rIdx + 1} — {formatDate(ret.returnDate)} · {ret.coilType || row.coilCategory}
+                                {ret.returnedBy ? ` · Handled by: ${ret.returnedBy}` : ''}
+                              </TableCell>
+                              <TableCell colSpan={2} sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>
+                                {ret.reason ? `Reason: ${ret.reason}` : ''}
+                                {ret.note ? ` (${ret.note})` : ''}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontSize: '0.85rem', color: 'warning.main', fontWeight: 600 }}>
+                                {(Number(ret.weightKg) || 0).toFixed(2)}
+                              </TableCell>
+                              <TableCell colSpan={4} />
+                            </TableRow>
+                          ))}
+                          <TableRow sx={{ bgcolor: 'rgba(237, 108, 2, 0.08)' }}>
+                            <TableCell colSpan={5} sx={{ pl: 4, fontSize: '0.85rem', fontWeight: 700, color: 'warning.dark' }}>
+                              Total Returned Weight:
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontSize: '0.85rem', fontWeight: 700, color: 'warning.dark' }}>
+                              {totalReturned.toFixed(2)}
+                            </TableCell>
+                            <TableCell colSpan={4} />
+                          </TableRow>
+                        </>
+                      )}
                     </React.Fragment>
                   );
                   });
@@ -4975,6 +5177,69 @@ export default function DailyBook() {
           <TextField fullWidth type="number" label="Amount Paid (optional)" value={stockArrivalForm.amountPaid} onChange={(e) => setStockArrivalForm((f) => ({ ...f, amountPaid: e.target.value }))} margin="dense" helperText="Leave empty if no payment on this date" />
           <TextField fullWidth type="date" label="Arrival Date" value={stockArrivalForm.purchaseDate} onChange={(e) => setStockArrivalForm((f) => ({ ...f, purchaseDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <TextField fullWidth label="Notes" value={stockArrivalForm.notes} onChange={(e) => setStockArrivalForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
+
+          <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={stockArrivalForm.sendForAnnealing}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setStockArrivalForm((f) => ({
+                      ...f,
+                      sendForAnnealing: checked,
+                      annealingWeightKg: checked && !f.annealingWeightKg ? f.weightInKg : f.annealingWeightKg,
+                      annealingBundles: checked && !f.annealingBundles ? f.bundles : f.annealingBundles,
+                      annealingSentDate: f.annealingSentDate || f.purchaseDate || entryDate,
+                    }));
+                  }}
+                  color="primary"
+                />
+              }
+              label="Send for Annealing immediately after arrival"
+            />
+            <Collapse in={stockArrivalForm.sendForAnnealing}>
+              <Box sx={{ mt: 1, p: 2, borderRadius: 1, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Weight to send for annealing (kg)"
+                  value={stockArrivalForm.annealingWeightKg !== '' ? stockArrivalForm.annealingWeightKg : stockArrivalForm.weightInKg}
+                  onChange={(e) => setStockArrivalForm((f) => ({ ...f, annealingWeightKg: e.target.value }))}
+                  margin="dense"
+                  helperText="Default: same as arrival weight. Change if sending partial stock."
+                />
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Number of bundles"
+                  value={stockArrivalForm.annealingBundles !== '' ? stockArrivalForm.annealingBundles : stockArrivalForm.bundles}
+                  onChange={(e) => setStockArrivalForm((f) => ({ ...f, annealingBundles: e.target.value }))}
+                  margin="dense"
+                />
+                <TextField
+                  fullWidth
+                  type="date"
+                  label="Sent date"
+                  value={stockArrivalForm.annealingSentDate || stockArrivalForm.purchaseDate || entryDate}
+                  onChange={(e) => setStockArrivalForm((f) => ({ ...f, annealingSentDate: e.target.value }))}
+                  margin="dense"
+                  InputLabelProps={{ shrink: true }}
+                />
+                <TextField
+                  fullWidth
+                  label="Notes (optional)"
+                  placeholder="Any notes about this annealing batch"
+                  value={stockArrivalForm.annealingNotes}
+                  onChange={(e) => setStockArrivalForm((f) => ({ ...f, annealingNotes: e.target.value }))}
+                  margin="dense"
+                />
+                <Alert severity="info" sx={{ mt: 1.5 }}>
+                  This will automatically create an annealing send record. You can track it in the Bhatti / Heating section.
+                </Alert>
+              </Box>
+            </Collapse>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setStockArrivalDialogOpen(false)}>Cancel</Button>
@@ -5531,6 +5796,161 @@ export default function DailyBook() {
           </Button>
           <Button variant="contained" color="success" onClick={handleSaveJobWorkDelivery}>
             {jobWorkDeliveryEdit ? 'Update Delivery' : 'Save Delivery'}
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={jobWorkReturnDialogOpen}
+        onClose={() => {
+          if (submittingJobWorkReturn) return;
+          setJobWorkReturnDialogOpen(false);
+          setJobWorkReturnTarget(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Record Coil Return — {jobWorkReturnTarget?.customerName || 'Customer'}
+        </DialogTitle>
+        <DialogContent sx={{ overflowY: 'auto' }}>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Returned coil will be added back to your stock.
+          </Alert>
+
+          <PartySearchSelect
+            options={processingCustomers}
+            value={jobWorkReturnForm.customerId}
+            onChange={(cid) => {
+              const custLots = jobWorks.filter(
+                (j) => String(j.customerId?._id || j.customerId) === String(cid)
+              );
+              const targetLot = custLots.find((j) => j.status !== 'Delivered') || custLots[0] || null;
+              setJobWorkReturnTarget(targetLot);
+              setJobWorkReturnForm((f) => ({
+                ...f,
+                customerId: cid,
+                jobWorkId: targetLot?._id || '',
+                coilType: targetLot?.coilCategory || f.coilType,
+              }));
+            }}
+            label="Processing Customer"
+            required
+            getOptionLabel={customerSearchLabel}
+          />
+          {(() => {
+            const custLots = jobWorks.filter(
+              (j) => String(j.customerId?._id || j.customerId) === String(jobWorkReturnForm.customerId)
+            );
+            if (custLots.length > 1) {
+              return (
+                <FormControl fullWidth margin="dense">
+                  <InputLabel>Coil Arrival Lot</InputLabel>
+                  <Select
+                    value={jobWorkReturnForm.jobWorkId || jobWorkReturnTarget?._id || ''}
+                    label="Coil Arrival Lot"
+                    onChange={(e) => {
+                      const selLot = custLots.find((j) => String(j._id) === String(e.target.value));
+                      setJobWorkReturnTarget(selLot || null);
+                      setJobWorkReturnForm((f) => ({
+                        ...f,
+                        jobWorkId: e.target.value,
+                        coilType: selLot?.coilCategory || f.coilType,
+                      }));
+                    }}
+                  >
+                    {custLots.map((l) => {
+                      const totalRet = (l.returns || []).reduce((s, r) => s + (Number(r.weightKg) || 0), 0);
+                      const rem = Math.max(0, (l.arrivedWeightKg || 0) - (l.deliveredWeightKg || 0) - totalRet);
+                      return (
+                        <MenuItem key={l._id} value={l._id}>
+                          Arrival {formatDate(l.arrivalDate)} — {l.coilCategory} ({rem.toFixed(1)} kg remaining)
+                        </MenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+              );
+            }
+            return null;
+          })()}
+
+          <TextField
+            fullWidth
+            type="number"
+            label="Weight returned (kg)"
+            value={jobWorkReturnForm.weightKg}
+            onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, weightKg: e.target.value }))}
+            margin="dense"
+            required
+            autoFocus
+          />
+
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Coil type</InputLabel>
+            <Select
+              value={jobWorkReturnForm.coilType}
+              label="Coil type"
+              onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, coilType: e.target.value }))}
+            >
+              <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
+              <MenuItem value="Patri Coil">Patri Coil</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            type="date"
+            label="Return date"
+            value={jobWorkReturnForm.returnDate}
+            onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, returnDate: e.target.value }))}
+            margin="dense"
+            InputLabelProps={{ shrink: true }}
+          />
+
+          <TextField
+            fullWidth
+            label="Reason for return (optional)"
+            value={jobWorkReturnForm.reason}
+            onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, reason: e.target.value }))}
+            margin="dense"
+          />
+
+          <TextField
+            fullWidth
+            label="Returned by"
+            placeholder="Who handled the return"
+            value={jobWorkReturnForm.returnedBy}
+            onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, returnedBy: e.target.value }))}
+            margin="dense"
+          />
+
+          <TextField
+            fullWidth
+            label="Notes (optional)"
+            value={jobWorkReturnForm.note}
+            onChange={(e) => setJobWorkReturnForm((f) => ({ ...f, note: e.target.value }))}
+            margin="dense"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setJobWorkReturnDialogOpen(false);
+              setJobWorkReturnTarget(null);
+            }}
+            disabled={submittingJobWorkReturn}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={handleJobWorkReturnSubmit}
+            disabled={submittingJobWorkReturn}
+            startIcon={submittingJobWorkReturn ? <CircularProgress size={18} /> : undefined}
+          >
+            Record Return
           </Button>
         </DialogActions>
       </ResponsiveDialog>

@@ -3,13 +3,14 @@ import {
   Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, DialogTitle, DialogContent, DialogActions, Snackbar, Alert, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, TextField, Tabs, Tab, Typography, Card, CardContent,
-  Tooltip, Chip,
+  Tooltip, Chip, RadioGroup, Radio, FormControlLabel, Divider,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
+import PaymentIcon from '@mui/icons-material/Payment';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { expensesAPI, configAPI, consumptionAPI, chequesAPI } from '../services/api';
@@ -19,6 +20,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import ResponsiveDialog from '../components/Common/ResponsiveDialog';
 import PageToolbar from '../components/Common/PageToolbar';
+import ProcessMaterialLedger from '../components/Expenses/ProcessMaterialLedger';
 import { useIsMobile } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -108,7 +110,22 @@ export default function Expenses() {
     unit: getDefaultUnit('Acid'),
     notes: '',
     purchaseDate: new Date().toISOString().slice(0, 10),
+    paymentOption: 'full',
+    amountPaid: '',
+    paymentMethod: 'Cash',
+    paidBy: '',
+    supplierName: '',
+    supplierContact: '',
   });
+  const [processPayDialogOpen, setProcessPayDialogOpen] = useState(false);
+  const [processPayTarget, setProcessPayTarget] = useState(null);
+  const [processPayForm, setProcessPayForm] = useState({
+    amount: '',
+    paymentMethod: 'Cash',
+    paidBy: '',
+    note: '',
+  });
+  const [submittingProcessPay, setSubmittingProcessPay] = useState(false);
   const [processDeleteConfirm, setProcessDeleteConfirm] = useState({ open: false, id: null });
   const [breakdownDialogOpen, setBreakdownDialogOpen] = useState(false);
   const [breakdownTargetRow, setBreakdownTargetRow] = useState(null);
@@ -352,14 +369,21 @@ export default function Expenses() {
   const openProcessDialog = (row = null) => {
     if (row?.isProcessPurchase) {
       setProcessEditingId(row._id);
+      const isDue = (row.amountDue || 0) > 0;
       setProcessForm({
         materialType: row.expenseCategory || row.materialType || 'Acid',
         quantity: row.quantity || '',
-        costPerUnit: '',
-        totalCost: row.amount || '',
+        costPerUnit: row.costPerUnit || '',
+        totalCost: row.totalCost || row.amount || '',
         unit: row.unit || getDefaultUnit(row.expenseCategory),
-        notes: row.description || '',
-        purchaseDate: row.expenseDate ? new Date(row.expenseDate).toISOString().slice(0, 10) : entryDate,
+        notes: row.description || row.notes || '',
+        purchaseDate: row.expenseDate || row.purchaseDate ? new Date(row.expenseDate || row.purchaseDate).toISOString().slice(0, 10) : entryDate,
+        paymentOption: isDue ? 'later' : 'full',
+        amountPaid: row.amountPaid !== undefined ? row.amountPaid : (row.amount || ''),
+        paymentMethod: row.paymentMethod || 'Cash',
+        paidBy: row.paidBy || '',
+        supplierName: row.supplierName || '',
+        supplierContact: row.supplierContact || '',
       });
     } else {
       const materialType = 'Acid';
@@ -372,6 +396,12 @@ export default function Expenses() {
         unit: getDefaultUnit(materialType),
         notes: '',
         purchaseDate: entryDate,
+        paymentOption: 'full',
+        amountPaid: '',
+        paymentMethod: 'Cash',
+        paidBy: '',
+        supplierName: '',
+        supplierContact: '',
       });
     }
     setProcessDialogOpen(true);
@@ -387,11 +417,19 @@ export default function Expenses() {
         setSnack({ open: true, message: 'Enter total purchase cost or cost per unit', severity: 'error' });
         return;
       }
+      const totalAmount = Number(processForm.totalCost) || (Number(processForm.quantity) * Number(processForm.costPerUnit)) || 0;
+      const amountPaid = processForm.paymentOption === 'full' ? totalAmount : (Number(processForm.amountPaid) || 0);
+
       const payload = {
         ...processForm,
         quantity: Number(processForm.quantity),
         costPerUnit: processForm.costPerUnit ? Number(processForm.costPerUnit) : undefined,
-        totalCost: processForm.totalCost ? Number(processForm.totalCost) : undefined,
+        totalCost: totalAmount || undefined,
+        amountPaid,
+        paymentMethod: processForm.paymentMethod || 'Cash',
+        paidBy: processForm.paidBy || '',
+        supplierName: processForm.supplierName || '',
+        supplierContact: processForm.supplierContact || '',
         purchaseDate: processForm.purchaseDate || entryDate,
       };
       if (processEditingId) {
@@ -405,6 +443,49 @@ export default function Expenses() {
       fetchProcessData();
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
+    }
+  };
+
+  const openProcessPayDialog = (row) => {
+    setProcessPayTarget(row);
+    setProcessPayForm({
+      amount: row.amountDue || '',
+      paymentMethod: 'Cash',
+      paidBy: '',
+      note: '',
+    });
+    setProcessPayDialogOpen(true);
+  };
+
+  const handleProcessPaySubmit = async () => {
+    if (!processPayTarget) return;
+    const amount = Number(processPayForm.amount);
+    if (!amount || amount <= 0) {
+      setSnack({ open: true, message: 'Valid payment amount is required', severity: 'error' });
+      return;
+    }
+    const currentDue = Number(processPayTarget.amountDue || 0);
+    if (amount > currentDue) {
+      setSnack({ open: true, message: `Payment amount cannot exceed outstanding due of Rs. ${currentDue}`, severity: 'error' });
+      return;
+    }
+    setSubmittingProcessPay(true);
+    try {
+      await consumptionAPI.addPayment(processPayTarget._id, {
+        amount,
+        paymentMethod: processPayForm.paymentMethod,
+        paidBy: processPayForm.paidBy,
+        note: processPayForm.note,
+      });
+      setSnack({ open: true, message: 'Payment recorded successfully', severity: 'success' });
+      setProcessPayDialogOpen(false);
+      setProcessPayTarget(null);
+      fetchList();
+      fetchProcessData();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to record payment', severity: 'error' });
+    } finally {
+      setSubmittingProcessPay(false);
     }
   };
 
@@ -650,6 +731,7 @@ export default function Expenses() {
         <Tabs value={processSubTab} onChange={(_, v) => setProcessSubTab(v)} sx={{ mb: 2 }}>
           <Tab label="Purchases & Totals" />
           <Tab label="Purchase Intensity" />
+          <Tab label="Ledger" />
         </Tabs>
       )}
 
@@ -803,6 +885,7 @@ export default function Expenses() {
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Description</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Details</TableCell>
                 <TableCell align="right">Amount</TableCell>
+                {isProcessMaterialTab && <TableCell>Payment Status</TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -832,9 +915,41 @@ export default function Expenses() {
                     )}
                   </TableCell>
                   <TableCell align="right">{formatCurrency(row.amount)}</TableCell>
+                  {isProcessMaterialTab && (
+                    <TableCell>
+                      {row.isProcessPurchase ? (
+                        (() => {
+                          const due = Number(row.amountDue ?? (row.totalCost || row.amount || 0) - (row.amountPaid || 0));
+                          const status = row.paymentStatus || (due <= 0 ? 'Paid' : 'Unpaid');
+                          const color = status === 'Paid' ? 'success' : status === 'Partial' ? 'warning' : 'error';
+                          return (
+                            <Tooltip title={due > 0 ? `Due: Rs. ${due.toLocaleString()}` : 'Fully settled'}>
+                              <Chip size="small" label={status} color={color} variant="outlined" />
+                            </Tooltip>
+                          );
+                        })()
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell align="right">
                     {row.isProcessPurchase ? (
-                      <>
+                      <Box display="flex" alignItems="center" justifyContent="flex-end" gap={0.5}>
+                        {Number(row.amountDue ?? 0) > 0 && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="success"
+                            startIcon={<PaymentIcon />}
+                            onClick={() => {
+                              if (isViewer) { setAccessDenied(true); return; }
+                              openProcessPayDialog(row);
+                            }}
+                          >
+                            Pay
+                          </Button>
+                        )}
                         <IconButton
                           size="small"
                           onClick={() => {
@@ -854,7 +969,7 @@ export default function Expenses() {
                         >
                           <DeleteIcon />
                         </IconButton>
-                      </>
+                      </Box>
                     ) : (
                       <>
                         {isDailyTotalRow(row) && (
@@ -985,7 +1100,18 @@ export default function Expenses() {
         </Box>
       )}
 
-      <ResponsiveDialog open={processDialogOpen} onClose={() => setProcessDialogOpen(false)} maxWidth="xs" fullWidth>
+      {isProcessMaterialTab && processSubTab === 2 && (
+        <ProcessMaterialLedger
+          startDate={startDate}
+          endDate={endDate}
+          onDataChanged={() => {
+            fetchList();
+            fetchProcessData();
+          }}
+        />
+      )}
+
+      <ResponsiveDialog open={processDialogOpen} onClose={() => setProcessDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{processEditingId ? 'Edit Process Material' : 'Add Process Material'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth margin="dense">
@@ -1014,7 +1140,16 @@ export default function Expenses() {
             type="number"
             label="Total Purchase Cost"
             value={processForm.totalCost}
-            onChange={(e) => setProcessForm((f) => ({ ...f, totalCost: e.target.value }))}
+            onChange={(e) => {
+              const val = e.target.value;
+              setProcessForm((f) => {
+                const updated = { ...f, totalCost: val };
+                if (f.paymentOption === 'full') {
+                  updated.amountPaid = val;
+                }
+                return updated;
+              });
+            }}
             margin="dense"
           />
           <TextField
@@ -1035,10 +1170,190 @@ export default function Expenses() {
             InputLabelProps={{ shrink: true }}
           />
           <TextField fullWidth label="Notes" value={processForm.notes} onChange={(e) => setProcessForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
+
+          {/* Payment Section */}
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>Payment Details</Typography>
+          <FormControl component="fieldset" margin="dense">
+            <RadioGroup
+              row
+              value={processForm.paymentOption}
+              onChange={(e) => {
+                const opt = e.target.value;
+                setProcessForm((f) => {
+                  const tot = Number(f.totalCost) || (Number(f.quantity) * Number(f.costPerUnit)) || 0;
+                  return {
+                    ...f,
+                    paymentOption: opt,
+                    amountPaid: opt === 'full' ? (tot || '') : 0,
+                  };
+                });
+              }}
+            >
+              <FormControlLabel value="full" control={<Radio />} label="Paid in full" />
+              <FormControlLabel value="later" control={<Radio />} label="Pay later (add as due)" />
+            </RadioGroup>
+          </FormControl>
+
+          {processForm.paymentOption === 'full' ? (
+            <>
+              <TextField
+                fullWidth
+                type="number"
+                label="Amount Paid"
+                value={processForm.amountPaid !== '' ? processForm.amountPaid : (processForm.totalCost || '')}
+                onChange={(e) => setProcessForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                margin="dense"
+                helperText="Auto-filled with total amount"
+              />
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Payment Method</InputLabel>
+                <Select
+                  value={processForm.paymentMethod}
+                  label="Payment Method"
+                  onChange={(e) => setProcessForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                >
+                  <MenuItem value="Cash">Cash</MenuItem>
+                  <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                  <MenuItem value="Cheque">Cheque</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                fullWidth
+                label="Paid By"
+                value={processForm.paidBy}
+                onChange={(e) => setProcessForm((f) => ({ ...f, paidBy: e.target.value }))}
+                margin="dense"
+              />
+            </>
+          ) : (
+            <>
+              <TextField
+                fullWidth
+                type="number"
+                label="Amount Paid Now"
+                value={processForm.amountPaid}
+                onChange={(e) => setProcessForm((f) => ({ ...f, amountPaid: e.target.value }))}
+                margin="dense"
+                helperText="Enter 0 or partial amount paid right now"
+              />
+              {Number(processForm.amountPaid) > 0 && (
+                <FormControl fullWidth margin="dense">
+                  <InputLabel>Payment Method</InputLabel>
+                  <Select
+                    value={processForm.paymentMethod}
+                    label="Payment Method"
+                    onChange={(e) => setProcessForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                  >
+                    <MenuItem value="Cash">Cash</MenuItem>
+                    <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                    <MenuItem value="Cheque">Cheque</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+              <TextField
+                fullWidth
+                label="Supplier Name"
+                placeholder="Name of vendor / supplier"
+                value={processForm.supplierName}
+                onChange={(e) => setProcessForm((f) => ({ ...f, supplierName: e.target.value }))}
+                margin="dense"
+              />
+              <TextField
+                fullWidth
+                label="Supplier Contact (optional)"
+                placeholder="Phone or address"
+                value={processForm.supplierContact}
+                onChange={(e) => setProcessForm((f) => ({ ...f, supplierContact: e.target.value }))}
+                margin="dense"
+              />
+              {(() => {
+                const total = Number(processForm.totalCost) || (Number(processForm.quantity) * Number(processForm.costPerUnit)) || 0;
+                const paid = Number(processForm.amountPaid) || 0;
+                const calculatedDue = Math.max(0, total - paid);
+                return (
+                  <Alert severity="warning" sx={{ mt: 1.5 }}>
+                    Rs. {calculatedDue.toLocaleString()} will be added as outstanding due for this material.
+                  </Alert>
+                );
+              })()}
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setProcessDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleProcessSave}>Save</Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Quick Pay Dialog for Process Material */}
+      <ResponsiveDialog
+        open={processPayDialogOpen}
+        onClose={() => !submittingProcessPay && setProcessPayDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Record Payment — {processPayTarget?.expenseCategory || processPayTarget?.materialType || 'Process Material'}</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Outstanding amount due:{' '}
+            <strong>
+              Rs. {Number(processPayTarget?.amountDue || 0).toLocaleString()}
+            </strong>
+          </Alert>
+          <TextField
+            fullWidth
+            type="number"
+            label="Amount"
+            value={processPayForm.amount}
+            onChange={(e) => setProcessPayForm((f) => ({ ...f, amount: e.target.value }))}
+            margin="dense"
+            required
+            autoFocus
+            inputProps={{ max: processPayTarget?.amountDue }}
+          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Payment Method</InputLabel>
+            <Select
+              value={processPayForm.paymentMethod}
+              label="Payment Method"
+              onChange={(e) => setProcessPayForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+            >
+              <MenuItem value="Cash">Cash</MenuItem>
+              <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+              <MenuItem value="Cheque">Cheque</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            fullWidth
+            label="Paid By"
+            value={processPayForm.paidBy}
+            onChange={(e) => setProcessPayForm((f) => ({ ...f, paidBy: e.target.value }))}
+            margin="dense"
+          />
+          <TextField
+            fullWidth
+            label="Note (optional)"
+            value={processPayForm.note}
+            onChange={(e) => setProcessPayForm((f) => ({ ...f, note: e.target.value }))}
+            margin="dense"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setProcessPayDialogOpen(false)}
+            disabled={submittingProcessPay}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handleProcessPaySubmit}
+            disabled={submittingProcessPay}
+          >
+            {submittingProcessPay ? 'Recording...' : 'Record Payment'}
+          </Button>
         </DialogActions>
       </ResponsiveDialog>
 

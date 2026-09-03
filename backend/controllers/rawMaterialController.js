@@ -1,5 +1,6 @@
 const RawMaterial = require('../models/RawMaterial');
 const Supplier = require('../models/Supplier');
+const AnnealingRecord = require('../models/AnnealingRecord');
 const { COIL_CATEGORIES, getWiresForCoilCategory } = require('../utils/wireConfig');
 const { LOW_STOCK_THRESHOLD_KG } = require('../utils/stockService');
 const {
@@ -56,6 +57,46 @@ const createRawMaterial = async (req, res, next) => {
       documentId: raw._id,
       newValue: raw,
     });
+
+    if (req.body.sendForAnnealing) {
+      const annealingWeightKg = Number(req.body.annealingWeightKg) || raw.weightInKg;
+      const annealingBundles = Number(req.body.annealingBundles) || raw.bundles || 0;
+      const sentDate = req.body.annealingSentDate ? new Date(req.body.annealingSentDate) : new Date();
+      const notes = 'Auto-sent at arrival — ' + (req.body.annealingNotes || '');
+
+      const annealingRecord = await AnnealingRecord.create({
+        entryType: 'Send',
+        type: 'Send',
+        partyType: supplier ? 'Supplier' : 'None',
+        partyId: raw.supplierId || null,
+        partyName: raw.supplierName || '',
+        materialType: 'Coil',
+        coilCategory: raw.coilCategory,
+        coilType: raw.coilCategory,
+        weightKg: annealingWeightKg,
+        bundles: annealingBundles,
+        date: sentDate,
+        sentDate,
+        sourceRawMaterialId: raw._id,
+        notes,
+      });
+
+      await logActivity({
+        req,
+        action: 'CREATE',
+        module: 'AnnealingRecord',
+        description: `Auto-sent ${annealingWeightKg}kg ${raw.coilCategory} for annealing from arrival`,
+        documentId: annealingRecord._id,
+        newValue: annealingRecord,
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: { rawMaterial: raw, annealingRecord },
+        message: 'Stock recorded and sent for annealing',
+        pendingOrdersFulfilled: fulfillResult,
+      });
+    }
 
     res.status(201).json({
       success: true,

@@ -236,7 +236,8 @@ const createExpense = async (req, res, next) => {
 
 const EXPENSE_LIST_FIELDS =
   'expenseGroup expenseCategory expenseType description amount paymentMethod expenseDate addedBy labourName coilType rentalRoute bankTransactionId chequeId chequeNumber chequeType chequeBank chequeDate isEndorsedCheque sourceChequeId receivedFromName';
-const PROCESS_LIST_FIELDS = 'materialType purchaseDate totalCost notes quantity unit';
+const PROCESS_LIST_FIELDS =
+  'materialType purchaseDate totalCost notes quantity unit costPerUnit amountPaid amountDue paymentStatus paymentHistory supplierName supplierContact';
 
 /**
  * Get all expenses with optional date and type filters.
@@ -277,12 +278,22 @@ const getExpenses = async (req, res, next) => {
       _id: m._id,
       expenseGroup: PROCESS_MATERIAL_GROUP,
       expenseCategory: m.materialType,
+      materialType: m.materialType,
       expenseDate: m.purchaseDate,
+      purchaseDate: m.purchaseDate,
       amount: m.totalCost || 0,
+      totalCost: m.totalCost || 0,
       description: m.notes || '',
       isProcessPurchase: true,
       quantity: m.quantity,
       unit: m.unit,
+      costPerUnit: m.costPerUnit,
+      amountPaid: m.amountPaid ?? (m.totalCost || 0),
+      amountDue: m.amountDue ?? 0,
+      paymentStatus: m.paymentStatus || 'Paid',
+      paymentHistory: m.paymentHistory || [],
+      supplierName: m.supplierName || '',
+      supplierContact: m.supplierContact || '',
     }));
 
     const merged = [...normalized, ...processRows]
