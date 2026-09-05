@@ -22,6 +22,7 @@ import Receivables from './pages/Receivables';
 import Payables from './pages/Payables';
 import PersonalPayments from './pages/PersonalPayments';
 import BalanceSheet from './pages/BalanceSheet';
+import PeriodClose from './pages/PeriodClose';
 
 export default function App() {
   return (
@@ -214,6 +215,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="Security & Logs">
               <SecuritySettings />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/period-close"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Period Close & Fresh Start">
+              <PeriodClose />
             </AppLayout>
           </ProtectedRoute>
         }

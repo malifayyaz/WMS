@@ -29,6 +29,8 @@ const receivablesRoutes = require('./routes/receivablesRoutes');
 const payablesRoutes = require('./routes/payablesRoutes');
 const personalPaymentRoutes = require('./routes/personalPaymentRoutes');
 const balanceSheetRoutes = require('./routes/balanceSheetRoutes');
+const periodCloseRoutes = require('./routes/periodCloseRoutes');
+const openingBalanceRoutes = require('./routes/openingBalanceRoutes');
 
 const { reconcileAllPendingOrders } = require('./utils/stockService');
 
@@ -89,9 +91,12 @@ app.use('/api/receivables', authMiddleware, receivablesRoutes);
 app.use('/api/payables', authMiddleware, payablesRoutes);
 app.use('/api/personal-payments', authMiddleware, personalPaymentRoutes);
 app.use('/api/balance-sheet', authMiddleware, balanceSheetRoutes);
+app.use('/api/period-close', authMiddleware, periodCloseRoutes);
+app.use('/api/opening-balances', authMiddleware, openingBalanceRoutes);
 
 app.use(errorHandler);
 
+// Server entry point - restart trigger
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   if (process.env.NODE_ENV !== 'production') {

@@ -21,6 +21,7 @@ import {
   TableContainer,
   TableRow,
   Tooltip,
+  Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
@@ -36,7 +37,7 @@ import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import SavingsIcon from '@mui/icons-material/Savings';
-import { balanceSheetAPI } from '../services/api';
+import { balanceSheetAPI, periodCloseAPI, openingBalanceAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import PageToolbar from '../components/Common/PageToolbar';
 
@@ -54,6 +55,28 @@ export default function BalanceSheet() {
 
   // Bank breakdown collapse state
   const [bankExpanded, setBankExpanded] = useState(false);
+  const [openingWarning, setOpeningWarning] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [hRes, sRes] = await Promise.all([
+          periodCloseAPI.getHistory().catch(() => ({ data: { data: [] } })),
+          openingBalanceAPI.getSummary().catch(() => ({ data: { data: null } })),
+        ]);
+        const history = hRes.data.data || [];
+        const summaryData = sRes.data.data;
+        const latestClose = history.find((h) => h.status === 'Completed');
+        if (mounted && latestClose && summaryData && !summaryData.isComplete) {
+          setOpeningWarning(true);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const fetchBalanceSheet = useCallback(async () => {
     setLoading(true);
@@ -93,6 +116,25 @@ export default function BalanceSheet() {
     <Box sx={{ p: { xs: 1.5, sm: 3 }, '@media print': { p: 0 } }}>
       {/* Top Page Toolbar */}
       <Box sx={{ '@media print': { display: 'none' } }}>
+        {openingWarning && (
+          <Alert
+            severity="info"
+            sx={{ mb: 2, display: 'flex', alignItems: 'center' }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                variant="outlined"
+                onClick={() => navigate('/period-close')}
+              >
+                Enter Opening Balances &rarr;
+              </Button>
+            }
+          >
+            Some opening balances are not yet entered. Reports may not reflect complete figures.
+          </Alert>
+        )}
+
         <PageToolbar
           title="Balance Sheet &amp; Financial Position"
           actions={

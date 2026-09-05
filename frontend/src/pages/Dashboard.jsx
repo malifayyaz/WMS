@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -11,14 +12,15 @@ import {
   IconButton,
   Tooltip,
   TextField,
+  Button,
 } from '@mui/material';
 import AutoAwesome from '@mui/icons-material/AutoAwesome';
 import Refresh from '@mui/icons-material/Refresh';
 import StatCards from '../components/Dashboard/StatCards';
 import DashboardCharts from '../components/Dashboard/DashboardCharts';
 import ActivityAnalytics from '../components/Dashboard/ActivityAnalytics';
-import { dashboardAPI, aiAPI } from '../services/api';
-import { formatCurrency } from '../utils/formatters';
+import { dashboardAPI, aiAPI, periodCloseAPI, openingBalanceAPI } from '../services/api';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import PageToolbar from '../components/Common/PageToolbar';
 
 function localDateKey(d = new Date()) {
@@ -35,6 +37,7 @@ function formatDisplayDate(yyyyMmDd) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [charts, setCharts] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,9 +46,37 @@ export default function Dashboard() {
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryDate, setSummaryDate] = useState(localDateKey());
   const [profitTrend, setProfitTrend] = useState(null);
+  const [periodCloseStatus, setPeriodCloseStatus] = useState(null);
 
   const todayKey = localDateKey();
   const isToday = summaryDate === todayKey;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [hRes, sRes] = await Promise.all([
+          periodCloseAPI.getHistory().catch(() => ({ data: { data: [] } })),
+          openingBalanceAPI.getSummary().catch(() => ({ data: { data: null } })),
+        ]);
+        const history = hRes.data.data || [];
+        const summaryData = sRes.data.data;
+        const latestClose = history.find((h) => h.status === 'Completed');
+
+        if (mounted && latestClose && summaryData && !summaryData.isComplete) {
+          setPeriodCloseStatus({
+            closeDate: latestClose.closeDate,
+            count: summaryData.sectionsCompleted?.length || 0,
+          });
+        } else if (mounted) {
+          setPeriodCloseStatus(null);
+        }
+      } catch (err) {
+        console.error('Failed to check period close status in Dashboard:', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -120,6 +151,31 @@ export default function Dashboard() {
 
   return (
     <Box>
+      {periodCloseStatus && (
+        <Alert
+          severity="warning"
+          sx={{
+            mb: 3,
+            border: '1px solid #FFE082',
+            bgcolor: '#FFF8E1',
+            '& .MuiAlert-message': { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 },
+          }}
+        >
+          <Typography variant="body1" fontWeight={600} color="warning.dark">
+            Fresh start mode active from {formatDate(periodCloseStatus.closeDate)}. Opening balances entered: {periodCloseStatus.count} of 11 sections.
+          </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            color="warning"
+            onClick={() => navigate('/period-close')}
+            sx={{ fontWeight: 700 }}
+          >
+            Complete Opening Balances &rarr;
+          </Button>
+        </Alert>
+      )}
+
       <Card
         sx={{
           background: 'linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)',

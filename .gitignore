@@ -27,6 +27,8 @@ coverage/
 
 # Runtime / local data
 backend/_db_backup/
+backend/backups/
+backups/
 docs-export/out/
 docs-export/.tmp/
 uploads/

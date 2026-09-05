@@ -8,6 +8,7 @@ import {
   Typography,
   Divider,
   Box,
+  Chip,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -27,6 +28,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import SavingsIcon from '@mui/icons-material/Savings';
+import LockResetIcon from '@mui/icons-material/LockReset';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const drawerWidth = 260;
@@ -84,6 +86,14 @@ const settingsGroup = {
   items: [
     { label: 'User Management', path: '/users', icon: <ManageAccountsIcon /> },
     { label: 'Security & Logs', path: '/security', icon: <SecurityIcon />, adminOnly: true },
+    {
+      label: 'Period Close',
+      path: '/period-close',
+      icon: <LockResetIcon sx={{ color: '#EF4444' }} />,
+      adminOnly: true,
+      isCritical: true,
+      chip: 'ADMIN ONLY',
+    },
   ],
 };
 
@@ -115,9 +125,38 @@ export default function Sidebar({ open, onClose }) {
                 key={item.path + (item.state?.tab ?? '')}
                 selected={location.pathname === item.path && (item.state?.tab == null || location.state?.tab === item.state?.tab)}
                 onClick={() => { navigate(item.path, { state: item.state || {} }); onClose?.(); }}
+                sx={item.isCritical ? { '&.Mui-selected': { bgcolor: 'rgba(239, 68, 68, 0.15)' } } : undefined}
               >
                 <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} />
+                <ListItemText
+                  primary={
+                    <Box display="flex" alignItems="center" justifyContent="space-between" pr={1}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: item.isCritical ? '#EF4444' : 'inherit',
+                          fontWeight: item.isCritical ? 600 : 'inherit',
+                        }}
+                      >
+                        {item.label}
+                      </Typography>
+                      {item.chip && (
+                        <Chip
+                          label={item.chip}
+                          size="small"
+                          sx={{
+                            height: 18,
+                            fontSize: '0.62rem',
+                            fontWeight: 700,
+                            bgcolor: 'rgba(239, 68, 68, 0.2)',
+                            color: '#EF4444',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                          }}
+                        />
+                      )}
+                    </Box>
+                  }
+                />
               </ListItemButton>
             ))}
           </List>

@@ -7,6 +7,8 @@ const workerSchema = new mongoose.Schema(
     role: String,
     active: { type: Boolean, default: true },
     openingBalance: { type: Number, default: 0 },
+    totalSalaryPaid: { type: Number, default: 0 },
+    totalAdvance: { type: Number, default: 0 },
     notes: String,
   },
   { timestamps: true }

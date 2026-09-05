@@ -88,7 +88,11 @@ export default function LoginPage() {
       navigate(from, { replace: true });
     } catch (err) {
       const status = err.response?.status;
-      const message = err.response?.data?.message || 'Invalid username or password';
+      const message =
+        err.response?.data?.message ||
+        (!err.response
+          ? 'Cannot connect to server. Please check that the backend is running.'
+          : 'Invalid username or password');
 
       if (status === 423) {
         const minutes = extractLockMinutes(message) || '5';

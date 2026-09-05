@@ -303,7 +303,20 @@ export default function RawMaterials() {
               {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{formatDate(row.purchaseDate)}</TableCell>
-                  <TableCell>{row.supplierName || row.supplierId?.name}</TableCell>
+                  <TableCell>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <span>{row.supplierName || row.supplierId?.name}</span>
+                      {row.isOpeningBalance && (
+                        <Chip
+                          label="Opening Balance"
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                        />
+                      )}
+                    </Box>
+                  </TableCell>
                   <TableCell>{row.coilCategory}</TableCell>
                   <TableCell align="right">{row.weightInKg}</TableCell>
                   <TableCell align="right">{formatCurrency(row.ratePerKg)}</TableCell>

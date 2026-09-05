@@ -57,6 +57,7 @@ const annealingRecordSchema = new mongoose.Schema(
     bundleCount: Number,
     bundlesReturnedTotal: Number,
     returns: [{}],
+    isOpeningBalance: { type: Boolean, default: false },
   },
   { timestamps: true, strict: false }
 );

@@ -4,6 +4,7 @@ import {
   FormControl, InputLabel, Select, MenuItem, TextField, Typography, Card, CardContent, Grid, IconButton,
   TablePagination,
   Stack,
+  Chip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -139,7 +140,18 @@ export default function ReadyStock() {
           )}
           {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
             <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
-              <Typography fontWeight={700}>{row.wireLabel}</Typography>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Typography fontWeight={700}>{row.wireLabel}</Typography>
+                {row.isOpeningBalance && (
+                  <Chip
+                    label="Opening Balance"
+                    size="small"
+                    color="info"
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                  />
+                )}
+              </Box>
               <Typography variant="body2" color="text.secondary">{formatDate(row.productionDate)} · {row.coilCategory}</Typography>
               <Typography variant="body2" mt={0.5}><strong>{row.weightKg} kg</strong> · {row.source}</Typography>
               {row.notes && <Typography variant="caption" color="text.secondary">{row.notes}</Typography>}
@@ -192,7 +204,20 @@ export default function ReadyStock() {
               {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
                   <TableCell>{formatDate(row.productionDate)}</TableCell>
-                  <TableCell>{row.wireLabel}</TableCell>
+                  <TableCell>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <span>{row.wireLabel}</span>
+                      {row.isOpeningBalance && (
+                        <Chip
+                          label="Opening Balance"
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                        />
+                      )}
+                    </Box>
+                  </TableCell>
                   <TableCell>{row.coilCategory}</TableCell>
                   <TableCell align="right">{row.weightKg}</TableCell>
                   <TableCell>{row.source}</TableCell>

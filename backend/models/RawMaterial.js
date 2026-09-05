@@ -3,14 +3,14 @@ const { COIL_CATEGORIES } = require('../utils/wireConfig');
 
 const rawMaterialSchema = new mongoose.Schema(
   {
-    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: true },
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false },
     supplierName: String,
     coilCategory: {
       type: String,
       enum: [COIL_CATEGORIES.SHIPLET, COIL_CATEGORIES.PATRI],
       default: COIL_CATEGORIES.SHIPLET,
     },
-    materialType: { type: String, required: true },
+    materialType: { type: String, required: false },
     weightInKg: { type: Number, required: true },
     ratePerKg: { type: Number, required: true },
     totalAmount: Number,
@@ -26,6 +26,8 @@ const rawMaterialSchema = new mongoose.Schema(
     bundles: { type: Number, default: 0 },
     /** Defect / surplus coil returned to supplier — reduces payable and factory stock */
     isReturn: { type: Boolean, default: false },
+    /** Tag opening balance stock from period close */
+    isOpeningBalance: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

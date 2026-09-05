@@ -40,6 +40,8 @@ const transactionSchema = new mongoose.Schema(
     chequeReturnDate: Date,
     chequeReturnReason: String,
     chequeReturnedBy: String,
+    bankName: String,
+    isOpeningBalance: { type: Boolean, default: false },
     transactionDate: { type: Date, default: Date.now },
   },
   { timestamps: true }

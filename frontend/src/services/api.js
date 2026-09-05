@@ -254,5 +254,27 @@ export const balanceSheetAPI = {
   get: (params) => api.get('/balance-sheet', { params }),
 };
 
+// Period Close
+export const periodCloseAPI = {
+  validatePassword: (data) =>
+    api.post('/period-close/validate-password', data),
+  preview: (closeDate) =>
+    api.get('/period-close/preview', { params: { closeDate } }),
+  execute: (data) =>
+    api.post('/period-close/execute', data),
+  getHistory: () =>
+    api.get('/period-close/history'),
+  downloadBackup: (filename) =>
+    api.get(`/period-close/backup/${filename}`, { responseType: 'blob' }),
+};
+
+// Opening Balance
+export const openingBalanceAPI = {
+  getAll: () => api.get('/opening-balances'),
+  getSummary: () => api.get('/opening-balances/summary'),
+  upsert: (data) => api.post('/opening-balances', data),
+  delete: (id) => api.delete(`/opening-balances/${id}`),
+};
+
 
 

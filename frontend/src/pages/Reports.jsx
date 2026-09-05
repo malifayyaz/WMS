@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -31,7 +31,7 @@ import DateRangePicker from '../components/Common/DateRangePicker';
 import PageToolbar from '../components/Common/PageToolbar';
 import { useIsMobile } from '../hooks/useBreakpoint';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { reportsAPI, customersAPI } from '../services/api';
+import { reportsAPI, customersAPI, periodCloseAPI, openingBalanceAPI } from '../services/api';
 import {
   exportFinancialExcel,
   exportInventoryExcel,
@@ -721,8 +721,31 @@ function CustomerReportPanel() {
 
 export default function Reports() {
   const location = useLocation();
+  const navigate = useNavigate();
   const initialTab = location.state?.tab ?? 0;
   const [tab, setTab] = useState(initialTab);
+  const [openingWarning, setOpeningWarning] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [hRes, sRes] = await Promise.all([
+          periodCloseAPI.getHistory().catch(() => ({ data: { data: [] } })),
+          openingBalanceAPI.getSummary().catch(() => ({ data: { data: null } })),
+        ]);
+        const history = hRes.data.data || [];
+        const summaryData = sRes.data.data;
+        const latestClose = history.find((h) => h.status === 'Completed');
+        if (mounted && latestClose && summaryData && !summaryData.isComplete) {
+          setOpeningWarning(true);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (location.state?.tab != null) setTab(location.state.tab);
@@ -730,6 +753,25 @@ export default function Reports() {
 
   return (
     <Box>
+      {openingWarning && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2, display: 'flex', alignItems: 'center' }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              variant="outlined"
+              onClick={() => navigate('/period-close')}
+            >
+              Enter Opening Balances &rarr;
+            </Button>
+          }
+        >
+          Some opening balances are not yet entered. Reports may not reflect complete figures.
+        </Alert>
+      )}
+
       <Tabs
         value={tab}
         onChange={(_, value) => setTab(value)}

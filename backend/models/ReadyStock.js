@@ -15,6 +15,11 @@ const readyStockSchema = new mongoose.Schema(
     },
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
     notes: String,
+    producedWeightKg: Number,
+    remainingStockKg: Number,
+    manufacturingCostPerKg: Number,
+    status: { type: String, default: 'In Stock' },
+    isOpeningBalance: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
