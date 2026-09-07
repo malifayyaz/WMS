@@ -31,7 +31,7 @@ exports.validatePassword = async (req, res) => {
     const configuredPassword = process.env.CLOSING_PASSWORD;
 
     if (!configuredPassword || !password || String(password).trim() !== String(configuredPassword).trim()) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         valid: false,
         message: 'Invalid closing password',
@@ -156,7 +156,7 @@ exports.executeClose = async (req, res) => {
     console.log('[PeriodClose] Step A: Verifying closing password...');
     const configuredPassword = process.env.CLOSING_PASSWORD;
     if (!configuredPassword || !password || String(password).trim() !== String(configuredPassword).trim()) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         message: 'Invalid closing password. Action aborted.',
       });
