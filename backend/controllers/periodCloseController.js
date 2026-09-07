@@ -35,10 +35,12 @@ exports.validatePassword = async (req, res) => {
     console.log(`[PeriodClose] Debug - Input Length: ${password ? password.length : 0}`);
 
     if (!configuredPassword || !password || String(password).trim() !== String(configuredPassword).trim()) {
+      const envLen = configuredPassword ? configuredPassword.length : 0;
+      const passLen = password ? password.length : 0;
       return res.status(400).json({
         success: false,
         valid: false,
-        message: 'Invalid closing password',
+        message: `Invalid closing password. (Debug - Server config length: ${envLen}, Input length: ${passLen})`,
       });
     }
 
