@@ -30,6 +30,10 @@ exports.validatePassword = async (req, res) => {
     const { password } = req.body;
     const configuredPassword = process.env.CLOSING_PASSWORD;
 
+    console.log(`[PeriodClose] Debug - Env Loaded: ${!!configuredPassword}`);
+    console.log(`[PeriodClose] Debug - Env Length: ${configuredPassword ? configuredPassword.length : 0}`);
+    console.log(`[PeriodClose] Debug - Input Length: ${password ? password.length : 0}`);
+
     if (!configuredPassword || !password || String(password).trim() !== String(configuredPassword).trim()) {
       return res.status(400).json({
         success: false,
