@@ -101,7 +101,7 @@ async function applyOpeningBalance(opening, closeDate) {
         const bal = Number(opening.balanceAmount) || 0;
 
         await Customer.findByIdAndUpdate(opening.referenceId, {
-          totalAmountDue: isDebit ? bal : 0,
+          totalAmountDue: isDebit ? bal : (isCredit ? -bal : 0),
           totalAmountPaid: isCredit ? bal : 0,
           totalAmountPurchased: isDebit ? bal : 0,
           openingBalance: bal,
@@ -119,7 +119,7 @@ async function applyOpeningBalance(opening, closeDate) {
         const bal = Number(opening.balanceAmount) || 0;
 
         await Supplier.findByIdAndUpdate(opening.referenceId, {
-          totalAmountDue: isCredit ? bal : 0,
+          totalAmountDue: isCredit ? bal : (isDebit ? -bal : 0),
           totalAmountPaid: isDebit ? bal : 0,
           totalAmountPurchased: isCredit ? bal : 0,
           openingBalance: bal,
@@ -139,7 +139,7 @@ async function applyOpeningBalance(opening, closeDate) {
         // Load AnnealingPerson Model on demand to avoid circular deps if any
         const AnnealingPerson = require('../models/AnnealingPerson');
         await AnnealingPerson.findByIdAndUpdate(opening.referenceId, {
-          totalAmountDue: isCredit ? bal : 0,
+          totalAmountDue: isCredit ? bal : (isDebit ? -bal : 0),
           totalAmountPaid: isDebit ? bal : 0,
           openingBalance: bal,
           openingBalanceType: opening.balanceType || 'none',

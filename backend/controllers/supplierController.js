@@ -98,14 +98,16 @@ const updateSupplier = async (req, res, next) => {
           ? applyOpeningBalanceToTotals('Supplier', oldOpening, oldType)
           : {};
         Object.keys(reverseOld).forEach((key) => {
-          body[key] = Math.max(0, (existing[key] || 0) - (reverseOld[key] || 0));
+          const val = (existing[key] || 0) - (reverseOld[key] || 0);
+          body[key] = key === 'totalAmountDue' ? val : Math.max(0, val);
         });
         body.openingBalance = 0;
       } else {
         const reverseOld = oldType !== 'none' ? applyOpeningBalanceToTotals('Supplier', oldOpening, oldType) : {};
         const applyNew = applyOpeningBalanceToTotals('Supplier', newOpening, newType);
         Object.keys({ ...reverseOld, ...applyNew }).forEach((key) => {
-          body[key] = Math.max(0, (existing[key] || 0) - (reverseOld[key] || 0) + (applyNew[key] || 0));
+          const val = (existing[key] || 0) - (reverseOld[key] || 0) + (applyNew[key] || 0);
+          body[key] = key === 'totalAmountDue' ? val : Math.max(0, val);
         });
         if (body.openingBalanceDate) body.openingBalanceDate = new Date(body.openingBalanceDate);
       }

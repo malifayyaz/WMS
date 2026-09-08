@@ -462,15 +462,20 @@ function applyOpeningBalanceToTotals(partyType, openingBalance, openingBalanceTy
 
   if (partyType === 'Customer') {
     if (openingBalanceType === 'credit') {
-      return { totalAmountPaid: amount };
+      // Credit for a customer means we owe them (Advance)
+      return { totalAmountPaid: amount, totalAmountDue: -amount, totalAmountPurchased: 0 };
     }
-    return { totalAmountDue: amount, totalAmountPurchased: amount };
+    // Debit for a customer means they owe us (Receivable)
+    return { totalAmountDue: amount, totalAmountPurchased: amount, totalAmountPaid: 0 };
   }
 
+  // Supplier
   if (openingBalanceType === 'debit') {
-    return { totalAmountPaid: amount };
+    // Debit for a supplier means we paid them advance (Receivable)
+    return { totalAmountPaid: amount, totalAmountDue: -amount, totalAmountPurchased: 0 };
   }
-  return { totalAmountDue: amount, totalAmountPurchased: amount };
+  // Credit for a supplier means we owe them (Payable)
+  return { totalAmountDue: amount, totalAmountPurchased: amount, totalAmountPaid: 0 };
 }
 
 /**
