@@ -4,6 +4,7 @@ const Supplier = require('../models/Supplier');
 const AnnealingPerson = require('../models/AnnealingPerson');
 const RawMaterial = require('../models/RawMaterial');
 const ReadyStock = require('../models/ReadyStock');
+const JobWork = require('../models/JobWork');
 const Transaction = require('../models/Transaction');
 const PersonalPayment = require('../models/PersonalPayment');
 const { getCashBookForDate } = require('../utils/cashBookService');
@@ -74,10 +75,10 @@ exports.getBalanceSheet = async (req, res, next) => {
       : (avgPatriRate || avgShipletRate || 270);
 
     // Value ready stock at the average raw material rate (same coil, unsold)
+    // We ignore the saved s.manufacturingCostPerKg and use the live dynamic average
     const readyStockValue = Math.round(readyStockItems.reduce((sum, s) => {
       const weight = s.weightKg || 0;
-      const rate = s.manufacturingCostPerKg || avgRawRate;
-      return sum + (weight * rate);
+      return sum + (weight * avgRawRate);
     }, 0));
 
     // 1e. Receivables (Ledgers with Debit/Positive Balances for Customers, or Negative/Advances for Suppliers)
@@ -95,7 +96,15 @@ exports.getBalanceSheet = async (req, res, next) => {
     const processingAdvances = processingCustomers.filter(c => c.totalAmountDue < 0).reduce((sum, c) => sum + Math.abs(c.totalAmountDue), 0);
     
     // Calculate Processing Customer Stock (Job Work Coil) value as an Asset
-    const totalProcessingStockKg = processingCustomers.reduce((sum, c) => sum + (c.processingWeightKg || 0), 0);
+    // Processing stock is in the JobWork model, not Customer
+    const activeJobWorks = await JobWork.find({ status: { $ne: 'Delivered' } }).lean();
+    const totalProcessingStockKg = activeJobWorks.reduce((sum, jw) => {
+      const arrived = jw.arrivedWeightKg || 0;
+      const delivered = jw.deliveredWeightKg || 0;
+      const returned = (jw.returns || []).reduce((s, r) => s + (r.weightKg || 0), 0);
+      const remaining = arrived - delivered - returned;
+      return sum + (remaining > 0 ? remaining : 0);
+    }, 0);
     const processingStockValue = Math.round(totalProcessingStockKg * avgRawRate);
 
     // Supplier Advances (Debit Balances)
