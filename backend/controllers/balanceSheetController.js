@@ -1,6 +1,7 @@
 const { startOfDay, endOfDay } = require('date-fns');
 const Customer = require('../models/Customer');
 const Supplier = require('../models/Supplier');
+const AnnealingPerson = require('../models/AnnealingPerson');
 const RawMaterial = require('../models/RawMaterial');
 const ReadyStock = require('../models/ReadyStock');
 const Order = require('../models/Order');
@@ -70,14 +71,36 @@ exports.getBalanceSheet = async (req, res, next) => {
       return sum + (weight * rate);
     }, 0));
 
-    // 1e. Receivables
+    // 1e. Receivables (Ledgers with Debit/Positive Balances for Customers, or Negative/Advances for Suppliers)
     // Customer Accounts (Ledger)
-    const ledgerCustomers = await Customer.find({ customerType: { $ne: 'Processing' }, totalAmountDue: { $gt: 0 } }).lean();
-    const customerReceivables = ledgerCustomers.reduce((sum, c) => sum + (c.totalAmountDue || 0), 0);
+    const allCustomers = await Customer.find().lean();
+    
+    // Normal Customers
+    const ledgerCustomers = allCustomers.filter(c => c.customerType !== 'Processing');
+    const customerReceivables = ledgerCustomers.filter(c => c.totalAmountDue > 0).reduce((sum, c) => sum + c.totalAmountDue, 0);
+    const customerAdvances = ledgerCustomers.filter(c => c.totalAmountDue < 0).reduce((sum, c) => sum + Math.abs(c.totalAmountDue), 0);
 
     // Processing Customers
-    const processingCustomers = await Customer.find({ customerType: 'Processing', totalAmountDue: { $gt: 0 } }).lean();
-    const processingReceivables = processingCustomers.reduce((sum, c) => sum + (c.totalAmountDue || 0), 0);
+    const processingCustomers = allCustomers.filter(c => c.customerType === 'Processing');
+    const processingReceivables = processingCustomers.filter(c => c.totalAmountDue > 0).reduce((sum, c) => sum + c.totalAmountDue, 0);
+    const processingAdvances = processingCustomers.filter(c => c.totalAmountDue < 0).reduce((sum, c) => sum + Math.abs(c.totalAmountDue), 0);
+    
+    // Calculate Processing Customer Stock (Job Work Coil) value as an Asset
+    const totalProcessingStockKg = processingCustomers.reduce((sum, c) => sum + (c.processingWeightKg || 0), 0);
+    // Use average raw material rate or 270 as fallback
+    const rawMaterialsStock = await RawMaterial.find().lean();
+    const avgRawRate = rawMaterialsStock.length > 0
+      ? rawMaterialsStock.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / rawMaterialsStock.length
+      : 270;
+    const processingStockValue = Math.round(totalProcessingStockKg * avgRawRate);
+
+    // Supplier Advances (Debit Balances)
+    const allSuppliers = await Supplier.find().lean();
+    const supplierAdvances = allSuppliers.filter(s => s.totalAmountDue < 0).reduce((sum, s) => sum + Math.abs(s.totalAmountDue), 0);
+
+    // Annealing Person Advances (Debit Balances)
+    const allAnnealers = await AnnealingPerson.find().lean();
+    const annealingAdvances = allAnnealers.filter(a => a.totalAmountDue < 0).reduce((sum, a) => sum + Math.abs(a.totalAmountDue), 0);
 
     // Personal Receivables (Committees, Savings, Loans Given)
     let personalReceivables = 0;
@@ -90,15 +113,16 @@ exports.getBalanceSheet = async (req, res, next) => {
     }
 
     const totalLiquidAssets = cashInHand + totalBankBalance;
-    const totalReceivables = customerReceivables + processingReceivables + personalReceivables;
-    const totalInventoryValue = rawMaterialValue + readyStockValue;
+    const totalReceivables = customerReceivables + processingReceivables + personalReceivables + supplierAdvances + annealingAdvances;
+    const totalInventoryValue = rawMaterialValue + readyStockValue + processingStockValue;
     const totalAssets = totalLiquidAssets + totalReceivables + totalInventoryValue;
 
     // 2. LIABILITIES
 
-    // 2a. Supplier Payables
-    const suppliers = await Supplier.find({ totalAmountDue: { $gt: 0 } }).lean();
-    const supplierPayables = suppliers.reduce((sum, s) => sum + (s.totalAmountDue || 0), 0);
+    // 2a. Payables (Ledgers with Credit/Positive Balances for Suppliers/Annealers, or Negative/Advances for Customers)
+    const supplierPayables = allSuppliers.filter(s => s.totalAmountDue > 0).reduce((sum, s) => sum + s.totalAmountDue, 0);
+    const annealingPayables = allAnnealers.filter(a => a.totalAmountDue > 0).reduce((sum, a) => sum + a.totalAmountDue, 0);
+    const customerPayables = customerAdvances + processingAdvances; // Advances received from customers are our liabilities
 
     // 2b. Raw Material Lot Dues (informational breakdown)
     const rawMaterialLotsWithDue = await RawMaterial.find({ amountDue: { $gt: 0 } }).lean();
@@ -114,7 +138,7 @@ exports.getBalanceSheet = async (req, res, next) => {
       personalPayables = 0;
     }
 
-    const totalLiabilities = supplierPayables + personalPayables;
+    const totalLiabilities = supplierPayables + annealingPayables + customerPayables + personalPayables;
 
     // 3. EQUITY / NET POSITION
     let cumulativeProfit = 0;
@@ -145,9 +169,11 @@ exports.getBalanceSheet = async (req, res, next) => {
           bankAccounts,
           totalLiquidAssets,
           customerReceivables,
-          customerCount: ledgerCustomers.length,
+          customerCount: ledgerCustomers.filter(c => c.totalAmountDue > 0).length,
           processingReceivables,
-          processingCount: processingCustomers.length,
+          processingCount: processingCustomers.filter(c => c.totalAmountDue > 0).length,
+          supplierAdvances,
+          annealingAdvances,
           personalReceivables,
           personalReceivableItems,
           totalReceivables,
@@ -155,12 +181,17 @@ exports.getBalanceSheet = async (req, res, next) => {
           rawMaterialWeightKg,
           readyStockValue,
           totalReadyStockKg,
+          processingStockValue,
+          totalProcessingStockKg,
           totalInventoryValue,
           totalAssets,
         },
         liabilities: {
           supplierPayables,
-          supplierCount: suppliers.length,
+          supplierCount: allSuppliers.filter(s => s.totalAmountDue > 0).length,
+          annealingPayables,
+          annealingCount: allAnnealers.filter(a => a.totalAmountDue > 0).length,
+          customerPayables,
           rawMaterialDues,
           personalPayables,
           personalPayableItems,

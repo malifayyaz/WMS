@@ -185,39 +185,39 @@ exports.executeClose = async (req, res) => {
     const backupFilePath = backupResult.filePath;
     const backupFilename = backupResult.filename;
 
-    // STEP C: Delete records ON OR AFTER closeDate in sequence
-    console.log(`[PeriodClose] Step C: Deleting records from ${closeDate.toISOString()} onwards...`);
-    const ordersDeleted = await Order.deleteMany({ orderDate: { $gte: closeDate } });
+    // STEP C: Delete records BEFORE closeDate in sequence
+    console.log(`[PeriodClose] Step C: Deleting records before ${closeDate.toISOString()}...`);
+    const ordersDeleted = await Order.deleteMany({ orderDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${ordersDeleted.deletedCount} orders`);
 
-    const transactionsDeleted = await Transaction.deleteMany({ transactionDate: { $gte: closeDate } });
+    const transactionsDeleted = await Transaction.deleteMany({ transactionDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${transactionsDeleted.deletedCount} transactions`);
 
-    const expensesDeleted = await Expense.deleteMany({ expenseDate: { $gte: closeDate } });
+    const expensesDeleted = await Expense.deleteMany({ expenseDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${expensesDeleted.deletedCount} expenses`);
 
-    const rawMaterialsDeleted = await RawMaterial.deleteMany({ purchaseDate: { $gte: closeDate } });
+    const rawMaterialsDeleted = await RawMaterial.deleteMany({ purchaseDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${rawMaterialsDeleted.deletedCount} raw materials`);
 
-    const annealingDeleted = await AnnealingRecord.deleteMany({ createdAt: { $gte: closeDate } });
+    const annealingDeleted = await AnnealingRecord.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${annealingDeleted.deletedCount} annealing records`);
 
-    const jobWorkDeleted = await JobWork.deleteMany({ createdAt: { $gte: closeDate } });
+    const jobWorkDeleted = await JobWork.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${jobWorkDeleted.deletedCount} job works`);
 
-    const workerEntriesDeleted = await WorkerLedgerEntry.deleteMany({ createdAt: { $gte: closeDate } });
+    const workerEntriesDeleted = await WorkerLedgerEntry.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${workerEntriesDeleted.deletedCount} worker ledger entries`);
 
-    const consumptionDeleted = await ConsumptionMaterial.deleteMany({ purchaseDate: { $gte: closeDate } });
+    const consumptionDeleted = await ConsumptionMaterial.deleteMany({ purchaseDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${consumptionDeleted.deletedCount} consumption materials`);
 
-    const readyStockDeleted = await ReadyStock.deleteMany({ productionDate: { $gte: closeDate } });
+    const readyStockDeleted = await ReadyStock.deleteMany({ productionDate: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${readyStockDeleted.deletedCount} ready stock records`);
 
-    const personalPaymentsDeleted = await PersonalPayment.deleteMany({ createdAt: { $gte: closeDate } });
+    const personalPaymentsDeleted = await PersonalPayment.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${personalPaymentsDeleted.deletedCount} personal payments`);
 
-    const activityLogsDeleted = await ActivityLog.deleteMany({ createdAt: { $gte: closeDate } });
+    const activityLogsDeleted = await ActivityLog.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${activityLogsDeleted.deletedCount} activity logs`);
 
     // STEP D: Zero out all running balances

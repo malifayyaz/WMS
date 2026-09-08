@@ -13,7 +13,7 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import PaymentIcon from '@mui/icons-material/Payment';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { expensesAPI, configAPI, consumptionAPI, chequesAPI } from '../services/api';
+import { expensesAPI, configAPI, consumptionAPI, chequesAPI, annealingPersonAPI, suppliersAPI } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import DateRangePicker from '../components/Common/DateRangePicker';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
@@ -131,6 +131,8 @@ export default function Expenses() {
   const [breakdownTargetRow, setBreakdownTargetRow] = useState(null);
   const [breakdownLines, setBreakdownLines] = useState([]);
   const [savingBreakdown, setSavingBreakdown] = useState(false);
+  const [annealingPersons, setAnnealingPersons] = useState([]);
+  const [processingSuppliers, setProcessingSuppliers] = useState([]);
 
   const categoryTree = config.expenseCategoryTree || DEFAULT_EXPENSE_TREE;
   const groups = Object.keys(categoryTree);
@@ -141,6 +143,8 @@ export default function Expenses() {
     ? [SELF_EXPENSE_GROUP]
     : groups.filter((g) => g !== PROCESS_MATERIAL_GROUP && g !== SELF_EXPENSE_GROUP);
   const isFactoryOverviewTab = tab === 0;
+
+  const handleChange = (e) => setForm({ ...form, [e.target.name || 'expenseCategory']: e.target.value });
 
   const getGroupForCategory = useCallback((category) => {
     const groupEntry = Object.entries(categoryTree).find(([, categories]) => categories.includes(category));
@@ -318,8 +322,14 @@ export default function Expenses() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const cfgRes = await configAPI.getWires();
+      const [cfgRes, annealingRes, suppliersRes] = await Promise.all([
+        configAPI.getWires(),
+        annealingPersonAPI.getAll(),
+        suppliersAPI.getAll({ supplierType: 'Processing Material' })
+      ]);
       setConfig({ ...cfgRes.data.data, expenseCategoryTree: cfgRes.data.data?.expenseCategoryTree || DEFAULT_EXPENSE_TREE });
+      setAnnealingPersons(annealingRes.data.data || []);
+      setProcessingSuppliers(suppliersRes.data.data || []);
     } catch {
       // keep defaults
     }
@@ -384,6 +394,7 @@ export default function Expenses() {
         paidBy: row.paidBy || '',
         supplierName: row.supplierName || '',
         supplierContact: row.supplierContact || '',
+        supplierId: row.supplierId || '',
       });
     } else {
       const materialType = 'Acid';
@@ -402,6 +413,7 @@ export default function Expenses() {
         paidBy: '',
         supplierName: '',
         supplierContact: '',
+        supplierId: '',
       });
     }
     setProcessDialogOpen(true);
@@ -430,6 +442,7 @@ export default function Expenses() {
         paidBy: processForm.paidBy || '',
         supplierName: processForm.supplierName || '',
         supplierContact: processForm.supplierContact || '',
+        supplierId: processForm.supplierId || undefined,
         purchaseDate: processForm.purchaseDate || entryDate,
       };
       if (processEditingId) {
@@ -536,6 +549,7 @@ export default function Expenses() {
       coilType: row.coilType || '',
       rentalRoute: row.rentalRoute || '',
       expenseDate: row.expenseDate ? new Date(row.expenseDate).toISOString().slice(0, 10) : '',
+      annealingPersonId: row.annealingPersonId || '',
     });
     setEditingId(row._id);
     chequesAPI.getInHand().then((res) => setInHandChequesList(res.data.data || [])).catch(() => {});
@@ -605,7 +619,6 @@ export default function Expenses() {
         return row._id.expenseGroup !== SELF_EXPENSE_GROUP;
       });
 
-  // Cap rendered breakdown rows (latest periods first — API already sorts desc)
   const displayPeriodTotals = filteredPeriodTotals.slice(0, BREAKDOWN_PERIOD_CAP);
   const allowedPeriods = new Set(displayPeriodTotals.map((row) => row._id));
   const displayGroupTotals = filteredGroupTotals.filter((row) => allowedPeriods.has(row._id.period));
@@ -1114,62 +1127,104 @@ export default function Expenses() {
       <ResponsiveDialog open={processDialogOpen} onClose={() => setProcessDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{processEditingId ? 'Edit Process Material' : 'Add Process Material'}</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Material</InputLabel>
-            <Select
-              value={processForm.materialType}
-              onChange={(e) => {
-                const nextType = e.target.value;
-                setProcessForm((f) => ({ ...f, materialType: nextType, unit: getDefaultUnit(nextType) }));
-              }}
-              label="Material"
-            >
-              {MATERIAL_TYPES.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <TextField
-            fullWidth
-            type="number"
-            label={`Quantity (${processForm.unit})`}
-            value={processForm.quantity}
-            onChange={(e) => setProcessForm((f) => ({ ...f, quantity: e.target.value }))}
-            margin="dense"
-          />
-          <TextField
-            fullWidth
-            type="number"
-            label="Total Purchase Cost"
-            value={processForm.totalCost}
-            onChange={(e) => {
-              const val = e.target.value;
-              setProcessForm((f) => {
-                const updated = { ...f, totalCost: val };
-                if (f.paymentOption === 'full') {
-                  updated.amountPaid = val;
-                }
-                return updated;
-              });
-            }}
-            margin="dense"
-          />
-          <TextField
-            fullWidth
-            type="number"
-            label="Cost per unit (optional)"
-            value={processForm.costPerUnit}
-            onChange={(e) => setProcessForm((f) => ({ ...f, costPerUnit: e.target.value }))}
-            margin="dense"
-          />
-          <TextField
-            fullWidth
-            type="date"
-            label="Purchase Date"
-            value={processForm.purchaseDate}
-            onChange={(e) => setProcessForm((f) => ({ ...f, purchaseDate: e.target.value }))}
-            margin="dense"
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField fullWidth label="Notes" value={processForm.notes} onChange={(e) => setProcessForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Material</InputLabel>
+                <Select
+                  value={processForm.materialType}
+                  onChange={(e) => {
+                    const nextType = e.target.value;
+                    setProcessForm((f) => ({ ...f, materialType: nextType, unit: getDefaultUnit(nextType) }));
+                  }}
+                  label="Material"
+                >
+                  {MATERIAL_TYPES.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="number"
+                label={`Quantity (${processForm.unit})`}
+                value={processForm.quantity}
+                onChange={(e) => setProcessForm((f) => ({ ...f, quantity: e.target.value }))}
+                margin="dense"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Total Purchase Cost"
+                value={processForm.totalCost}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setProcessForm((f) => {
+                    const updated = { ...f, totalCost: val };
+                    if (f.paymentOption === 'full') {
+                      updated.amountPaid = val;
+                    }
+                    return updated;
+                  });
+                }}
+                margin="dense"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Cost per unit (optional)"
+                value={processForm.costPerUnit}
+                onChange={(e) => setProcessForm((f) => ({ ...f, costPerUnit: e.target.value }))}
+                margin="dense"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="date"
+                label="Purchase Date"
+                value={processForm.purchaseDate}
+                onChange={(e) => setProcessForm((f) => ({ ...f, purchaseDate: e.target.value }))}
+                margin="dense"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth size="small" margin="dense">
+                <InputLabel>Supplier</InputLabel>
+                <Select
+                  value={processForm.supplierId || ''}
+                  label="Supplier"
+                  onChange={(e) => {
+                    const supp = processingSuppliers.find(s => s._id === e.target.value);
+                    setProcessForm({
+                      ...processForm,
+                      supplierId: e.target.value,
+                      supplierName: supp ? supp.name : '',
+                      supplierContact: supp ? supp.contact : ''
+                    });
+                  }}
+                >
+                  <MenuItem value=""><em>None</em></MenuItem>
+                  {processingSuppliers.map(s => (
+                    <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            {!processForm.supplierId && (
+              <Grid item xs={12} sm={6}>
+                <TextField fullWidth size="small" margin="dense" label="Manual Supplier Name (Optional)" value={processForm.supplierName} onChange={(e) => setProcessForm({ ...processForm, supplierName: e.target.value })} />
+              </Grid>
+            )}
+            <Grid item xs={12}>
+              <TextField fullWidth size="small" label="Notes" value={processForm.notes} onChange={(e) => setProcessForm({ ...processForm, notes: e.target.value })} multiline rows={2} />
+            </Grid>
+          </Grid>
 
           {/* Payment Section */}
           <Divider sx={{ my: 2 }} />
@@ -1251,22 +1306,6 @@ export default function Expenses() {
                   </Select>
                 </FormControl>
               )}
-              <TextField
-                fullWidth
-                label="Supplier Name"
-                placeholder="Name of vendor / supplier"
-                value={processForm.supplierName}
-                onChange={(e) => setProcessForm((f) => ({ ...f, supplierName: e.target.value }))}
-                margin="dense"
-              />
-              <TextField
-                fullWidth
-                label="Supplier Contact (optional)"
-                placeholder="Phone or address"
-                value={processForm.supplierContact}
-                onChange={(e) => setProcessForm((f) => ({ ...f, supplierContact: e.target.value }))}
-                margin="dense"
-              />
               {(() => {
                 const total = Number(processForm.totalCost) || (Number(processForm.quantity) * Number(processForm.costPerUnit)) || 0;
                 const paid = Number(processForm.amountPaid) || 0;
@@ -1405,25 +1444,48 @@ export default function Expenses() {
           {form.expenseGroup === 'Labour' && (
             <TextField fullWidth label="Labour Name" value={form.labourName} onChange={(e) => setForm((f) => ({ ...f, labourName: e.target.value }))} margin="dense" />
           )}
-          {['Coil Rental', 'Wire Rental'].includes(form.expenseCategory) && (
-            <>
-              {form.expenseCategory === 'Coil Rental' && (
-                <FormControl fullWidth margin="dense">
-                  <InputLabel>Coil Type</InputLabel>
-                  <Select value={form.coilType} onChange={(e) => setForm((f) => ({ ...f, coilType: e.target.value }))} label="Coil Type">
-                    <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
-                    <MenuItem value="Patri Coil">Patri Coil</MenuItem>
+          <Grid container spacing={2}>
+            {['Coil Rental', 'Wire Rental'].includes(form.expenseCategory) && (
+              <>
+                {form.expenseCategory === 'Coil Rental' && (
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth size="small" margin="dense">
+                      <InputLabel>Coil Type</InputLabel>
+                      <Select name="coilType" value={form.coilType} onChange={handleChange} label="Coil Type">
+                        <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
+                        <MenuItem value="Patri Coil">Patri Coil</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                )}
+                {form.expenseCategory === 'Wire Rental' && (
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth size="small" margin="dense">
+                      <InputLabel>Rental Route</InputLabel>
+                      <Select name="rentalRoute" value={form.rentalRoute} onChange={handleChange} label="Rental Route">
+                        {(config.rentalRoutes || []).map((route) => (
+                          <MenuItem key={route} value={route}>{route}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                )}
+              </>
+            )}
+            {form.expenseCategory === 'Annealing' && (
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth size="small" margin="dense">
+                  <InputLabel>Annealing Person</InputLabel>
+                  <Select name="annealingPersonId" value={form.annealingPersonId || ''} onChange={handleChange} label="Annealing Person">
+                    <MenuItem value=""><em>None</em></MenuItem>
+                    {annealingPersons.map((p) => (
+                      <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>
+                    ))}
                   </Select>
                 </FormControl>
-              )}
-              <FormControl fullWidth margin="dense">
-                <InputLabel>Rental Route</InputLabel>
-                <Select value={form.rentalRoute} onChange={(e) => setForm((f) => ({ ...f, rentalRoute: e.target.value }))} label="Rental Route">
-                  {(config.rentalRoutes || []).map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </>
-          )}
+              </Grid>
+            )}
+          </Grid>
           <TextField fullWidth label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Amount" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} margin="dense" required />
           {editingId && (

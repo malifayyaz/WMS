@@ -2,6 +2,7 @@ const Expense = require('../models/Expense');
 const Transaction = require('../models/Transaction');
 const Cheque = require('../models/Cheque');
 const ConsumptionMaterial = require('../models/ConsumptionMaterial');
+const AnnealingPerson = require('../models/AnnealingPerson');
 const { startOfDay, endOfDay } = require('date-fns');
 const { CONSUMPTION_MATERIAL_TYPES, SELF_EXPENSE_GROUP, FACTORY_EXPENSE_GROUPS } = require('../utils/wireConfig');
 const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
@@ -216,6 +217,36 @@ const createExpense = async (req, res, next) => {
     }
 
     const expense = await Expense.create(body);
+
+    // Link to AnnealingPerson ledger if provided
+    if (body.annealingPersonId && body.expenseCategory === 'Annealing') {
+      const person = await AnnealingPerson.findById(body.annealingPersonId);
+      if (person) {
+        const paymentAmount = Number(body.amount) || 0;
+        // Since it's an expense, it acts as a bill
+        person.totalAmountDue += paymentAmount;
+        person.paymentHistory.push({
+          amount: paymentAmount,
+          paymentDate: body.expenseDate || new Date(),
+          paymentMethod: 'Cash',
+          note: `Expense Bill: ${body.description || 'Annealing Expense'}`,
+          paidBy: body.addedBy || '',
+        });
+        
+        // Since it was paid immediately via Expense UI, record the payment to cancel the due
+        person.totalAmountPaid += paymentAmount;
+        person.totalAmountDue -= paymentAmount;
+        person.paymentHistory.push({
+          amount: paymentAmount,
+          paymentDate: body.expenseDate || new Date(),
+          paymentMethod: body.paymentMethod || 'Cash',
+          note: `Expense Payment: ${body.description || 'Annealing Expense Payment'}`,
+          paidBy: body.addedBy || '',
+        });
+        
+        await person.save();
+      }
+    }
 
     await logActivity({
       req,

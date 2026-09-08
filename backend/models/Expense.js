@@ -21,6 +21,7 @@ const expenseSchema = new mongoose.Schema(
     labourName: String,
     coilType: { type: String, enum: [COIL_CATEGORIES.SHIPLET, COIL_CATEGORIES.PATRI] },
     rentalRoute: { type: String, enum: RENTAL_ROUTES },
+    annealingPersonId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnealingPerson' },
     /** Set when this expense was created from a bank transfer — prevents double deduction */
     bankTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     /** Cheque tracking fields */

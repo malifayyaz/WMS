@@ -33,6 +33,7 @@ const consumptionMaterialSchema = new mongoose.Schema(
     paymentHistory: [paymentHistoryEntrySchema],
     supplierName: { type: String },
     supplierContact: { type: String },
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' },
     currentQuantity: Number,
     purchaseDate: { type: Date, default: Date.now },
     notes: String,

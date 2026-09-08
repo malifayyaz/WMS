@@ -6,6 +6,7 @@ const Order = require('../models/Order');
 
 const ReadyStock = require('../models/ReadyStock');
 const JobWork = require('../models/JobWork');
+const Supplier = require('../models/Supplier');
 
 const { CONSUMPTION_MATERIAL_TYPES } = require('../utils/wireConfig');
 const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
@@ -173,6 +174,28 @@ const createMaterial = async (req, res, next) => {
     }
 
     const doc = await ConsumptionMaterial.create(body);
+    
+    // Link to Supplier ledger if provided
+    if (body.supplierId) {
+      const supplier = await Supplier.findById(body.supplierId);
+      if (supplier) {
+        supplier.totalAmountPurchased += totalCost;
+        supplier.totalAmountDue += amountDue;
+        supplier.totalAmountPaid += amountPaid;
+        
+        if (amountPaid > 0) {
+          supplier.paymentHistory.push({
+            amount: amountPaid,
+            paymentDate: body.purchaseDate ? new Date(body.purchaseDate) : new Date(),
+            paymentMethod: body.paymentMethod || 'Cash',
+            note: `Payment for Process Material: ${doc.materialType} (${doc.quantity} ${doc.unit})`,
+            paidBy: body.paidBy || '',
+          });
+        }
+        await supplier.save();
+      }
+    }
+
     await syncUsageForMaterial(doc);
     res.status(201).json({ success: true, data: doc, message: 'Process material recorded' });
   } catch (error) {
