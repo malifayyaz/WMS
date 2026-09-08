@@ -2094,6 +2094,7 @@ export default function DailyBook() {
           contactNumber: partyForm.contactNumber,
           companyName: partyForm.companyName,
           address: partyForm.address,
+          supplierType: 'Raw Material',
           openingBalance: partyForm.openingBalanceType !== 'none' && partyForm.openingBalance
             ? Number(partyForm.openingBalance)
             : 0,

@@ -554,10 +554,19 @@ export default function BalanceSheet() {
                             </TableCell>
                           </TableRow>
 
+                          <TableRow hover>
+                            <TableCell sx={{ py: 1, border: 0 }}>
+                              Processing Customer Stock ({assets.totalProcessingStockKg || 0} kg @ {formatCurrency(assets.avgRawRate || 0)}/kg)
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1, border: 0, fontWeight: 700 }}>
+                              {formatCurrency(assets.processingStockValue || 0)}
+                            </TableCell>
+                          </TableRow>
+
                           {/* Inventory Subtotal */}
                           <TableRow sx={{ bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF' }}>
                             <TableCell sx={{ py: 1, fontWeight: 700, color: 'primary.dark' }}>
-                              Subtotal — Inventory
+                              Subtotal — Inventory ({(assets.rawMaterialWeightKg || 0) + (assets.totalReadyStockKg || 0) + (assets.totalProcessingStockKg || 0)} kg total)
                             </TableCell>
                             <TableCell align="right" sx={{ py: 1, fontWeight: 800, color: 'primary.dark' }}>
                               {formatCurrency(assets.totalInventoryValue || 0)}

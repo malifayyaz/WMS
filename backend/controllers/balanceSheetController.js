@@ -4,7 +4,6 @@ const Supplier = require('../models/Supplier');
 const AnnealingPerson = require('../models/AnnealingPerson');
 const RawMaterial = require('../models/RawMaterial');
 const ReadyStock = require('../models/ReadyStock');
-const Order = require('../models/Order');
 const Transaction = require('../models/Transaction');
 const PersonalPayment = require('../models/PersonalPayment');
 const { getCashBookForDate } = require('../utils/cashBookService');
@@ -59,15 +58,25 @@ exports.getBalanceSheet = async (req, res, next) => {
     const readyStockItems = await ReadyStock.find().lean();
     const totalReadyStockKg = readyStockItems.reduce((sum, s) => sum + (s.weightKg || 0), 0);
 
-    // Average selling rate from recent orders
-    const recentOrders = await Order.find().sort({ orderDate: -1 }).limit(30).lean();
-    const avgOrderRate = recentOrders.length
-      ? recentOrders.reduce((sum, o) => sum + (o.ratePerKg || 0), 0) / recentOrders.length
-      : 270;
-      
+    // Calculate average raw material rate per coil category (Patri & Shiplet)
+    const allRawMaterials = await RawMaterial.find({ isReturn: { $ne: true } }).lean();
+    const patriCoils = allRawMaterials.filter(rm => rm.coilCategory === 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
+    const shipletCoils = allRawMaterials.filter(rm => rm.coilCategory !== 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
+    const avgPatriRate = patriCoils.length > 0
+      ? patriCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / patriCoils.length
+      : 0;
+    const avgShipletRate = shipletCoils.length > 0
+      ? shipletCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / shipletCoils.length
+      : 0;
+    // Simple average of both category rates
+    const avgRawRate = (avgPatriRate > 0 && avgShipletRate > 0)
+      ? (avgPatriRate + avgShipletRate) / 2
+      : (avgPatriRate || avgShipletRate || 270);
+
+    // Value ready stock at the average raw material rate (same coil, unsold)
     const readyStockValue = Math.round(readyStockItems.reduce((sum, s) => {
       const weight = s.weightKg || 0;
-      const rate = s.manufacturingCostPerKg || avgOrderRate;
+      const rate = s.manufacturingCostPerKg || avgRawRate;
       return sum + (weight * rate);
     }, 0));
 
@@ -87,11 +96,6 @@ exports.getBalanceSheet = async (req, res, next) => {
     
     // Calculate Processing Customer Stock (Job Work Coil) value as an Asset
     const totalProcessingStockKg = processingCustomers.reduce((sum, c) => sum + (c.processingWeightKg || 0), 0);
-    // Use average raw material rate or 270 as fallback
-    const rawMaterialsStock = await RawMaterial.find().lean();
-    const avgRawRate = rawMaterialsStock.length > 0
-      ? rawMaterialsStock.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / rawMaterialsStock.length
-      : 270;
     const processingStockValue = Math.round(totalProcessingStockKg * avgRawRate);
 
     // Supplier Advances (Debit Balances)
@@ -183,6 +187,7 @@ exports.getBalanceSheet = async (req, res, next) => {
           totalReadyStockKg,
           processingStockValue,
           totalProcessingStockKg,
+          avgRawRate: Math.round(avgRawRate * 100) / 100,
           totalInventoryValue,
           totalAssets,
         },

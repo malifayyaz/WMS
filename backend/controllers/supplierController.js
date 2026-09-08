@@ -57,7 +57,21 @@ const getSuppliers = async (req, res, next) => {
     const { search, supplierType } = req.query;
     const filter = {};
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { companyName: new RegExp(search, 'i') }];
-    if (supplierType) filter.supplierType = supplierType;
+    if (supplierType) {
+      // Also match suppliers that have no supplierType set (they default to Raw Material)
+      if (supplierType === 'Raw Material') {
+        filter.$or = filter.$or
+          ? [{ $and: [{ $or: filter.$or }, { $or: [{ supplierType }, { supplierType: { $exists: false } }] }] }]
+          : [{ supplierType }, { supplierType: { $exists: false } }];
+        // Simplify: just use $in or handle separately
+        delete filter.$or;
+        const searchFilter = search ? { $or: [{ name: new RegExp(search, 'i') }, { companyName: new RegExp(search, 'i') }] } : {};
+        const typeFilter = { $or: [{ supplierType: 'Raw Material' }, { supplierType: { $exists: false } }] };
+        const suppliers = await Supplier.find({ ...searchFilter, ...typeFilter }).sort({ createdAt: -1 }).lean();
+        return res.json({ success: true, data: suppliers, total: suppliers.length });
+      }
+      filter.supplierType = supplierType;
+    }
     const suppliers = await Supplier.find(filter).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: suppliers, total: suppliers.length });
   } catch (error) {
