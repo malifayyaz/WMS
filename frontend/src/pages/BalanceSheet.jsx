@@ -480,6 +480,28 @@ export default function BalanceSheet() {
                             </TableCell>
                           </TableRow>
 
+                          {(assets.supplierAdvances > 0) && (
+                            <TableRow hover>
+                              <TableCell sx={{ py: 1, border: 0 }}>
+                                Supplier Advances
+                              </TableCell>
+                              <TableCell align="right" sx={{ py: 1, border: 0, fontWeight: 700 }}>
+                                {formatCurrency(assets.supplierAdvances || 0)}
+                              </TableCell>
+                            </TableRow>
+                          )}
+
+                          {(assets.annealingAdvances > 0) && (
+                            <TableRow hover>
+                              <TableCell sx={{ py: 1, border: 0 }}>
+                                Annealing Person Advances
+                              </TableCell>
+                              <TableCell align="right" sx={{ py: 1, border: 0, fontWeight: 700 }}>
+                                {formatCurrency(assets.annealingAdvances || 0)}
+                              </TableCell>
+                            </TableRow>
+                          )}
+
                           <TableRow hover>
                             <TableCell sx={{ py: 1, border: 0 }}>
                               Personal (Committees &amp; Savings Expected)
@@ -624,6 +646,26 @@ export default function BalanceSheet() {
                               {formatCurrency(liabilities.supplierPayables || 0)}
                             </TableCell>
                           </TableRow>
+
+                          <TableRow hover>
+                            <TableCell sx={{ py: 1, border: 0 }}>
+                              To Annealing Persons ({liabilities.annealingCount || 0} persons)
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1, border: 0, fontWeight: 700, color: 'error.main' }}>
+                              {formatCurrency(liabilities.annealingPayables || 0)}
+                            </TableCell>
+                          </TableRow>
+
+                          {liabilities.customerPayables > 0 && (
+                            <TableRow hover>
+                              <TableCell sx={{ py: 1, border: 0 }}>
+                                Customer Advances
+                              </TableCell>
+                              <TableCell align="right" sx={{ py: 1, border: 0, fontWeight: 700, color: 'error.main' }}>
+                                {formatCurrency(liabilities.customerPayables || 0)}
+                              </TableCell>
+                            </TableRow>
+                          )}
 
                           <TableRow hover>
                             <TableCell sx={{ py: 1, border: 0 }}>
