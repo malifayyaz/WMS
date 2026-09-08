@@ -45,36 +45,34 @@ exports.getBalanceSheet = async (req, res, next) => {
 
     // 1c. Raw Material Stock Value
     const rawMaterials = await RawMaterial.find({ isReturn: { $ne: true } }).lean();
-    const rawMaterialValue = rawMaterials.reduce((sum, rm) => {
-      const stock = Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0;
-      const rate = Number(rm.ratePerKg) || 0;
-      return sum + (stock > 0 ? stock * rate : 0);
-    }, 0);
+
     const rawMaterialWeightKg = rawMaterials.reduce((sum, rm) => {
       const stock = Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0;
       return sum + (stock > 0 ? stock : 0);
     }, 0);
 
-    // 1d. Ready Stock Value
-    const readyStockItems = await ReadyStock.find().lean();
-    const totalReadyStockKg = readyStockItems.reduce((sum, s) => sum + (s.weightKg || 0), 0);
-
     // Calculate average raw material rate per coil category (Patri & Shiplet)
-    const allRawMaterials = await RawMaterial.find({ isReturn: { $ne: true } }).lean();
-    const patriCoils = allRawMaterials.filter(rm => rm.coilCategory === 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
-    const shipletCoils = allRawMaterials.filter(rm => rm.coilCategory !== 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
+    const patriCoils = rawMaterials.filter(rm => rm.coilCategory === 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
+    const shipletCoils = rawMaterials.filter(rm => rm.coilCategory !== 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
     const avgPatriRate = patriCoils.length > 0
       ? patriCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / patriCoils.length
       : 0;
     const avgShipletRate = shipletCoils.length > 0
       ? shipletCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / shipletCoils.length
       : 0;
+    
     // Simple average of both category rates
     const avgRawRate = (avgPatriRate > 0 && avgShipletRate > 0)
       ? (avgPatriRate + avgShipletRate) / 2
       : (avgPatriRate || avgShipletRate || 270);
 
-    // Value ready stock at the average raw material rate (same coil, unsold)
+    // Value raw material stock at the global average raw material rate
+    const rawMaterialValue = Math.round(rawMaterialWeightKg * avgRawRate);
+
+    // 1d. Ready Stock Value
+    const readyStockItems = await ReadyStock.find().lean();
+    const totalReadyStockKg = readyStockItems.reduce((sum, s) => sum + (s.weightKg || 0), 0);
+
     // We ignore the saved s.manufacturingCostPerKg and use the live dynamic average
     const readyStockValue = Math.round(readyStockItems.reduce((sum, s) => {
       const weight = s.weightKg || 0;
