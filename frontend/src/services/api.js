@@ -161,6 +161,16 @@ export const annealingAPI = {
   delete: (id) => api.delete(`/annealing/${id}`),
 };
 
+// Annealing Persons
+export const annealingPersonAPI = {
+  getAll: () => api.get('/annealing-persons'),
+  getById: (id) => api.get(`/annealing-persons/${id}`),
+  create: (data) => api.post('/annealing-persons', data),
+  update: (id, data) => api.put(`/annealing-persons/${id}`, data),
+  delete: (id) => api.delete(`/annealing-persons/${id}`),
+  addPayment: (id, data) => api.post(`/annealing-persons/${id}/payments`, data),
+};
+
 // Job Work (customer coil manufactured into wire, labour charged per kg)
 export const jobWorkAPI = {
   getAll: (params) => api.get('/jobwork', { params }),

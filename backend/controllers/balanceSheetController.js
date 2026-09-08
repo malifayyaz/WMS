@@ -63,7 +63,12 @@ exports.getBalanceSheet = async (req, res, next) => {
     const avgOrderRate = recentOrders.length
       ? recentOrders.reduce((sum, o) => sum + (o.ratePerKg || 0), 0) / recentOrders.length
       : 270;
-    const readyStockValue = Math.round(totalReadyStockKg * avgOrderRate);
+      
+    const readyStockValue = Math.round(readyStockItems.reduce((sum, s) => {
+      const weight = s.weightKg || 0;
+      const rate = s.manufacturingCostPerKg || avgOrderRate;
+      return sum + (weight * rate);
+    }, 0));
 
     // 1e. Receivables
     // Customer Accounts (Ledger)

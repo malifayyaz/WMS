@@ -31,6 +31,7 @@ const personalPaymentRoutes = require('./routes/personalPaymentRoutes');
 const balanceSheetRoutes = require('./routes/balanceSheetRoutes');
 const periodCloseRoutes = require('./routes/periodCloseRoutes');
 const openingBalanceRoutes = require('./routes/openingBalanceRoutes');
+const annealingPersonRoutes = require('./routes/annealingPersonRoutes');
 
 const { reconcileAllPendingOrders } = require('./utils/stockService');
 
@@ -93,6 +94,7 @@ app.use('/api/personal-payments', authMiddleware, personalPaymentRoutes);
 app.use('/api/balance-sheet', authMiddleware, balanceSheetRoutes);
 app.use('/api/period-close', authMiddleware, periodCloseRoutes);
 app.use('/api/opening-balances', authMiddleware, openingBalanceRoutes);
+app.use('/api/annealing-persons', authMiddleware, annealingPersonRoutes);
 
 app.use(errorHandler);
 

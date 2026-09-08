@@ -9,6 +9,7 @@ const OPENING_SECTIONS = [
   'ProcessingCustomer',
   'Customer',
   'Supplier',
+  'AnnealingPerson',
   'ReadyStock',
   'Cheque',
   'PersonalPayment',

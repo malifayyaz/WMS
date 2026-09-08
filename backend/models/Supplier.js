@@ -13,6 +13,7 @@ const supplierSchema = new mongoose.Schema(
     openingBalance: { type: Number, default: 0 },
     openingBalanceDate: Date,
     openingBalanceType: { type: String, enum: ['debit', 'credit', 'none'], default: 'none' },
+    supplierType: { type: String, enum: ['Raw Material', 'Processing Material'], default: 'Raw Material' },
     /** Linked Processing Customer when same person also gives coil for job work */
     linkedCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
   },

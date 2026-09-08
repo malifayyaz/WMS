@@ -23,7 +23,8 @@ import {
   MenuItem,
   Typography,
   TablePagination,
-  Stack,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -71,6 +72,7 @@ const defaultSupplier = {
   openingBalance: '',
   openingBalanceDate: new Date().toISOString().slice(0, 10),
   openingBalanceType: 'none',
+  supplierType: 'Raw Material',
 };
 
 export default function Suppliers() {
@@ -89,11 +91,15 @@ export default function Suppliers() {
   const [ledgerSupplier, setLedgerSupplier] = useState(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [activeTab, setActiveTab] = useState('Raw Material');
 
   const fetchList = async () => {
     setLoading(true);
     try {
-      const res = await suppliersAPI.getAll(search ? { search } : {});
+      const params = {};
+      if (search) params.search = search;
+      params.supplierType = activeTab;
+      const res = await suppliersAPI.getAll(params);
       setList(res.data.data || []);
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load', severity: 'error' });
@@ -108,10 +114,10 @@ export default function Suppliers() {
       fetchList();
     }, 300);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, activeTab]);
 
   const handleOpenAdd = () => {
-    setForm(defaultSupplier);
+    setForm({ ...defaultSupplier, supplierType: activeTab });
     setEditingId(null);
     setDialogOpen(true);
   };
@@ -128,6 +134,7 @@ export default function Suppliers() {
         ? new Date(row.openingBalanceDate).toISOString().slice(0, 10)
         : new Date().toISOString().slice(0, 10),
       openingBalanceType: row.openingBalanceType || 'none',
+      supplierType: row.supplierType || 'Raw Material',
     });
     setEditingId(row._id);
     setDialogOpen(true);
@@ -179,6 +186,12 @@ export default function Suppliers() {
 
   return (
     <Box>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
+          <Tab label="Raw Material Suppliers" value="Raw Material" />
+          <Tab label="Processing Suppliers (Acid, Soap)" value="Processing Material" />
+        </Tabs>
+      </Box>
       <PageToolbar>
         <TextField
           size="small"

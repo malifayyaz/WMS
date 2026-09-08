@@ -70,6 +70,7 @@ const menuGroups = [
       { label: 'Bank Account', path: '/bank', icon: <AccountBalanceIcon /> },
       { label: 'Cheques', path: '/cheques', icon: <PaymentIcon /> },
       { label: 'Workers', path: '/workers', icon: <PeopleIcon /> },
+      { label: 'Annealing Ledgers', path: '/annealing-ledgers', icon: <PeopleIcon /> },
       { label: 'Expenses', path: '/expenses', icon: <AccountBalanceWalletIcon /> },
     ],
   },

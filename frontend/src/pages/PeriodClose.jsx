@@ -62,6 +62,7 @@ import {
   customersAPI,
   suppliersAPI,
   personalPaymentsAPI,
+  annealingPersonAPI,
 } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 
@@ -73,6 +74,7 @@ const SECTION_TABS = [
   { key: 'Annealing', label: 'Annealing' },
   { key: 'Customer', label: 'Customers' },
   { key: 'Supplier', label: 'Suppliers' },
+  { key: 'AnnealingPerson', label: 'Annealing Ledgers' },
   { key: 'ProcessingCustomer', label: 'Processing' },
   { key: 'ReadyStock', label: 'Ready Stock' },
   { key: 'Cheque', label: 'Cheques' },
@@ -115,9 +117,11 @@ export default function PeriodClose() {
   // Entities for Selection
   const [customerList, setCustomerList] = useState([]);
   const [supplierList, setSupplierList] = useState([]);
+  const [annealingPersonList, setAnnealingPersonList] = useState([]);
   const [personalPaymentCategories, setPersonalPaymentCategories] = useState([]);
   const [customerFilter, setCustomerFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
+  const [annealingPersonFilter, setAnnealingPersonFilter] = useState('');
 
   // Local Form States
   const [cashAmount, setCashAmount] = useState('');
@@ -161,13 +165,15 @@ export default function PeriodClose() {
   // Load Reference Data
   const loadReferenceData = useCallback(async () => {
     try {
-      const [cRes, sRes, pRes] = await Promise.all([
+      const [cRes, sRes, aRes, pRes] = await Promise.all([
         customersAPI.getAll({ limit: 1000 }),
         suppliersAPI.getAll({ limit: 1000 }),
+        annealingPersonAPI.getAll(),
         personalPaymentsAPI.getAll().catch(() => ({ data: { data: [] } })),
       ]);
       setCustomerList(cRes.data.data || []);
       setSupplierList(sRes.data.data || []);
+      setAnnealingPersonList(aRes.data.data || []);
       setPersonalPaymentCategories(pRes.data.data || []);
     } catch (err) {
       console.error('Failed to load reference parties:', err);
@@ -669,17 +675,17 @@ export default function PeriodClose() {
                 Opening Balances Entry
               </Typography>
               <Chip
-                label={`${completedSectionsCount} of 11 Sections Completed`}
-                color={completedSectionsCount === 11 ? 'success' : 'warning'}
+                label={`${completedSectionsCount} of 12 Sections Completed`}
+                color={completedSectionsCount === 12 ? 'success' : 'warning'}
                 variant="filled"
                 sx={{ fontWeight: 700 }}
               />
             </Box>
             <LinearProgress
               variant="determinate"
-              value={(completedSectionsCount / 11) * 100}
+              value={(completedSectionsCount / 12) * 100}
               sx={{ height: 8, borderRadius: 4 }}
-              color={completedSectionsCount === 11 ? 'success' : 'primary'}
+              color={completedSectionsCount === 12 ? 'success' : 'primary'}
             />
           </Box>
 
@@ -1306,8 +1312,57 @@ export default function PeriodClose() {
             </Box>
           )}
 
-          {/* TAB 7: PROCESSING (JOB WORK) */}
+          {/* TAB 7: ANNEALING PERSONS */}
           {activeTab === 7 && (
+            <Box>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  Annealing Ledgers Balances
+                </Typography>
+                <TextField
+                  size="small"
+                  placeholder="Filter persons..."
+                  value={annealingPersonFilter}
+                  onChange={(e) => setAnnealingPersonFilter(e.target.value)}
+                  InputProps={{ startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1 }} /> }}
+                />
+              </Box>
+
+              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 480 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Person Name</TableCell>
+                      <TableCell>Contact</TableCell>
+                      <TableCell>Balance Type</TableCell>
+                      <TableCell align="right">Amount (Rs.)</TableCell>
+                      <TableCell align="center">Status</TableCell>
+                      <TableCell align="center">Action</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {annealingPersonList
+                      .filter((p) => p.name.toLowerCase().includes(annealingPersonFilter.toLowerCase()))
+                      .map((p) => {
+                        const existing = (openings.AnnealingPerson || []).find((o) => String(o.referenceId) === String(p._id));
+                        return (
+                          <AnnealingPersonRowItem
+                            key={p._id}
+                            person={p}
+                            existing={existing}
+                            onSave={handleSaveOpening}
+                            onDelete={handleDeleteOpening}
+                          />
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+
+          {/* TAB 8: PROCESSING (JOB WORK) */}
+          {activeTab === 8 && (
             <Box>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Processing Customers (Job Work Coil & Dues)
@@ -1342,8 +1397,8 @@ export default function PeriodClose() {
             </Box>
           )}
 
-          {/* TAB 8: READY STOCK */}
-          {activeTab === 8 && (
+          {/* TAB 9: READY STOCK */}
+          {activeTab === 9 && (
             <Box>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Finished Wire Ready Stock Opening
@@ -1448,8 +1503,8 @@ export default function PeriodClose() {
             </Box>
           )}
 
-          {/* TAB 9: CHEQUES */}
-          {activeTab === 9 && (
+          {/* TAB 10: CHEQUES */}
+          {activeTab === 10 && (
             <Box>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Outstanding Cheques
@@ -1597,8 +1652,8 @@ export default function PeriodClose() {
             </Box>
           )}
 
-          {/* TAB 10: PERSONAL PAYMENTS */}
-          {activeTab === 10 && (
+          {/* TAB 11: PERSONAL PAYMENTS */}
+          {activeTab === 11 && (
             <Box>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Personal Payments (Committees / Investments / Loans)
@@ -1735,6 +1790,69 @@ function SupplierRowItem({ supplier, existing, onSave, onDelete }) {
       </TableCell>
       <TableCell>
         <Typography variant="caption" color="text.secondary">{supplier.companyName || '-'}</Typography>
+      </TableCell>
+      <TableCell>
+        <ToggleButtonGroup
+          size="small"
+          value={bType}
+          exclusive
+          onChange={(_, val) => val && setBType(val)}
+        >
+          <ToggleButton value="credit" color="error">Credit (We Owe)</ToggleButton>
+          <ToggleButton value="debit" color="success">Debit (Advance)</ToggleButton>
+          <ToggleButton value="none">None</ToggleButton>
+        </ToggleButtonGroup>
+      </TableCell>
+      <TableCell align="right" sx={{ width: 160 }}>
+        <TextField
+          size="small"
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0"
+          disabled={bType === 'none'}
+        />
+      </TableCell>
+      <TableCell align="center">
+        {existing ? <Chip label="Saved" size="small" color="success" /> : <Typography variant="caption" color="text.secondary">Not Entered</Typography>}
+      </TableCell>
+      <TableCell align="center">
+        <Button size="small" variant="contained" onClick={handleSave}>
+          Save
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function AnnealingPersonRowItem({ person, existing, onSave, onDelete }) {
+  const [bType, setBType] = useState(existing?.balanceType || 'none');
+  const [amount, setAmount] = useState(existing?.balanceAmount ?? '');
+
+  useEffect(() => {
+    if (existing) {
+      setBType(existing.balanceType || 'none');
+      setAmount(existing.balanceAmount ?? '');
+    }
+  }, [existing]);
+
+  const handleSave = () => {
+    onSave({
+      section: 'AnnealingPerson',
+      referenceId: person._id,
+      referenceName: person.name,
+      balanceType: bType,
+      balanceAmount: Number(amount) || 0,
+    });
+  };
+
+  return (
+    <TableRow>
+      <TableCell>
+        <Typography variant="body2" fontWeight={600}>{person.name}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="caption" color="text.secondary">{person.contactNumber || '-'}</Typography>
       </TableCell>
       <TableCell>
         <ToggleButtonGroup

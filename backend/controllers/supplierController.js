@@ -54,9 +54,10 @@ const createSupplier = async (req, res, next) => {
  */
 const getSuppliers = async (req, res, next) => {
   try {
-    const { search } = req.query;
+    const { search, supplierType } = req.query;
     const filter = {};
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { companyName: new RegExp(search, 'i') }];
+    if (supplierType) filter.supplierType = supplierType;
     const suppliers = await Supplier.find(filter).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: suppliers, total: suppliers.length });
   } catch (error) {

@@ -62,6 +62,7 @@ export default function ReadyStock() {
         wireNumber: Number(form.wireNumber),
         coilCategory: form.coilCategory,
         weightKg: Number(form.weightKg),
+        manufacturingCostPerKg: form.manufacturingCostPerKg ? Number(form.manufacturingCostPerKg) : undefined,
         notes: form.notes,
         productionDate: form.productionDate,
         source: 'Direct Production',
@@ -71,6 +72,7 @@ export default function ReadyStock() {
         wireNumber: '',
         coilCategory: '',
         weightKg: '',
+        manufacturingCostPerKg: '',
         notes: '',
         productionDate: new Date().toISOString().slice(0, 10),
       });
@@ -279,6 +281,7 @@ export default function ReadyStock() {
             </Select>
           </FormControl>
           <TextField fullWidth type="number" label="Weight Produced (kg)" value={form.weightKg} onChange={(e) => setForm((f) => ({ ...f, weightKg: e.target.value }))} margin="dense" />
+          <TextField fullWidth type="number" label="Rate / kg (opt)" value={form.manufacturingCostPerKg || ''} onChange={(e) => setForm((f) => ({ ...f, manufacturingCostPerKg: e.target.value }))} margin="dense" />
           <TextField fullWidth type="date" label="Production Date" value={form.productionDate} onChange={(e) => setForm((f) => ({ ...f, productionDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <TextField fullWidth label="Notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
         </DialogContent>

@@ -20,6 +20,7 @@ const ALL_SECTIONS = [
   'ProcessingCustomer',
   'Customer',
   'Supplier',
+  'AnnealingPerson',
   'ReadyStock',
   'Cheque',
   'PersonalPayment',
@@ -121,6 +122,25 @@ async function applyOpeningBalance(opening, closeDate) {
           totalAmountDue: isCredit ? bal : 0,
           totalAmountPaid: isDebit ? bal : 0,
           totalAmountPurchased: isCredit ? bal : 0,
+          openingBalance: bal,
+          openingBalanceType: opening.balanceType || 'none',
+          openingBalanceDate: closeDate,
+        });
+      }
+      break;
+    }
+
+    case 'AnnealingPerson': {
+      if (opening.referenceId) {
+        const isDebit = opening.balanceType === 'debit';
+        const isCredit = opening.balanceType === 'credit';
+        const bal = Number(opening.balanceAmount) || 0;
+        
+        // Load AnnealingPerson Model on demand to avoid circular deps if any
+        const AnnealingPerson = require('../models/AnnealingPerson');
+        await AnnealingPerson.findByIdAndUpdate(opening.referenceId, {
+          totalAmountDue: isCredit ? bal : 0,
+          totalAmountPaid: isDebit ? bal : 0,
           openingBalance: bal,
           openingBalanceType: opening.balanceType || 'none',
           openingBalanceDate: closeDate,
@@ -373,6 +393,14 @@ exports.deleteOpening = async (req, res) => {
           openingBalance: 0,
           openingBalanceType: 'none',
         });
+      } else if (opening.section === 'AnnealingPerson' && opening.referenceId) {
+        const AnnealingPerson = require('../models/AnnealingPerson');
+        await AnnealingPerson.findByIdAndUpdate(opening.referenceId, {
+          totalAmountDue: 0,
+          totalAmountPaid: 0,
+          openingBalance: 0,
+          openingBalanceType: 'none',
+        });
       } else if (opening.section === 'Cash') {
         await DailyCashOpening.deleteMany({});
       } else if (opening.section === 'Bank') {
@@ -445,6 +473,13 @@ exports.getSummary = async (req, res) => {
           }
           break;
         case 'Supplier':
+          if (item.balanceType === 'credit') {
+            totalOpeningLiabilities += Number(item.balanceAmount) || 0;
+          } else if (item.balanceType === 'debit') {
+            totalOpeningAssets += Number(item.balanceAmount) || 0;
+          }
+          break;
+        case 'AnnealingPerson':
           if (item.balanceType === 'credit') {
             totalOpeningLiabilities += Number(item.balanceAmount) || 0;
           } else if (item.balanceType === 'debit') {

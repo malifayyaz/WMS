@@ -23,6 +23,7 @@ import Payables from './pages/Payables';
 import PersonalPayments from './pages/PersonalPayments';
 import BalanceSheet from './pages/BalanceSheet';
 import PeriodClose from './pages/PeriodClose';
+import AnnealingPersons from './pages/AnnealingPersons';
 
 export default function App() {
   return (
@@ -135,6 +136,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="Workers">
               <Workers />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/annealing-ledgers"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Annealing Ledgers">
+              <AnnealingPersons />
             </AppLayout>
           </ProtectedRoute>
         }
