@@ -46,6 +46,8 @@ export default function Payables() {
     totals: {
       totalSupplierDue: 0,
       totalRawMaterialDue: 0,
+      totalAnnealingDue: 0,
+      totalCustomerAdvances: 0,
       grandTotalPayables: 0,
     },
   });
@@ -81,6 +83,8 @@ export default function Payables() {
   const suppliers = data.suppliers || [];
   const rawMaterials = data.rawMaterials || [];
   const rawMaterialsBySupplier = data.rawMaterialsBySupplier || [];
+  const annealingPersons = data.annealingPersons || [];
+  const customerAdvances = data.customerAdvances || [];
 
   // Export definitions
   const supplierExportColumns = [
@@ -233,9 +237,11 @@ export default function Payables() {
               },
             }}
           >
-            <Tab label={`All Payables (${suppliers.length})`} />
+            <Tab label={`All Payables`} />
             <Tab label={`Supplier Accounts (${suppliers.length})`} />
             <Tab label={`Raw Material Lots (${rawMaterials.length})`} />
+            <Tab label={`Annealing Persons (${annealingPersons.length})`} />
+            <Tab label={`Customer Advances (${customerAdvances.length})`} />
           </Tabs>
 
           <TextField
@@ -392,6 +398,106 @@ export default function Payables() {
                           </TableCell>
                           <TableCell sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
                             {rm.purchaseDate ? formatDate(rm.purchaseDate) : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+
+          {/* TAB 0: All or TAB 3: Annealing Persons */}
+          {(currentTab === 0 || currentTab === 3) && (
+            <Paper elevation={0} sx={{ mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+              <Box sx={{ p: 2, bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Annealing Persons (We Owe)
+                  </Typography>
+                  <Chip
+                    label={`Total: ${formatCurrency(totals.totalAnnealingDue || 0)}`}
+                    color="error"
+                    size="small"
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Stack>
+              </Box>
+
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                      <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Contact</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Amount Due</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {annealingPersons.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                          No annealing person payables found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      annealingPersons.map((a) => (
+                        <TableRow key={a._id} hover>
+                          <TableCell sx={{ fontWeight: 700 }}>{a.name}</TableCell>
+                          <TableCell sx={{ color: 'text.secondary' }}>{a.contactNumber || '—'}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 800, color: 'error.main' }}>
+                            {formatCurrency(a.totalAmountDue || 0)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+
+          {/* TAB 0: All or TAB 4: Customer Advances */}
+          {(currentTab === 0 || currentTab === 4) && (
+            <Paper elevation={0} sx={{ mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+              <Box sx={{ p: 2, bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Customer Advances (We Owe)
+                  </Typography>
+                  <Chip
+                    label={`Total: ${formatCurrency(totals.totalCustomerAdvances || 0)}`}
+                    color="error"
+                    size="small"
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Stack>
+              </Box>
+
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                      <TableCell sx={{ fontWeight: 700 }}>Customer Name</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Contact</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Advance Received</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {customerAdvances.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                          No customer advances found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      customerAdvances.map((c) => (
+                        <TableRow key={c._id} hover>
+                          <TableCell sx={{ fontWeight: 700 }}>{c.name}</TableCell>
+                          <TableCell sx={{ color: 'text.secondary' }}>{c.contactNumber || '—'}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 800, color: 'error.main' }}>
+                            {formatCurrency(Math.abs(c.totalAmountDue || 0))}
                           </TableCell>
                         </TableRow>
                       ))

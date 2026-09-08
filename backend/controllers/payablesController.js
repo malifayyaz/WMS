@@ -2,6 +2,8 @@ const Supplier = require('../models/Supplier');
 const RawMaterial = require('../models/RawMaterial');
 const Transaction = require('../models/Transaction');
 const PersonalPayment = require('../models/PersonalPayment');
+const AnnealingPerson = require('../models/AnnealingPerson');
+const Customer = require('../models/Customer');
 
 /**
  * GET /api/payables/summary
@@ -94,7 +96,29 @@ exports.getSummary = async (req, res, next) => {
     const totalPersonalPayableRepaid = personalPayables.reduce((sum, p) => sum + (p.totalContributed || 0), 0);
     const totalPersonalPayableRemaining = personalPayables.reduce((sum, p) => sum + (p.remainingToContribute || 0), 0);
 
-    const grandTotalPayables = totalSupplierDue + totalPersonalPayableRemaining;
+    // 4. Annealing Person Payables
+    const annealingFilter = { totalAmountDue: { $gt: 0 } };
+    if (search) {
+      annealingFilter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { contactNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+    const annealingPersons = await AnnealingPerson.find(annealingFilter).sort({ totalAmountDue: -1 }).lean();
+    const totalAnnealingDue = annealingPersons.reduce((sum, a) => sum + (a.totalAmountDue || 0), 0);
+
+    // 5. Customer Advances (Payables)
+    const customerFilter = { totalAmountDue: { $lt: 0 } };
+    if (search) {
+      customerFilter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { contactNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+    const customerAdvances = await Customer.find(customerFilter).sort({ totalAmountDue: 1 }).lean();
+    const totalCustomerAdvances = customerAdvances.reduce((sum, c) => sum + Math.abs(c.totalAmountDue || 0), 0);
+
+    const grandTotalPayables = totalSupplierDue + totalPersonalPayableRemaining + totalAnnealingDue + totalCustomerAdvances;
 
     res.json({
       success: true,
@@ -103,12 +127,16 @@ exports.getSummary = async (req, res, next) => {
         rawMaterials,
         rawMaterialsBySupplier,
         personalPayables,
+        annealingPersons,
+        customerAdvances,
         totals: {
           totalSupplierDue,
           totalRawMaterialDue,
           totalPersonalPayableLumpSum,
           totalPersonalPayableRepaid,
           totalPersonalPayableRemaining,
+          totalAnnealingDue,
+          totalCustomerAdvances,
           grandTotalPayables,
         },
       },

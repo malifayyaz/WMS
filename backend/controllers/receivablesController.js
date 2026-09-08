@@ -3,6 +3,8 @@ const JobWork = require('../models/JobWork');
 const PersonalPayment = require('../models/PersonalPayment');
 const Transaction = require('../models/Transaction');
 const Order = require('../models/Order');
+const Supplier = require('../models/Supplier');
+const AnnealingPerson = require('../models/AnnealingPerson');
 
 /**
  * GET /api/receivables/summary
@@ -88,8 +90,31 @@ exports.getSummary = async (req, res, next) => {
     const totalPersonalLumpSum = personalPayments.reduce((sum, p) => sum + (p.expectedLumpSum || 0), 0);
     const totalPersonalContributed = personalPayments.reduce((sum, p) => sum + (p.totalContributed || 0), 0);
 
+    // 4. Supplier Advances (Receivables)
+    const supplierFilter = { totalAmountDue: { $lt: 0 } };
+    if (search) {
+      supplierFilter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { companyName: { $regex: search, $options: 'i' } },
+        { contactNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+    const supplierAdvances = await Supplier.find(supplierFilter).sort({ totalAmountDue: 1 }).lean();
+    const totalSupplierAdvances = supplierAdvances.reduce((sum, s) => sum + Math.abs(s.totalAmountDue || 0), 0);
+
+    // 5. Annealing Person Advances (Receivables)
+    const annealingFilter = { totalAmountDue: { $lt: 0 } };
+    if (search) {
+      annealingFilter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { contactNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+    const annealingAdvances = await AnnealingPerson.find(annealingFilter).sort({ totalAmountDue: 1 }).lean();
+    const totalAnnealingAdvances = annealingAdvances.reduce((sum, a) => sum + Math.abs(a.totalAmountDue || 0), 0);
+
     // Grand Total Receivables
-    const totalBusinessReceivables = totalCustomerDue + totalProcessingDue;
+    const totalBusinessReceivables = totalCustomerDue + totalProcessingDue + totalSupplierAdvances + totalAnnealingAdvances;
     const grandTotalReceivables = totalBusinessReceivables + totalPersonalLumpSum;
 
     res.json({
@@ -99,9 +124,13 @@ exports.getSummary = async (req, res, next) => {
         processingCustomers: processingAccounts,
         processingDeliveries: processingDeliveries.slice(0, 50),
         personalPayments,
+        supplierAdvances,
+        annealingAdvances,
         totals: {
           totalCustomerDue,
           totalProcessingDue,
+          totalSupplierAdvances,
+          totalAnnealingAdvances,
           totalBusinessReceivables,
           totalPersonalLumpSum,
           totalPersonalContributed,
