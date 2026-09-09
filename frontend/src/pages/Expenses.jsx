@@ -570,6 +570,7 @@ export default function Expenses() {
         chequeId: form.chequeId ? form.chequeId : undefined,
         bankTransactionId: form.bankTransactionId ? form.bankTransactionId : undefined,
         chequeDate: form.chequeDate ? form.chequeDate : undefined,
+        annealingPersonId: form.annealingPersonId ? form.annealingPersonId : undefined,
       };
       if (editingId) await expensesAPI.update(editingId, payload);
       else await expensesAPI.create(payload);
@@ -1444,48 +1445,50 @@ export default function Expenses() {
           {form.expenseGroup === 'Labour' && (
             <TextField fullWidth label="Labour Name" value={form.labourName} onChange={(e) => setForm((f) => ({ ...f, labourName: e.target.value }))} margin="dense" />
           )}
-          <Grid container spacing={2}>
-            {['Coil Rental', 'Wire Rental'].includes(form.expenseCategory) && (
-              <>
-                {form.expenseCategory === 'Coil Rental' && (
-                  <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth size="small" margin="dense">
-                      <InputLabel>Coil Type</InputLabel>
-                      <Select name="coilType" value={form.coilType} onChange={handleChange} label="Coil Type">
-                        <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
-                        <MenuItem value="Patri Coil">Patri Coil</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                )}
-                {form.expenseCategory === 'Wire Rental' && (
-                  <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth size="small" margin="dense">
-                      <InputLabel>Rental Route</InputLabel>
-                      <Select name="rentalRoute" value={form.rentalRoute} onChange={handleChange} label="Rental Route">
-                        {(config.rentalRoutes || []).map((route) => (
-                          <MenuItem key={route} value={route}>{route}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                )}
-              </>
-            )}
-            {form.expenseCategory === 'Annealing' && (
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" margin="dense">
-                  <InputLabel>Annealing Person</InputLabel>
-                  <Select name="annealingPersonId" value={form.annealingPersonId || ''} onChange={handleChange} label="Annealing Person">
-                    <MenuItem value=""><em>None</em></MenuItem>
-                    {annealingPersons.map((p) => (
-                      <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-            )}
-          </Grid>
+          {['Coil Rental', 'Wire Rental', 'Annealing'].includes(form.expenseCategory) && (
+            <Grid container spacing={2}>
+              {['Coil Rental', 'Wire Rental'].includes(form.expenseCategory) && (
+                <>
+                  {form.expenseCategory === 'Coil Rental' && (
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth size="small" margin="dense">
+                        <InputLabel>Coil Type</InputLabel>
+                        <Select name="coilType" value={form.coilType} onChange={handleChange} label="Coil Type">
+                          <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
+                          <MenuItem value="Patri Coil">Patri Coil</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+                  {form.expenseCategory === 'Wire Rental' && (
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth size="small" margin="dense">
+                        <InputLabel>Rental Route</InputLabel>
+                        <Select name="rentalRoute" value={form.rentalRoute} onChange={handleChange} label="Rental Route">
+                          {(config.rentalRoutes || []).map((route) => (
+                            <MenuItem key={route} value={route}>{route}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+                </>
+              )}
+              {form.expenseCategory === 'Annealing' && (
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth size="small" margin="dense">
+                    <InputLabel>Annealing Person</InputLabel>
+                    <Select name="annealingPersonId" value={form.annealingPersonId || ''} onChange={handleChange} label="Annealing Person">
+                      <MenuItem value=""><em>None</em></MenuItem>
+                      {annealingPersons.map((p) => (
+                        <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+            </Grid>
+          )}
           <TextField fullWidth label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Amount" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} margin="dense" required />
           {editingId && (
