@@ -408,6 +408,7 @@ const getJobWorkPools = async (req, res, next) => {
           totalArrivedKg: 0,
           totalDeliveredKg: 0,
           remainingKg: 0,
+          totalReturnedKg: 0,
           totalLabourCharged: 0,
           lots: 0,
           // Weighted by remaining kg — arrival coil rate put at coil arrival time
@@ -419,10 +420,12 @@ const getJobWorkPools = async (req, res, next) => {
         });
       }
       const pool = map.get(key);
-      const remaining = Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0));
+      const returned = j.returnedWeightKg || 0;
+      const remaining = Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0) - returned);
       pool.totalArrivedKg += j.arrivedWeightKg || 0;
       pool.totalDeliveredKg += j.deliveredWeightKg || 0;
-      pool.remainingKg = pool.totalArrivedKg - pool.totalDeliveredKg;
+      pool.totalReturnedKg += returned;
+      pool.remainingKg = pool.totalArrivedKg - pool.totalDeliveredKg - pool.totalReturnedKg;
       pool.totalLabourCharged += j.labourTotal || 0;
       pool.lots += 1;
       pool.lotDocs.push(j);
@@ -483,7 +486,7 @@ const poolDeliver = async (req, res, next) => {
     }
     const lots = await JobWork.find({ customerId, status: { $ne: 'Delivered' } })
       .sort({ arrivalDate: 1, createdAt: 1 });
-    const poolRemaining = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0)), 0);
+    const poolRemaining = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0) - (j.returnedWeightKg || 0)), 0);
     
     let normalDeliveryKg = totalDelivery;
     let excessKg = 0;
@@ -510,7 +513,7 @@ const poolDeliver = async (req, res, next) => {
       let firstLot = true;
       for (const lot of lots) {
         if (remaining <= 0.001) break;
-        const lotRemaining = Math.max(0, (lot.arrivedWeightKg || 0) - (lot.deliveredWeightKg || 0));
+        const lotRemaining = Math.max(0, (lot.arrivedWeightKg || 0) - (lot.deliveredWeightKg || 0) - (lot.returnedWeightKg || 0));
         if (lotRemaining <= 0) continue;
         const toDeduct = Math.min(lotRemaining, remaining);
         const labourAmount = Math.round(toDeduct * labourRatePerKg * 100) / 100;
@@ -724,13 +727,13 @@ const previewExcessDelivery = async (req, res, next) => {
     let coilCategory = '';
     
     if (jobWork) {
-      availableInPool = Math.max(0, jobWork.arrivedWeightKg - jobWork.deliveredWeightKg);
+      availableInPool = Math.max(0, jobWork.arrivedWeightKg - jobWork.deliveredWeightKg - (jobWork.returnedWeightKg || 0));
       coilCategory = jobWork.coilCategory;
     } else {
       // Might be customerId
       const lots = await JobWork.find({ customerId: req.params.id, status: { $ne: 'Delivered' } }).sort({ arrivalDate: 1, createdAt: 1 });
       if (lots.length === 0) return res.status(404).json({ success: false, message: 'No active processing pool found' });
-      availableInPool = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0)), 0);
+      availableInPool = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0) - (j.returnedWeightKg || 0)), 0);
       coilCategory = lots[0].coilCategory;
     }
     

@@ -177,7 +177,7 @@ const getInventoryReport = async (req, res, next) => {
       coilCategory: job.coilCategory || '',
       arrivedKg: job.arrivedWeightKg || 0,
       deliveredKg: job.deliveredWeightKg || 0,
-      remainingKg: Math.max(0, (job.arrivedWeightKg || 0) - (job.deliveredWeightKg || 0)),
+      remainingKg: Math.max(0, (job.arrivedWeightKg || 0) - (job.deliveredWeightKg || 0) - (job.returnedWeightKg || 0)),
       status: job.status,
     }));
     const totals = {

@@ -80,6 +80,7 @@ const jobWorkSchema = new mongoose.Schema(
     deliveries: [jobWorkDeliverySchema],
     returns: [jobWorkReturnSchema],
     deliveredWeightKg: { type: Number, default: 0 },
+    returnedWeightKg: { type: Number, default: 0 },
     labourTotal: { type: Number, default: 0 },
     status: { type: String, enum: ['In Stock', 'Partially Delivered', 'Delivered'], default: 'In Stock' },
     notes: String,
@@ -110,7 +111,8 @@ jobWorkSchema.pre('save', function syncTotals(next) {
     this.sellingRatePerKg = (this.coilRatePerKg || 0) + (this.labourRatePerKg || 0);
   }
 
-  const returnedWeightKg = (this.returns || []).reduce((s, r) => s + (r.weightKg || 0), 0);
+  this.returnedWeightKg = (this.returns || []).reduce((s, r) => s + (r.weightKg || 0), 0);
+  const returnedWeightKg = this.returnedWeightKg;
   const totalOutKg = this.deliveredWeightKg + returnedWeightKg;
   if (totalOutKg >= this.arrivedWeightKg && this.arrivedWeightKg > 0) {
     this.status = 'Delivered';
