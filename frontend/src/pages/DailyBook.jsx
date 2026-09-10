@@ -2772,7 +2772,10 @@ export default function DailyBook() {
       targetLotId = found?._id;
     }
     if (!targetLotId) {
-      setSnack({ open: true, message: 'Please select a customer with an existing coil arrival record', severity: 'error' });
+      targetLotId = jobWorkReturnForm.customerId;
+    }
+    if (!targetLotId) {
+      setSnack({ open: true, message: 'Please select a customer', severity: 'error' });
       return;
     }
     const weight = Number(jobWorkReturnForm.weightKg);
@@ -5821,15 +5824,7 @@ export default function DailyBook() {
               }
             </Alert>
           )}
-          {jobWorkExcessPreview?.hasExcess && jobWorkExcessPreview.canFulfill && (
-            <TextField
-              fullWidth type="number" label="Sale Rate for Excess Stock (per kg)"
-              value={jobWorkDeliveryForm.excessSaleRatePerKg}
-              onChange={(e) => setJobWorkDeliveryForm((f) => ({ ...f, excessSaleRatePerKg: e.target.value }))}
-              margin="dense" required
-              helperText={`Suggested raw material cost: ${jobWorkExcessPreview.suggestedRawMaterialRate || 0} / kg`}
-            />
-          )}
+
           
           <TextField
             fullWidth type="number" label="Bundles"

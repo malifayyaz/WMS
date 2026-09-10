@@ -491,9 +491,6 @@ const poolDeliver = async (req, res, next) => {
     if (totalDelivery > poolRemaining) {
       normalDeliveryKg = poolRemaining;
       excessKg = totalDelivery - poolRemaining;
-      if (!excessSaleRatePerKg) {
-        return res.status(400).json({ success: false, message: 'Excess sale rate required for excess delivery' });
-      }
     }
 
     const deliveryCoilRate = Number(req.body.coilRatePerKg) > 0
@@ -578,8 +575,8 @@ const poolDeliver = async (req, res, next) => {
       }
 
       const rawMaterialRatePerKg = foundLot.ratePerKg || 0;
-      totalSaleAmount = Math.round(excessKg * Number(excessSaleRatePerKg) * 100) / 100;
-      const profitPerKg = Math.round((Number(excessSaleRatePerKg) - rawMaterialRatePerKg) * 100) / 100;
+      totalSaleAmount = Math.round(excessKg * sellingRatePerKg * 100) / 100;
+      const profitPerKg = Math.round((sellingRatePerKg - rawMaterialRatePerKg) * 100) / 100;
       totalProfit = Math.round(profitPerKg * excessKg * 100) / 100;
 
       foundLot.currentStock -= excessKg;
@@ -592,7 +589,7 @@ const poolDeliver = async (req, res, next) => {
         weightKg: excessKg,
         coilCategory: targetLot.coilCategory,
         rawMaterialRatePerKg,
-        saleRatePerKg: Number(excessSaleRatePerKg),
+        saleRatePerKg: sellingRatePerKg,
         totalSaleAmount,
         profitPerKg,
         totalProfit,
@@ -697,9 +694,12 @@ const addReturn = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Valid returned weight is required and must be greater than 0' });
     }
 
-    const jobWork = await JobWork.findById(jobWorkId);
+    let jobWork = await JobWork.findById(jobWorkId).catch(() => null);
     if (!jobWork) {
-      return res.status(404).json({ success: false, message: 'Job work record not found' });
+      jobWork = await JobWork.findOne({ customerId: jobWorkId }).sort({ arrivalDate: -1, createdAt: -1 });
+    }
+    if (!jobWork) {
+      return res.status(404).json({ success: false, message: 'No job work records found for this customer' });
     }
 
     const resolvedCoilType = coilType || jobWork.coilCategory || 'Shiplet Coil';
