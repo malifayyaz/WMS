@@ -5,6 +5,7 @@ const {
   getCustomerReport,
   getInventoryReport,
   getDailyBookReport,
+  getExcessDeliveryReport,
 } = require('../controllers/reportController');
 
 const router = express.Router();
@@ -13,5 +14,6 @@ router.get('/financial', getFinancialReport);
 router.get('/customer/:id', getCustomerReport);
 router.get('/inventory', getInventoryReport);
 router.get('/daily-book', getDailyBookReport);
+router.get('/excess-deliveries', getExcessDeliveryReport);
 
 module.exports = router;

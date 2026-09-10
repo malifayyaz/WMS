@@ -514,6 +514,8 @@ export default function DailyBook() {
     notes: '',
   });
   const [jobWorkDeliveryEdit, setJobWorkDeliveryEdit] = useState(null);
+  const [jobWorkExcessPreview, setJobWorkExcessPreview] = useState(null);
+  const [jobWorkExcessLoading, setJobWorkExcessLoading] = useState(false);
   const [deleteJobWorkDeliveryConfirm, setDeleteJobWorkDeliveryConfirm] = useState({
     open: false,
     jobWorkId: null,
@@ -565,6 +567,27 @@ export default function DailyBook() {
       setAnnealingPools([]);
     }
   }, [mainTab, startDate, endDate, entryDate]);
+
+  useEffect(() => {
+    const weight = Number(jobWorkDeliveryForm.weightKg);
+    const cid = jobWorkDeliveryForm.customerId;
+    if (!weight || weight <= 0 || !cid || jobWorkDeliveryEdit) {
+      setJobWorkExcessPreview(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setJobWorkExcessLoading(true);
+      try {
+        const res = await jobWorkAPI.previewExcessDelivery(cid, weight);
+        setJobWorkExcessPreview(res.data.data);
+      } catch (err) {
+        setJobWorkExcessPreview(null);
+      } finally {
+        setJobWorkExcessLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [jobWorkDeliveryForm.weightKg, jobWorkDeliveryForm.customerId, jobWorkDeliveryEdit]);
 
   const fetchJobWorkData = useCallback(async () => {
     if (mainTab !== 5) {

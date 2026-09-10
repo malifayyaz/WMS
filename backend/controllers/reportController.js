@@ -228,10 +228,73 @@ const getDailyBookReport = async (req, res, next) => {
   }
 };
 
+const getExcessDeliveryReport = async (req, res, next) => {
+  try {
+    const { startDate, endDate, customerId } = req.query;
+    const filter = { 'excessDeliveries.0': { $exists: true } };
+    if (customerId) filter.customerId = customerId;
+    
+    let start, end;
+    if (startDate) start = new Date(startDate);
+    if (endDate) {
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+    }
+    
+    const jobWorks = await JobWork.find(filter);
+    
+    const records = [];
+    let totalExcessKg = 0;
+    let totalSaleAmount = 0;
+    let totalProfit = 0;
+    
+    jobWorks.forEach(jobWork => {
+      jobWork.excessDeliveries.forEach(entry => {
+        const dDate = new Date(entry.deliveryDate);
+        if (start && dDate < start) return;
+        if (end && dDate > end) return;
+        
+        records.push({
+          customerName: jobWork.customerName || '',
+          deliveryDate: entry.deliveryDate,
+          coilCategory: entry.coilCategory,
+          excessWeightKg: entry.weightKg,
+          rawMaterialRate: entry.rawMaterialRatePerKg,
+          saleRate: entry.saleRatePerKg,
+          saleAmount: entry.totalSaleAmount,
+          profitAmount: entry.totalProfit,
+          profitPerKg: entry.profitPerKg,
+          deliveredBy: entry.deliveredBy,
+          note: entry.note
+        });
+        
+        totalExcessKg += (entry.weightKg || 0);
+        totalSaleAmount += (entry.totalSaleAmount || 0);
+        totalProfit += (entry.totalProfit || 0);
+      });
+    });
+    
+    records.sort((a, b) => new Date(b.deliveryDate) - new Date(a.deliveryDate));
+    
+    const summary = {
+      totalExcessKg: Math.round(totalExcessKg * 100) / 100,
+      totalSaleAmount: Math.round(totalSaleAmount * 100) / 100,
+      totalProfit: Math.round(totalProfit * 100) / 100,
+      averageProfitPerKg: totalExcessKg > 0 ? Math.round((totalProfit / totalExcessKg) * 100) / 100 : 0,
+      recordCount: records.length
+    };
+    
+    res.json({ success: true, data: { records, summary } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfitLoss,
   getFinancialReport,
   getCustomerReport,
   getInventoryReport,
   getDailyBookReport,
+  getExcessDeliveryReport,
 };

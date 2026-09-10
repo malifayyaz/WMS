@@ -719,6 +719,81 @@ function CustomerReportPanel() {
   );
 }
 
+function ExcessDeliveryReportPanel() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const fetchReport = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = {};
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+      const res = await reportsAPI.getExcessDeliveries(params);
+      setData(res.data.data);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load report');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchReport(); }, [startDate, endDate]);
+
+  if (loading && !data) return <CircularProgress />;
+  if (error) return <Alert severity="error">{error}</Alert>;
+
+  const records = data?.records || [];
+  const summary = data?.summary || {};
+
+  return (
+    <Box>
+      <PageToolbar>
+        <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+      </PageToolbar>
+      
+      <Grid container spacing={1.5} my={2}>
+        <Grid item xs={12} sm={6} md={3}><MetricCard title="Total Excess Given" value={`${Number(summary.totalExcessKg || 0).toFixed(1)} kg`} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><MetricCard title="Total Sale Amount" value={formatCurrency(summary.totalSaleAmount || 0)} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><MetricCard title="Total Profit" value={formatCurrency(summary.totalProfit || 0)} color={(summary.totalProfit || 0) >= 0 ? 'success.main' : 'error.main'} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><MetricCard title="Avg Profit per kg" value={formatCurrency(summary.averageProfitPerKg || 0)} /></Grid>
+      </Grid>
+      
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={head}>Customer Name</TableCell>
+              <TableCell sx={head}>Delivery Date</TableCell>
+              <TableCell sx={head}>Coil Category</TableCell>
+              <TableCell sx={head} align="right">Excess Weight (kg)</TableCell>
+              <TableCell sx={head} align="right">Profit Per Kg</TableCell>
+              <TableCell sx={head} align="right">Total Profit</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {records.map((r, i) => (
+              <TableRow key={i}>
+                <TableCell sx={dense}>{r.customerName}</TableCell>
+                <TableCell sx={dense}>{formatDate(r.deliveryDate)}</TableCell>
+                <TableCell sx={dense}>{r.coilCategory}</TableCell>
+                <TableCell sx={dense} align="right">{Number(r.excessWeightKg).toFixed(2)}</TableCell>
+                <TableCell sx={dense} align="right">{formatCurrency(r.profitPerKg)}</TableCell>
+                <TableCell sx={{...dense, color: r.profitAmount >= 0 ? 'success.main' : 'error.main'}} align="right">{formatCurrency(r.profitAmount)}</TableCell>
+              </TableRow>
+            ))}
+            {!records.length && <TableRow><TableCell colSpan={6} sx={dense} align="center">No excess deliveries found in this period.</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+}
+
 export default function Reports() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -783,12 +858,14 @@ export default function Reports() {
         <Tab label="Cash & Bank" />
         <Tab label="Inventory" />
         <Tab label="Customer" />
+        <Tab label="Excess Deliveries" />
       </Tabs>
       <Box sx={{ pt: 2 }}>
         {tab === 0 && <ProfitLossPanel />}
         {tab === 1 && <FinancialPanel />}
         {tab === 2 && <InventoryPanel />}
         {tab === 3 && <CustomerReportPanel />}
+        {tab === 4 && <ExcessDeliveryReportPanel />}
       </Box>
     </Box>
   );

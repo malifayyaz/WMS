@@ -40,6 +40,23 @@ const jobWorkReturnSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+const jobWorkExcessDeliverySchema = new mongoose.Schema({
+  weightKg: { type: Number, required: true },
+  coilCategory: String,
+  rawMaterialRatePerKg: Number,
+  saleRatePerKg: { type: Number, required: true },
+  totalSaleAmount: Number,
+  profitPerKg: Number,
+  totalProfit: Number,
+  rawMaterialDeducted: { type: Boolean, default: false },
+  rawMaterialLotId: { type: mongoose.Schema.Types.ObjectId, ref: 'RawMaterial' },
+  deliveryDate: { type: Date, default: Date.now },
+  deliveredBy: String,
+  note: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
+
 const jobWorkSchema = new mongoose.Schema(
   {
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -66,6 +83,10 @@ const jobWorkSchema = new mongoose.Schema(
     labourTotal: { type: Number, default: 0 },
     status: { type: String, enum: ['In Stock', 'Partially Delivered', 'Delivered'], default: 'In Stock' },
     notes: String,
+    
+    excessDeliveries: [jobWorkExcessDeliverySchema],
+    totalExcessGiven: { type: Number, default: 0 },
+    totalExcessAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
@@ -73,6 +94,9 @@ const jobWorkSchema = new mongoose.Schema(
 jobWorkSchema.pre('save', function syncTotals(next) {
   this.deliveredWeightKg = (this.deliveries || []).reduce((s, d) => s + (d.weightKg || 0), 0);
   this.labourTotal = (this.deliveries || []).reduce((s, d) => s + (d.labourAmount || 0), 0);
+  
+  this.totalExcessGiven = (this.excessDeliveries || []).reduce((s, d) => s + (d.weightKg || 0), 0);
+  this.totalExcessAmount = (this.excessDeliveries || []).reduce((s, d) => s + (d.totalSaleAmount || 0), 0);
 
   // Prefer latest delivery rate for display; else legacy arrival rate
   const lastDelivery = (this.deliveries || []).length

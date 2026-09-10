@@ -60,44 +60,154 @@ const addDelivery = async (req, res, next) => {
   try {
     const doc = await JobWork.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Job work record not found' });
-    const weightKg = Number(req.body.weightKg);
-    if (!weightKg || weightKg <= 0) {
+    const totalDelivery = Number(req.body.weightKg);
+    if (!totalDelivery || totalDelivery <= 0) {
       return res.status(400).json({ success: false, message: 'Valid delivered weight required' });
     }
     const labourRatePerKg = Number(req.body.labourRatePerKg) || Number(doc.labourRatePerKg) || 0;
     if (!labourRatePerKg || labourRatePerKg <= 0) {
       return res.status(400).json({ success: false, message: 'Labour rate per kg required at delivery' });
     }
-    const remaining = doc.arrivedWeightKg - doc.deliveredWeightKg;
-    if (weightKg > remaining) {
-      return res.status(400).json({
-        success: false,
-        message: `Only ${remaining.toFixed(2)} kg remaining in job work stock for this lot`,
+
+    const availableInPool = Math.max(0, doc.arrivedWeightKg - doc.deliveredWeightKg);
+    let normalDeliveryKg = totalDelivery;
+    let excessKg = 0;
+
+    if (totalDelivery > availableInPool) {
+      normalDeliveryKg = availableInPool;
+      excessKg = totalDelivery - availableInPool;
+    }
+
+    // Process normal portion if any
+    let labourAmount = 0;
+    if (normalDeliveryKg > 0) {
+      labourAmount = Math.round(normalDeliveryKg * labourRatePerKg * 100) / 100;
+      const coilRatePerKg = Number(req.body.coilRatePerKg) > 0
+        ? Number(req.body.coilRatePerKg)
+        : (doc.coilRatePerKg || 0);
+      const sellingRatePerKg = Math.round((coilRatePerKg + labourRatePerKg) * 100) / 100;
+      const deliveryGroupId = new mongoose.Types.ObjectId();
+      doc.deliveries.push({
+        weightKg: normalDeliveryKg,
+        labourRatePerKg,
+        labourAmount,
+        coilRatePerKg,
+        sellingRatePerKg,
+        wireNumber: req.body.wireNumber != null ? Number(req.body.wireNumber) : undefined,
+        bundles: Number(req.body.bundles) || 0,
+        deliveredDate: req.body.deliveredDate ? new Date(req.body.deliveredDate) : new Date(),
+        notes: req.body.notes || '',
+        deliveryGroupId,
+        isGroupPrimary: true,
       });
     }
-    const labourAmount = Math.round(weightKg * labourRatePerKg * 100) / 100;
-    const coilRatePerKg = Number(req.body.coilRatePerKg) > 0
-      ? Number(req.body.coilRatePerKg)
-      : (doc.coilRatePerKg || 0);
-    const sellingRatePerKg = Math.round((coilRatePerKg + labourRatePerKg) * 100) / 100;
-    const deliveryGroupId = new mongoose.Types.ObjectId();
-    doc.deliveries.push({
-      weightKg,
-      labourRatePerKg,
-      labourAmount,
-      coilRatePerKg,
-      sellingRatePerKg,
-      wireNumber: req.body.wireNumber != null ? Number(req.body.wireNumber) : undefined,
-      bundles: Number(req.body.bundles) || 0,
-      deliveredDate: req.body.deliveredDate ? new Date(req.body.deliveredDate) : new Date(),
-      notes: req.body.notes || '',
-      deliveryGroupId,
-      isGroupPrimary: true,
-    });
+
+    // Process excess portion
+    let totalSaleAmount = 0;
+    let totalProfit = 0;
+    let foundLotId = null;
+    let remainingStock = 0;
+
+    if (excessKg > 0) {
+      const { excessSaleRatePerKg, excessNote, deliveredBy } = req.body;
+      if (!excessSaleRatePerKg) {
+        return res.status(400).json({ success: false, message: 'Excess sale rate required for excess delivery' });
+      }
+
+      // Find the raw material lot to deduct from (FIFO)
+      const foundLot = await RawMaterial.findOne({
+        coilCategory: doc.coilCategory,
+        currentStock: { $gte: excessKg },
+        isReturn: false
+      }).sort({ purchaseDate: 1 });
+
+      if (!foundLot) {
+        // Just return available aggregate to help user
+        const aggr = await RawMaterial.aggregate([
+          { $match: { coilCategory: doc.coilCategory, isReturn: false } },
+          { $group: { _id: null, total: { $sum: "$currentStock" } } }
+        ]);
+        const available = aggr[0]?.total || 0;
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient raw material stock for excess delivery. Available stock: ${available} kg. Excess needed: ${excessKg} kg. Please check your raw material inventory.`
+        });
+      }
+
+      const rawMaterialRatePerKg = foundLot.ratePerKg || 0;
+      totalSaleAmount = Math.round(excessKg * Number(excessSaleRatePerKg) * 100) / 100;
+      const profitPerKg = Math.round((Number(excessSaleRatePerKg) - rawMaterialRatePerKg) * 100) / 100;
+      totalProfit = Math.round(profitPerKg * excessKg * 100) / 100;
+
+      foundLot.currentStock -= excessKg;
+      await foundLot.save();
+
+      foundLotId = foundLot._id;
+      remainingStock = foundLot.currentStock;
+
+      doc.excessDeliveries.push({
+        weightKg: excessKg,
+        coilCategory: doc.coilCategory,
+        rawMaterialRatePerKg,
+        saleRatePerKg: Number(excessSaleRatePerKg),
+        totalSaleAmount,
+        profitPerKg,
+        totalProfit,
+        rawMaterialDeducted: true,
+        rawMaterialLotId: foundLot._id,
+        deliveryDate: req.body.deliveredDate ? new Date(req.body.deliveredDate) : new Date(),
+        deliveredBy: deliveredBy || '',
+        note: excessNote || ''
+      });
+
+      // Add excess amount to customer balance
+      const customer = await Customer.findById(doc.customerId);
+      if (customer) {
+        customer.totalAmountDue = (customer.totalAmountDue || 0) + totalSaleAmount;
+        customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + totalSaleAmount;
+        await customer.save();
+      }
+
+      // Create Transaction record
+      const Transaction = require('../models/Transaction');
+      await Transaction.create({
+        transactionType: "Money In",
+        amount: 0,
+        relatedTo: "Customer",
+        relatedId: doc.customerId,
+        relatedName: doc.customerName,
+        description: `Excess stock delivery ${excessKg}kg — added to customer balance`,
+        sourceType: "ExcessDelivery",
+        sourceId: doc._id,
+        transactionDate: new Date(),
+        isExcessDelivery: true
+      });
+    }
+
     await doc.save();
     await recalcCustomerTotals(doc.customerId);
 
-    res.json({ success: true, data: doc, message: `Delivery recorded — labour charge ${labourAmount}` });
+    const message = excessKg > 0
+      ? `Delivery complete. ${normalDeliveryKg}kg from processing pool. ${excessKg}kg excess from our stock (Rs.${totalSaleAmount} added to customer balance).`
+      : `Delivery recorded — labour charge ${labourAmount}`;
+
+    res.json({
+      success: true,
+      data: {
+        jobWork: doc,
+        deliverySummary: excessKg > 0 ? {
+          totalRequested: totalDelivery,
+          fromProcessingPool: normalDeliveryKg,
+          fromOurStock: excessKg,
+          excessSaleAmount: totalSaleAmount,
+          excessProfitAmount: totalProfit,
+          addedToCustomerBalance: totalSaleAmount,
+          rawMaterialLotDeducted: foundLotId,
+          rawMaterialLotRemaining: remainingStock
+        } : null
+      },
+      message
+    });
   } catch (error) {
     next(error);
   }
@@ -358,10 +468,13 @@ const poolDeliver = async (req, res, next) => {
       notes,
       wireNumber,
       bundles,
+      excessSaleRatePerKg,
+      excessNote,
+      deliveredBy
     } = req.body;
     if (!customerId) return res.status(400).json({ success: false, message: 'Customer required' });
-    const weightKg = Number(wRaw);
-    if (!weightKg || weightKg <= 0) {
+    const totalDelivery = Number(wRaw);
+    if (!totalDelivery || totalDelivery <= 0) {
       return res.status(400).json({ success: false, message: 'Valid delivery weight required' });
     }
     const labourRatePerKg = Number(rateRaw);
@@ -371,14 +484,18 @@ const poolDeliver = async (req, res, next) => {
     const lots = await JobWork.find({ customerId, status: { $ne: 'Delivered' } })
       .sort({ arrivalDate: 1, createdAt: 1 });
     const poolRemaining = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0)), 0);
-    if (weightKg > poolRemaining + 0.001) {
-      return res.status(400).json({
-        success: false,
-        message: `Only ${poolRemaining.toFixed(2)} kg in pool — cannot deliver ${weightKg} kg`,
-      });
+    
+    let normalDeliveryKg = totalDelivery;
+    let excessKg = 0;
+    
+    if (totalDelivery > poolRemaining) {
+      normalDeliveryKg = poolRemaining;
+      excessKg = totalDelivery - poolRemaining;
+      if (!excessSaleRatePerKg) {
+        return res.status(400).json({ success: false, message: 'Excess sale rate required for excess delivery' });
+      }
     }
-    // Weight is still consumed FIFO, but the whole delivery is priced at the
-    // customer's latest incoming coil rate (no averaging across old arrivals).
+
     const deliveryCoilRate = Number(req.body.coilRatePerKg) > 0
       ? Number(req.body.coilRatePerKg)
       : latestArrivalCoilRate(lots);
@@ -386,48 +503,136 @@ const poolDeliver = async (req, res, next) => {
     const delivDate = deliveredDate ? new Date(deliveredDate) : new Date();
     const wn = wireNumber != null && wireNumber !== '' ? Number(wireNumber) : undefined;
     const bund = Number(bundles) || 0;
-    let remaining = weightKg;
+    
     let totalLabour = 0;
     const updatedLots = [];
-    let firstLot = true;
     const deliveryGroupId = new mongoose.Types.ObjectId();
-    for (const lot of lots) {
-      if (remaining <= 0.001) break;
-      const lotRemaining = Math.max(0, (lot.arrivedWeightKg || 0) - (lot.deliveredWeightKg || 0));
-      if (lotRemaining <= 0) continue;
-      const toDeduct = Math.min(lotRemaining, remaining);
-      const labourAmount = Math.round(toDeduct * labourRatePerKg * 100) / 100;
-      lot.deliveries.push({
-        weightKg: toDeduct,
-        labourRatePerKg,
-        labourAmount,
-        coilRatePerKg: deliveryCoilRate,
-        sellingRatePerKg,
-        wireNumber: wn,
-        bundles: firstLot ? bund : 0,
-        deliveredDate: delivDate,
-        notes: notes || '',
-        deliveryGroupId,
-        isGroupPrimary: firstLot,
-      });
-      firstLot = false;
-      await lot.save();
-      updatedLots.push({
-        lotId: lot._id,
-        deducted: toDeduct,
-        labourAmount,
-        labourRatePerKg,
-        sellingRatePerKg,
-        coilRatePerKg: deliveryCoilRate,
-        lotCoilRatePerKg: lot.coilRatePerKg || 0,
-        wireNumber: wn,
-        bundles: bund,
-        deliveryGroupId,
-      });
-      totalLabour += labourAmount;
-      remaining -= toDeduct;
+
+    if (normalDeliveryKg > 0) {
+      let remaining = normalDeliveryKg;
+      let firstLot = true;
+      for (const lot of lots) {
+        if (remaining <= 0.001) break;
+        const lotRemaining = Math.max(0, (lot.arrivedWeightKg || 0) - (lot.deliveredWeightKg || 0));
+        if (lotRemaining <= 0) continue;
+        const toDeduct = Math.min(lotRemaining, remaining);
+        const labourAmount = Math.round(toDeduct * labourRatePerKg * 100) / 100;
+        lot.deliveries.push({
+          weightKg: toDeduct,
+          labourRatePerKg,
+          labourAmount,
+          coilRatePerKg: deliveryCoilRate,
+          sellingRatePerKg,
+          wireNumber: wn,
+          bundles: firstLot ? bund : 0,
+          deliveredDate: delivDate,
+          notes: notes || '',
+          deliveryGroupId,
+          isGroupPrimary: firstLot,
+        });
+        firstLot = false;
+        await lot.save();
+        updatedLots.push({
+          lotId: lot._id,
+          deducted: toDeduct,
+          labourAmount,
+          labourRatePerKg,
+          sellingRatePerKg,
+          coilRatePerKg: deliveryCoilRate,
+          lotCoilRatePerKg: lot.coilRatePerKg || 0,
+          wireNumber: wn,
+          bundles: bund,
+          deliveryGroupId,
+        });
+        totalLabour += labourAmount;
+        remaining -= toDeduct;
+      }
     }
+
+    let totalSaleAmount = 0;
+    let totalProfit = 0;
+    let foundLotId = null;
+    let remainingRawStock = 0;
+
+    if (excessKg > 0) {
+      let targetLot = lots.length > 0 ? lots[lots.length - 1] : await JobWork.findOne({ customerId }).sort({ createdAt: -1 });
+      if (!targetLot) return res.status(400).json({ success: false, message: 'No job work history found for this customer to attach excess delivery' });
+
+      const RawMaterial = require('../models/RawMaterial');
+      const foundLot = await RawMaterial.findOne({
+        coilCategory: targetLot.coilCategory,
+        currentStock: { $gte: excessKg },
+        isReturn: false
+      }).sort({ purchaseDate: 1 });
+
+      if (!foundLot) {
+        const aggr = await RawMaterial.aggregate([
+          { $match: { coilCategory: targetLot.coilCategory, isReturn: false } },
+          { $group: { _id: null, total: { $sum: "$currentStock" } } }
+        ]);
+        const available = aggr[0]?.total || 0;
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient raw material stock for excess delivery. Available stock: ${available} kg. Excess needed: ${excessKg} kg.`
+        });
+      }
+
+      const rawMaterialRatePerKg = foundLot.ratePerKg || 0;
+      totalSaleAmount = Math.round(excessKg * Number(excessSaleRatePerKg) * 100) / 100;
+      const profitPerKg = Math.round((Number(excessSaleRatePerKg) - rawMaterialRatePerKg) * 100) / 100;
+      totalProfit = Math.round(profitPerKg * excessKg * 100) / 100;
+
+      foundLot.currentStock -= excessKg;
+      await foundLot.save();
+
+      foundLotId = foundLot._id;
+      remainingRawStock = foundLot.currentStock;
+
+      targetLot.excessDeliveries.push({
+        weightKg: excessKg,
+        coilCategory: targetLot.coilCategory,
+        rawMaterialRatePerKg,
+        saleRatePerKg: Number(excessSaleRatePerKg),
+        totalSaleAmount,
+        profitPerKg,
+        totalProfit,
+        rawMaterialDeducted: true,
+        rawMaterialLotId: foundLot._id,
+        deliveryDate: delivDate,
+        deliveredBy: deliveredBy || '',
+        note: excessNote || ''
+      });
+      await targetLot.save();
+
+      const Customer = require('../models/Customer');
+      const customer = await Customer.findById(customerId);
+      if (customer) {
+        customer.totalAmountDue = (customer.totalAmountDue || 0) + totalSaleAmount;
+        customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + totalSaleAmount;
+        await customer.save();
+      }
+
+      const Transaction = require('../models/Transaction');
+      await Transaction.create({
+        transactionType: "Money In",
+        amount: 0,
+        relatedTo: "Customer",
+        relatedId: customerId,
+        relatedName: targetLot.customerName,
+        description: `Excess stock delivery ${excessKg}kg — added to customer balance`,
+        sourceType: "ExcessDelivery",
+        sourceId: targetLot._id,
+        transactionDate: new Date(),
+        isExcessDelivery: true
+      });
+    }
+
     await recalcCustomerTotals(customerId);
+    
+    const message = excessKg > 0
+      ? `Delivery complete. ${normalDeliveryKg}kg from processing pool. ${excessKg}kg excess from our stock (Rs.${totalSaleAmount} added to customer balance).`
+      : `${totalDelivery} kg delivered @ ${labourRatePerKg}/kg — labour charge Rs. ${totalLabour.toFixed(2)}`;
+
     res.json({
       success: true,
       data: {
@@ -438,8 +643,18 @@ const poolDeliver = async (req, res, next) => {
         sellingRatePerKg,
         wireNumber: wn,
         bundles: bund,
+        deliverySummary: excessKg > 0 ? {
+          totalRequested: totalDelivery,
+          fromProcessingPool: normalDeliveryKg,
+          fromOurStock: excessKg,
+          excessSaleAmount: totalSaleAmount,
+          excessProfitAmount: totalProfit,
+          addedToCustomerBalance: totalSaleAmount,
+          rawMaterialLotDeducted: foundLotId,
+          rawMaterialLotRemaining: remainingRawStock
+        } : null
       },
-      message: `${weightKg} kg delivered @ ${labourRatePerKg}/kg — labour charge Rs. ${totalLabour.toFixed(2)}`,
+      message
     });
   } catch (error) {
     next(error);
@@ -528,6 +743,67 @@ const addReturn = async (req, res, next) => {
   }
 };
 
+const previewExcessDelivery = async (req, res, next) => {
+  try {
+    let jobWork = await JobWork.findById(req.params.id);
+    let availableInPool = 0;
+    let coilCategory = '';
+    
+    if (jobWork) {
+      availableInPool = Math.max(0, jobWork.arrivedWeightKg - jobWork.deliveredWeightKg);
+      coilCategory = jobWork.coilCategory;
+    } else {
+      // Might be customerId
+      const lots = await JobWork.find({ customerId: req.params.id, status: { $ne: 'Delivered' } }).sort({ arrivalDate: 1, createdAt: 1 });
+      if (lots.length === 0) return res.status(404).json({ success: false, message: 'No active processing pool found' });
+      availableInPool = lots.reduce((s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0)), 0);
+      coilCategory = lots[0].coilCategory;
+    }
+    
+    const weightKg = Number(req.query.weightKg);
+    
+    if (!weightKg || weightKg <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid weightKg required' });
+    }
+    
+    if (weightKg <= availableInPool) {
+      return res.json({ success: true, data: { hasExcess: false, message: "No excess" } });
+    }
+    
+    const normalKg = availableInPool;
+    const excessKg = weightKg - availableInPool;
+    
+    const stockAggr = await RawMaterial.aggregate([
+      { $match: { coilCategory: coilCategory, isReturn: false } },
+      { $group: { _id: null, totalStock: { $sum: "$currentStock" } } }
+    ]);
+    const totalStock = stockAggr[0]?.totalStock || 0;
+    
+    const foundLot = await RawMaterial.findOne({
+      coilCategory: coilCategory,
+      currentStock: { $gte: excessKg },
+      isReturn: false
+    }).sort({ purchaseDate: 1 });
+    
+    res.json({
+      success: true,
+      data: {
+        hasExcess: true,
+        totalRequested: weightKg,
+        fromProcessingPool: normalKg,
+        fromOurStock: excessKg,
+        coilCategory: jobWork.coilCategory,
+        availableRawStock: totalStock,
+        suggestedRawMaterialRate: foundLot?.ratePerKg || null,
+        canFulfill: totalStock >= excessKg,
+        shortage: totalStock < excessKg ? excessKg - totalStock : 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createJobWork,
   getJobWorks,
@@ -540,4 +816,5 @@ module.exports = {
   deleteJobWork,
   getJobWorkStock,
   addReturn,
+  previewExcessDelivery,
 };

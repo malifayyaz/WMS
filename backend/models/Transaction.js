@@ -13,7 +13,7 @@ const transactionSchema = new mongoose.Schema(
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
     sourceType: {
       type: String,
-      enum: ['Expense', 'Order', 'RawMaterial', 'ConsumptionMaterial', 'PersonalPayment', 'Manual'],
+      enum: ['Expense', 'Order', 'RawMaterial', 'ConsumptionMaterial', 'PersonalPayment', 'Manual', 'ExcessDelivery'],
     },
     sourceId: mongoose.Schema.Types.ObjectId,
     expenseGroup: String,
@@ -43,6 +43,7 @@ const transactionSchema = new mongoose.Schema(
     bankName: String,
     isOpeningBalance: { type: Boolean, default: false },
     transactionDate: { type: Date, default: Date.now },
+    isExcessDelivery: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

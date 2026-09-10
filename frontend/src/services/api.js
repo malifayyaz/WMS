@@ -179,6 +179,7 @@ export const jobWorkAPI = {
   create: (data) => api.post('/jobwork', data),
   poolDeliver: (data) => api.post('/jobwork/pool-deliver', data),
   addDelivery: (id, data) => api.post(`/jobwork/${id}/delivery`, data),
+  previewExcessDelivery: (id, weightKg) => api.get(`/jobwork/${id}/excess-preview`, { params: { weightKg } }),
   updateDelivery: (id, deliveryId, data) => api.put(`/jobwork/${id}/delivery/${deliveryId}`, data),
   deleteDelivery: (id, deliveryId) => api.delete(`/jobwork/${id}/delivery/${deliveryId}`),
   addReturn: (id, data) => api.post(`/jobwork/${id}/returns`, data),
@@ -200,6 +201,7 @@ export const reportsAPI = {
   getCustomerReport: (id) => api.get(`/reports/customer/${id}`),
   getInventory: () => api.get('/reports/inventory'),
   getDailyBook: (params) => api.get('/reports/daily-book', { params }),
+  getExcessDeliveries: (params) => api.get('/reports/excess-deliveries', { params }),
 };
 
 export const workersAPI = {
