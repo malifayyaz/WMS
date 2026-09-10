@@ -654,7 +654,7 @@ const getJobWorkStock = async (req, res, next) => {
   try {
     const jobWorks = await JobWork.find();
     const jobWorkStockKg = jobWorks.reduce(
-      (s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0)),
+      (s, j) => s + Math.max(0, (j.arrivedWeightKg || 0) - (j.deliveredWeightKg || 0) - (j.returnedWeightKg || 0)),
       0
     );
     const mainAgg = await RawMaterial.aggregate([
