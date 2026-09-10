@@ -589,6 +589,30 @@ export default function DailyBook() {
     return () => clearTimeout(timer);
   }, [jobWorkDeliveryForm.weightKg, jobWorkDeliveryForm.customerId, jobWorkDeliveryEdit]);
 
+  useEffect(() => {
+    const weight = Number(jobWorkDeliveryForm.weightKg);
+    const cid = jobWorkDeliveryForm.customerId;
+    if (!weight || weight <= 0 || !cid || jobWorkDeliveryEdit) {
+      setJobWorkExcessPreview(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setJobWorkExcessLoading(true);
+      try {
+        const res = await jobWorkAPI.previewExcessDelivery(cid, weight);
+        setJobWorkExcessPreview(res.data.data);
+        if (res.data.data.hasExcess && !jobWorkDeliveryForm.excessSaleRatePerKg) {
+            setJobWorkDeliveryForm(f => ({...f, excessSaleRatePerKg: res.data.data.suggestedRawMaterialRate || ''}));
+        }
+      } catch (err) {
+        setJobWorkExcessPreview(null);
+      } finally {
+        setJobWorkExcessLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [jobWorkDeliveryForm.weightKg, jobWorkDeliveryForm.customerId, jobWorkDeliveryEdit]);
+
   const fetchJobWorkData = useCallback(async () => {
     if (mainTab !== 5) {
       setJobWorks([]);
@@ -4455,6 +4479,7 @@ export default function DailyBook() {
           )}
           <TextField fullWidth label="Wire Size (optional)" value={dailySaleForm.wireSize} onChange={(e) => setDailySaleForm((f) => ({ ...f, wireSize: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Initial Weight (kg)" value={dailySaleForm.initialWeightKg} onChange={(e) => setDailySaleForm((f) => ({ ...f, initialWeightKg: e.target.value }))} margin="dense" required />
+          
           <TextField fullWidth type="number" label="Bundles" value={dailySaleForm.bundles} onChange={(e) => setDailySaleForm((f) => ({ ...f, bundles: e.target.value }))} margin="dense" helperText="Wire bundles (lighter than coil bundles)" />
           <TextField fullWidth type="number" label="Rate per kg" value={dailySaleForm.ratePerKg} onChange={(e) => setDailySaleForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
           <FormControlLabel
@@ -5196,6 +5221,7 @@ export default function DailyBook() {
             </Select>
           </FormControl>
           <TextField fullWidth type="number" label="Weight (kg)" value={stockArrivalForm.weightInKg} onChange={(e) => setStockArrivalForm((f) => ({ ...f, weightInKg: e.target.value }))} margin="dense" required />
+          
           <TextField fullWidth type="number" label="Bundles" value={stockArrivalForm.bundles} onChange={(e) => setStockArrivalForm((f) => ({ ...f, bundles: e.target.value }))} margin="dense" helperText="Coil bundles are typically heavier than wire bundles" />
           <TextField fullWidth type="number" label="Rate per kg" value={stockArrivalForm.ratePerKg} onChange={(e) => setStockArrivalForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
           <TextField fullWidth type="number" label="Amount Paid (optional)" value={stockArrivalForm.amountPaid} onChange={(e) => setStockArrivalForm((f) => ({ ...f, amountPaid: e.target.value }))} margin="dense" helperText="Leave empty if no payment on this date" />
@@ -5367,6 +5393,7 @@ export default function DailyBook() {
           </FormControl>
           <TextField fullWidth label="Wire Size" value={ledgerSaleForm.wireSize} onChange={(e) => setLedgerSaleForm((f) => ({ ...f, wireSize: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Weight (kg)" value={ledgerSaleForm.initialWeightKg} onChange={(e) => setLedgerSaleForm((f) => ({ ...f, initialWeightKg: e.target.value }))} margin="dense" required />
+          
           <TextField fullWidth type="number" label="Bundles" value={ledgerSaleForm.bundles} onChange={(e) => setLedgerSaleForm((f) => ({ ...f, bundles: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Rate per kg" value={ledgerSaleForm.ratePerKg} onChange={(e) => setLedgerSaleForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
           <FormControlLabel
@@ -5781,6 +5808,29 @@ export default function DailyBook() {
             margin="dense" required
             inputProps={{ max: deliveryAvailableKg }}
           />
+                    {jobWorkExcessLoading && <Typography variant="caption">Checking pool limit...</Typography>}
+          {jobWorkExcessPreview?.hasExcess && (
+            <Alert severity="warning" sx={{ my: 1 }}>
+              <strong>This delivery exceeds the processing pool.</strong><br/>
+              Requested: {jobWorkExcessPreview.totalRequested} kg<br/>
+              From Pool: {jobWorkExcessPreview.fromProcessingPool} kg<br/>
+              Excess (Our Stock): {jobWorkExcessPreview.fromOurStock} kg<br/>
+              {jobWorkExcessPreview.canFulfill 
+                ? <span style={{color:'green'}}>We have enough stock ({jobWorkExcessPreview.availableRawStock} kg available).</span>
+                : <span style={{color:'red'}}>Insufficient stock! Shortage: {jobWorkExcessPreview.shortage} kg.</span>
+              }
+            </Alert>
+          )}
+          {jobWorkExcessPreview?.hasExcess && jobWorkExcessPreview.canFulfill && (
+            <TextField
+              fullWidth type="number" label="Sale Rate for Excess Stock (per kg)"
+              value={jobWorkDeliveryForm.excessSaleRatePerKg}
+              onChange={(e) => setJobWorkDeliveryForm((f) => ({ ...f, excessSaleRatePerKg: e.target.value }))}
+              margin="dense" required
+              helperText={`Suggested raw material cost: ${jobWorkExcessPreview.suggestedRawMaterialRate || 0} / kg`}
+            />
+          )}
+          
           <TextField
             fullWidth type="number" label="Bundles"
             value={jobWorkDeliveryForm.bundles}
@@ -6021,6 +6071,7 @@ export default function DailyBook() {
             </Select>
           </FormControl>
           <TextField fullWidth type="number" label="Weight (kg)" value={returnForm.initialWeightKg} onChange={(e) => setReturnForm((f) => ({ ...f, initialWeightKg: e.target.value }))} margin="dense" required />
+          
           <TextField fullWidth type="number" label="Bundles" value={returnForm.bundles} onChange={(e) => setReturnForm((f) => ({ ...f, bundles: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Rate per kg (credit amount)" value={returnForm.ratePerKg} onChange={(e) => setReturnForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
           <TextField fullWidth type="date" label="Return Date" value={returnForm.orderDate} onChange={(e) => setReturnForm((f) => ({ ...f, orderDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />

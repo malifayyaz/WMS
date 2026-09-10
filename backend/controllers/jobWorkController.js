@@ -792,7 +792,7 @@ const previewExcessDelivery = async (req, res, next) => {
         totalRequested: weightKg,
         fromProcessingPool: normalKg,
         fromOurStock: excessKg,
-        coilCategory: jobWork.coilCategory,
+        coilCategory: coilCategory,
         availableRawStock: totalStock,
         suggestedRawMaterialRate: foundLot?.ratePerKg || null,
         canFulfill: totalStock >= excessKg,
