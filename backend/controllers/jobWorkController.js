@@ -609,19 +609,7 @@ const poolDeliver = async (req, res, next) => {
         await customer.save();
       }
 
-      const Transaction = require('../models/Transaction');
-      await Transaction.create({
-        transactionType: "Money In",
-        amount: 0,
-        relatedTo: "Customer",
-        relatedId: customerId,
-        relatedName: targetLot.customerName,
-        description: `Excess stock delivery ${excessKg}kg — added to customer balance`,
-        sourceType: "ExcessDelivery",
-        sourceId: targetLot._id,
-        transactionDate: new Date(),
-        isExcessDelivery: true
-      });
+
     }
 
     await recalcCustomerTotals(customerId);
@@ -717,25 +705,11 @@ const addReturn = async (req, res, next) => {
 
     await jobWork.save();
 
-    const rawMaterial = await RawMaterial.create({
-      supplierId: jobWork.customerId,
-      supplierName: jobWork.customerName || 'Processing Customer',
-      coilCategory: resolvedCoilType,
-      materialType: resolvedCoilType,
-      weightInKg: parsedWeight,
-      ratePerKg: jobWork.coilRatePerKg || 0,
-      totalAmount: Math.round(parsedWeight * (jobWork.coilRatePerKg || 0) * 100) / 100,
-      amountPaid: 0,
-      amountDue: 0,
-      currentStock: parsedWeight,
-      isReturn: false,
-      purchaseDate: parsedReturnDate,
-      notes: 'Returned by processing customer — ' + (jobWork.customerName || 'Processing Customer') + (note ? ' — ' + note : ''),
-    });
+
 
     res.status(201).json({
       success: true,
-      data: { jobWork, rawMaterial },
+      data: { jobWork },
       message: 'Return recorded and stock updated',
     });
   } catch (error) {
