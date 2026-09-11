@@ -385,7 +385,6 @@ async function buildDayReport(day) {
         });
       }
     });
-    });
     (jw.returns || []).forEach((r) => {
       if (r.returnDate && inDay(r.returnDate, day)) {
         const row = {
