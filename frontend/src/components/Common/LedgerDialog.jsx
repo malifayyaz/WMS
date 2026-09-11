@@ -437,7 +437,24 @@ export default function LedgerDialog({
                       >
                         <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
                         {isCombined && <TableCell sx={denseCell}>{roleChip(row.role)}</TableCell>}
-                        <TableCell sx={descCell}>{row.description}</TableCell>
+                        <TableCell sx={descCell}>
+                          {row.description}
+                          {row.isFromAnnealing && (
+                            <Chip
+                              size="small"
+                              label="From Annealing"
+                              sx={{
+                                ml: 1,
+                                height: 18,
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                bgcolor: '#FDF2F8',
+                                color: '#BE185D',
+                                border: '1px solid #FBCFE8'
+                              }}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell sx={sourceCell}>{row.source}</TableCell>
                         <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
                         <TableCell sx={{ ...denseCell, whiteSpace: 'nowrap' }} align="right">{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>

@@ -209,6 +209,24 @@ async function collectRawEntries(partyType, party) {
           deliveryGroupId: d.deliveryGroupId ? String(d.deliveryGroupId) : null,
           jobWorkId: j._id,
           isGroupPrimary: d.isGroupPrimary !== false,
+          sourceType: d.sourceType || 'Processing',
+        });
+      });
+    });
+
+    jobWorks.forEach((j) => {
+      (j.returns || []).forEach((r) => {
+        entries.push({
+          date: r.returnDate,
+          description: `Job work coil returned — ${j.coilCategory} (${r.weightKg} kg)${r.reason ? ` - ${r.reason}` : ''}`,
+          credit: 0,
+          debit: 0,
+          weightKg: r.weightKg || 0,
+          ratePerKg: j.coilRatePerKg || 0,
+          totalPrice: 0,
+          source: 'Job Work — Return',
+          sourceId: j._id,
+          entryType: 'jobwork-return',
         });
       });
     });
@@ -227,10 +245,11 @@ async function collectRawEntries(partyType, party) {
         weightKg: d.weightKg || 0,
         ratePerKg: rate,
         totalPrice: d.labourAmount || 0,
-        source: 'Job Work — Delivery',
+        source: d.sourceType === 'Annealing' ? 'Job Work — Annealing' : 'Job Work — Delivery',
         sourceId: d.jobWorkId,
         entryType: 'jobwork',
         deliveryGroupId: d.deliveryGroupId || undefined,
+        isFromAnnealing: d.sourceType === 'Annealing',
       });
     });
 

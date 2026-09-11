@@ -90,6 +90,7 @@ async function buildDayReport(day) {
       $or: [
         { arrivalDate: { $gte: start, $lte: end } },
         { 'deliveries.deliveredDate': { $gte: start, $lte: end } },
+        { 'returns.returnDate': { $gte: start, $lte: end } },
       ],
     }),
     Expense.find({
@@ -341,6 +342,7 @@ async function buildDayReport(day) {
 
   const processingArrivals = [];
   const processingDeliveries = [];
+  const processingReturns = [];
   jobWorks.forEach((jw) => {
     if (jw.arrivalDate && inDay(jw.arrivalDate, day)) {
       const row = {
@@ -378,6 +380,28 @@ async function buildDayReport(day) {
           party: row.customerName,
           material: materialLabel('Wire', row.coilCategory, row.wireNumber),
           materialType: 'Wire',
+          bundles: row.bundles,
+          weightKg: row.weightKg,
+        });
+      }
+    });
+    });
+    (jw.returns || []).forEach((r) => {
+      if (r.returnDate && inDay(r.returnDate, day)) {
+        const row = {
+          customerName: jw.customerName || '',
+          coilCategory: jw.coilCategory || '',
+          weightKg: r.weightKg || 0,
+          bundles: r.bundles || 0,
+          reason: r.reason || '',
+        };
+        processingReturns.push(row);
+        pushStock({
+          direction: 'Out',
+          reason: 'Processing — coil return',
+          party: row.customerName,
+          material: materialLabel('Coil', row.coilCategory, null),
+          materialType: 'Coil',
           bundles: row.bundles,
           weightKg: row.weightKg,
         });
@@ -491,8 +515,10 @@ async function buildDayReport(day) {
     processing: {
       arrivals: processingArrivals,
       deliveries: processingDeliveries,
+      returns: processingReturns,
       totals: {
         coilInKg: processingArrivals.reduce((s, r) => s + (r.weightKg || 0), 0),
+        coilOutKg: processingReturns.reduce((s, r) => s + (r.weightKg || 0), 0),
         wireOutKg: processingDeliveries.reduce((s, r) => s + (r.weightKg || 0), 0),
         wireOutBundles: processingDeliveries.reduce((s, r) => s + (r.bundles || 0), 0),
         labourEarned: processingDeliveries.reduce((s, r) => s + (r.labourAmount || 0), 0),
@@ -548,6 +574,7 @@ async function buildDailyBookReport({ date, startDate, endDate }) {
     annealArrivedKg: days.reduce((s, d) => s + (d.annealing?.totals?.arrivedKg || 0), 0),
     annealSoldKg: days.reduce((s, d) => s + (d.annealing?.totals?.soldKg || 0), 0),
     processingCoilInKg: days.reduce((s, d) => s + (d.processing?.totals?.coilInKg || 0), 0),
+    processingCoilOutKg: days.reduce((s, d) => s + (d.processing?.totals?.coilOutKg || 0), 0),
     processingWireOutKg: days.reduce((s, d) => s + (d.processing?.totals?.wireOutKg || 0), 0),
     processingLabourEarned: days.reduce((s, d) => s + (d.processing?.totals?.labourEarned || 0), 0),
     coilReturnsKg: days.reduce(

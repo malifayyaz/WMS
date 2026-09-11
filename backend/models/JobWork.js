@@ -28,6 +28,8 @@ const jobWorkDeliverySchema = new mongoose.Schema({
   deliveryGroupId: { type: mongoose.Schema.Types.ObjectId },
   /** True on the first lot fragment of a pool delivery (shows the merged line in UI). */
   isGroupPrimary: { type: Boolean, default: true },
+  sourceType: { type: String, enum: ['Processing', 'Annealing'], default: 'Processing' },
+  sourceAnnealingId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnealingRecord' },
 });
 
 const jobWorkReturnSchema = new mongoose.Schema({

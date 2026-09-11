@@ -159,6 +159,8 @@ export const annealingAPI = {
   createArrival: (data) => api.post('/annealing/arrival', data),
   update: (id, data) => api.put(`/annealing/${id}`, data),
   delete: (id) => api.delete(`/annealing/${id}`),
+  deliverPreview: (id, params) => api.get(`/annealing/${id}/deliver-preview`, { params }),
+  deliverToProcessing: (id, data) => api.post(`/annealing/${id}/deliver-to-processing`, data),
 };
 
 // Annealing Persons

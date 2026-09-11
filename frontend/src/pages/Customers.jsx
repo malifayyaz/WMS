@@ -30,7 +30,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import { customersAPI } from '../services/api';
+import { customersAPI, suppliersAPI } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
@@ -76,6 +76,7 @@ export default function Customers() {
   const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -91,8 +92,12 @@ export default function Customers() {
   const fetchList = async () => {
     setLoading(true);
     try {
-      const res = await customersAPI.getAll(search ? { search } : {});
+      const [res, supRes] = await Promise.all([
+        customersAPI.getAll(search ? { search } : {}),
+        suppliersAPI.getAll()
+      ]);
       setList(res.data.data || []);
+      setSuppliers(supRes.data.data || []);
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load', severity: 'error' });
     } finally {
@@ -120,11 +125,10 @@ export default function Customers() {
       contactNumber: row.contactNumber || '',
       address: row.address || '',
       customerType: row.customerType || 'Ledger',
-      openingBalance: row.openingBalance || '',
-      openingBalanceDate: row.openingBalanceDate
-        ? new Date(row.openingBalanceDate).toISOString().slice(0, 10)
-        : new Date().toISOString().slice(0, 10),
+      openingBalance: row.openingBalanceType === 'none' ? '' : row.openingBalance || 0,
+      openingBalanceDate: row.openingBalanceDate ? row.openingBalanceDate.substring(0, 10) : new Date().toISOString().slice(0, 10),
       openingBalanceType: row.openingBalanceType || 'none',
+      linkedSupplierId: row.linkedSupplierId || '',
     });
     setEditingId(row._id);
     setDialogOpen(true);
@@ -377,6 +381,23 @@ export default function Customers() {
               <MenuItem value="Processing">Processing — Job work / coil processing</MenuItem>
             </Select>
           </FormControl>
+
+          {form.customerType === 'Processing' && (
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Link to Supplier</InputLabel>
+              <Select
+                value={form.linkedSupplierId || ''}
+                onChange={(e) => setForm((f) => ({ ...f, linkedSupplierId: e.target.value }))}
+                label="Link to Supplier"
+              >
+                <MenuItem value=""><em>None</em></MenuItem>
+                {suppliers.map((s) => (
+                  <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
           {form.customerType !== 'Daily' && (
             <>
               <FormControl fullWidth margin="dense">

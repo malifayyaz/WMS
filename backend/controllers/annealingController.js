@@ -792,6 +792,175 @@ async function releaseAnnealingForSale(orderId) {
   await AnnealingRecord.deleteMany({ entryType: 'Sold', linkedOrderId: orderId });
 }
 
+const deliverPreview = async (req, res, next) => {
+  try {
+    const annealingRecordId = req.params.id;
+    const { weightKg, processingCustomerId } = req.query;
+
+    const record = await AnnealingRecord.findById(annealingRecordId);
+    if (!record || record.entryType !== 'Arrival') {
+      return res.status(404).json({ success: false, message: 'Valid Annealing Arrival record not found' });
+    }
+
+    const availableKg = record.remainingWeightKg || record.finalWeightKg || record.weightKg || 0;
+    const requestedKg = Number(weightKg);
+
+    if (!requestedKg || requestedKg <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid weightKg required' });
+    }
+
+    const JobWork = require('../models/JobWork');
+    let jobWork = await JobWork.findOne({ customerId: processingCustomerId }).sort({ arrivalDate: -1, createdAt: -1 });
+
+    const customerAvailableKg = jobWork ? Math.max(0, jobWork.arrivedWeightKg - jobWork.deliveredWeightKg - (jobWork.returnedWeightKg || 0)) : 0;
+
+    if (requestedKg <= customerAvailableKg) {
+      return res.json({
+        success: true,
+        data: {
+          hasExcess: false,
+          availableInAnnealing: availableKg,
+          customerAvailableKg,
+        }
+      });
+    }
+
+    const normalKg = customerAvailableKg;
+    const excessKg = requestedKg - customerAvailableKg;
+
+    res.json({
+      success: true,
+      data: {
+        hasExcess: true,
+        totalRequested: requestedKg,
+        fromProcessingPool: normalKg,
+        fromOurStock: excessKg,
+        availableInAnnealing: availableKg,
+        customerAvailableKg,
+        canFulfill: availableKg >= requestedKg,
+        shortage: availableKg < requestedKg ? requestedKg - availableKg : 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deliverAnnealedToProcessing = async (req, res, next) => {
+  try {
+    const annealingRecordId = req.params.id;
+    const { processingCustomerId, weightKg, labourRatePerKg, coilRatePerKg, bundles, wireNumber, notes, date } = req.body;
+
+    const record = await AnnealingRecord.findById(annealingRecordId);
+    if (!record || record.entryType !== 'Arrival') {
+      return res.status(404).json({ success: false, message: 'Annealing Arrival record not found' });
+    }
+
+    const availableKg = record.remainingWeightKg || record.finalWeightKg || record.weightKg || 0;
+    const requestedKg = Number(weightKg);
+
+    if (!requestedKg || requestedKg <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid weightKg required' });
+    }
+
+    if (availableKg < requestedKg) {
+      return res.status(400).json({ success: false, message: `Only ${availableKg} kg available in this annealing record` });
+    }
+
+    const JobWork = require('../models/JobWork');
+    let jobWork = await JobWork.findOne({ customerId: processingCustomerId, status: { $ne: 'Delivered' } }).sort({ arrivalDate: 1, createdAt: 1 });
+    
+    if (!jobWork) {
+      jobWork = await JobWork.findOne({ customerId: processingCustomerId }).sort({ arrivalDate: -1, createdAt: -1 });
+    }
+
+    if (!jobWork) {
+      return res.status(404).json({ success: false, message: 'No job work record found for this customer' });
+    }
+
+    const customerAvailableKg = Math.max(0, jobWork.arrivedWeightKg - jobWork.deliveredWeightKg - (jobWork.returnedWeightKg || 0));
+    const normalKg = Math.min(requestedKg, customerAvailableKg);
+    const excessKg = requestedKg - normalKg;
+
+    // Deduct from annealing record
+    record.remainingWeightKg = availableKg - requestedKg;
+    await record.save();
+
+    const deliveryDate = date ? new Date(date) : new Date();
+    const parsedLabourRate = Number(labourRatePerKg) || 0;
+    const parsedCoilRate = Number(coilRatePerKg) || jobWork.coilRatePerKg || 0;
+    const parsedBundles = Number(bundles) || 0;
+    const parsedWireNumber = Number(wireNumber) || record.wireNumber || null;
+
+    // Add normal delivery
+    if (normalKg > 0) {
+      jobWork.deliveries.push({
+        weightKg: normalKg,
+        labourRatePerKg: parsedLabourRate,
+        labourAmount: normalKg * parsedLabourRate,
+        coilRatePerKg: parsedCoilRate,
+        sellingRatePerKg: parsedCoilRate + parsedLabourRate,
+        wireNumber: parsedWireNumber,
+        bundles: parsedBundles,
+        deliveredDate: deliveryDate,
+        notes: notes || 'From Annealing',
+        sourceType: 'Annealing',
+        sourceAnnealingId: record._id,
+      });
+    }
+
+    // Handle excess delivery
+    let totalSaleAmount = 0;
+    if (excessKg > 0) {
+      const saleRatePerKg = parsedCoilRate + parsedLabourRate;
+      totalSaleAmount = excessKg * saleRatePerKg;
+      
+      jobWork.excessDeliveries.push({
+        weightKg: excessKg,
+        coilCategory: jobWork.coilCategory,
+        rawMaterialRatePerKg: 0, // No specific raw material lot deducted
+        saleRatePerKg,
+        totalSaleAmount,
+        profitPerKg: saleRatePerKg,
+        totalProfit: totalSaleAmount,
+        rawMaterialDeducted: false,
+        deliveryDate,
+        deliveredBy: req.user?.username || '',
+        note: `Excess from Annealing - ${notes || ''}`,
+      });
+
+      const Customer = require('../models/Customer');
+      const customer = await Customer.findById(processingCustomerId);
+      if (customer) {
+        customer.totalAmountDue = (customer.totalAmountDue || 0) + totalSaleAmount;
+        customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + totalSaleAmount;
+        await customer.save();
+      }
+      
+      const { recalcCustomerTotals } = require('./customerController');
+      await recalcCustomerTotals(processingCustomerId);
+    }
+
+    await jobWork.save();
+
+    const ActivityLog = require('../models/ActivityLog');
+    await ActivityLog.create({
+      userId: req.user?._id,
+      userName: req.user?.username || 'System',
+      action: 'Delivered annealed coil',
+      details: `${requestedKg} kg delivered to processing customer ${jobWork.customerName} (Excess: ${excessKg}kg)`,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { jobWork, annealingRecord: record },
+      message: `Delivered ${requestedKg} kg annealed coil to ${jobWork.customerName}`
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createSend,
   createArrival,
@@ -804,4 +973,6 @@ module.exports = {
   releaseAnnealingForSale,
   feedPatriFactoryStock,
   computePools,
+  deliverPreview,
+  deliverAnnealedToProcessing,
 };

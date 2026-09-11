@@ -73,6 +73,7 @@ import CashReconciliationBar from '../components/DailyBook/CashReconciliationBar
 import QuickAddEntryDialog from '../components/DailyBook/QuickAddEntryDialog';
 import TwoColumnRokarLedger from '../components/DailyBook/TwoColumnRokarLedger';
 import TwoColumnStockLedger from '../components/DailyBook/TwoColumnStockLedger';
+import DeliverToProcessingDialog from '../components/Common/DeliverToProcessingDialog';
 import ResponsiveDialog from '../components/Common/ResponsiveDialog';
 import useDailyBookSession from '../hooks/useDailyBookSession';
 import { usePermissions } from '../hooks/usePermissions';
@@ -481,6 +482,201 @@ export default function DailyBook() {
   const [annealingArrivalDialogOpen, setAnnealingArrivalDialogOpen] = useState(false);
   const [annealingRecords, setAnnealingRecords] = useState([]);
   const [annealingPools, setAnnealingPools] = useState([]);
+    bankAccountNumber: '',
+    description: '',
+    transactionDate: '',
+    recordAsExpense: false,
+    expenseGroup: 'Manufacturing',
+    expenseCategory: 'Annealing',
+  });
+  const [loading, setLoading] = useState(true);
+  const {
+    entryDate,
+    setEntryDate,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
+    mainTab,
+    setMainTab,
+  } = useDailyBookSession();
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [atmDialogOpen, setAtmDialogOpen] = useState(false);
+  const [atmForm, setAtmForm] = useState({
+    amount: '',
+    bankAccount: 'MBL',
+    bankAccountOtherName: '',
+    destination: 'cashInHand',
+    expenseGroup: 'Self Expense',
+    expenseCategory: 'Fayyaz Expense',
+    description: '',
+    transactionDate: '',
+  });
+  const [selfChequeDialogOpen, setSelfChequeDialogOpen] = useState(false);
+  const [selfChequeForm, setSelfChequeForm] = useState({
+    amount: '',
+    bankAccount: 'MBL',
+    bankAccountOtherName: '',
+    chequeType: 'Company Cheque',
+    chequeNumber: '',
+    chequeDate: '',
+    transactionDate: '',
+    handledBy: '',
+    description: '',
+  });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [generalCashMode, setGeneralCashMode] = useState(false);
+  const [selfExpenseMenuAnchor, setSelfExpenseMenuAnchor] = useState(null);
+  const [dailySaleDialogOpen, setDailySaleDialogOpen] = useState(false);
+  const [editingDailySaleId, setEditingDailySaleId] = useState(null);
+  const [dailySaleForm, setDailySaleForm] = useState({
+    customerId: '',
+    wireNumber: '',
+    coilCategory: '',
+    wireSize: '',
+    initialWeightKg: '',
+    bundles: '',
+    ratePerKg: '',
+    amountPaid: 0,
+    paymentMethod: 'Cash',
+    soldBy: '',
+    orderDate: '',
+    notes: '',
+    isAnnealed: false,
+    annealingRecordId: '',
+  });
+  const [openingDialogOpen, setOpeningDialogOpen] = useState(false);
+  const [openingForm, setOpeningForm] = useState({ openingBalance: '', note: '' });
+  const [cashBreakdownDialogOpen, setCashBreakdownDialogOpen] = useState(false);
+  const [cashBreakdownForm, setCashBreakdownForm] = useState({ lines: [{ holder: '', amount: '' }], note: '' });
+  const [prevClosingHint, setPrevClosingHint] = useState(null);
+  const [selectedPartyId, setSelectedPartyId] = useState('');
+  const [partyLedger, setPartyLedger] = useState(null);
+  const [inHandChequesList, setInHandChequesList] = useState([]);
+  const [returnChequeDialogOpen, setReturnChequeDialogOpen] = useState(false);
+  const [returnChequeTargetId, setReturnChequeTargetId] = useState(null);
+  const [returnChequeForm, setReturnChequeForm] = useState({
+    chequeReturnDate: '',
+    chequeReturnReason: '',
+    chequeReturnedBy: '',
+  });
+  const [form, setForm] = useState({
+    entryKind: 'General',
+    expenseGroup: 'Operations',
+    expenseCategory: 'Miscellaneous',
+    transactionType: 'Money In',
+    amount: '',
+    paymentMethod: 'Cash',
+    relatedTo: 'Customer',
+    relatedId: '',
+    relatedName: '',
+    description: '',
+    handledBy: '',
+    chequeNumber: '',
+    chequeBank: 'MBL',
+    chequeDate: '',
+    chequeType: 'Company Cheque',
+    isEndorsedCheque: false,
+    sourceChequeId: '',
+    receivedFromName: '',
+  });
+  const [editingId, setEditingId] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
+  const [deleteOrderConfirm, setDeleteOrderConfirm] = useState({ open: false, id: null });
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [personalPaymentDialogOpen, setPersonalPaymentDialogOpen] = useState(false);
+  const [personalCategories, setPersonalCategories] = useState([]);
+  const [personalPaymentForm, setPersonalPaymentForm] = useState({
+    categoryId: '',
+    amount: '',
+    paymentDate: '',
+    paymentMethod: 'Cash',
+    chequeNumber: '',
+    bankName: '',
+    paidBy: '',
+    note: '',
+  });
+  const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
+  const [partyDialogOpen, setPartyDialogOpen] = useState(false);
+  const [partyForm, setPartyForm] = useState(defaultCustomerForm);
+  const [partyEditingId, setPartyEditingId] = useState(null);
+  const [partyDeleteConfirm, setPartyDeleteConfirm] = useState({ open: false, id: null });
+  const [stockArrivalDialogOpen, setStockArrivalDialogOpen] = useState(false);
+  const [stockArrivalForm, setStockArrivalForm] = useState({
+    supplierId: '',
+    coilCategory: 'Shiplet Coil',
+    weightInKg: '',
+    bundles: '',
+    ratePerKg: '',
+    amountPaid: '',
+    paymentMethod: 'Cash',
+    purchaseDate: '',
+    notes: '',
+    sendForAnnealing: false,
+    annealingWeightKg: '',
+    annealingBundles: '',
+    annealingSentDate: '',
+    annealingNotes: '',
+  });
+  const [coilReturnDialogOpen, setCoilReturnDialogOpen] = useState(false);
+  const [coilReturnForm, setCoilReturnForm] = useState({
+    supplierId: '',
+    coilCategory: 'Shiplet Coil',
+    weightInKg: '',
+    bundles: '',
+    ratePerKg: '',
+    purchaseDate: '',
+    notes: '',
+  });
+  const [ledgerSaleDialogOpen, setLedgerSaleDialogOpen] = useState(false);
+  const [ledgerSaleForm, setLedgerSaleForm] = useState({
+    customerId: '',
+    wireNumber: '',
+    coilCategory: '',
+    wireSize: '',
+    initialWeightKg: '',
+    bundles: '',
+    ratePerKg: '',
+    amountPaid: '',
+    paymentMethod: 'Cash',
+    soldBy: '',
+    orderDate: '',
+    notes: '',
+    isAnnealed: false,
+    annealingRecordId: '',
+  });
+  const defaultAnnealingSendForm = {
+    partyType: 'Supplier',
+    partyId: '',
+    materialType: 'Coil',
+    coilCategory: 'Shiplet Coil',
+    wireNumber: '',
+    bundles: '',
+    weightKg: '',
+    date: '',
+    sentBy: '',
+    notes: '',
+  };
+  const defaultAnnealingArrivalForm = {
+    poolKey: '',
+    partyType: 'Supplier',
+    partyId: '',
+    materialType: 'Coil',
+    coilCategory: 'Shiplet Coil',
+    wireNumber: '',
+    bundles: '',
+    initialWeightKg: '',
+    finalWeightKg: '',
+    date: '',
+    receivedBy: '',
+    notes: '',
+  };
+  const [annealingSendDialogOpen, setAnnealingSendDialogOpen] = useState(false);
+  const [annealingArrivalDialogOpen, setAnnealingArrivalDialogOpen] = useState(false);
+  const [annealingRecords, setAnnealingRecords] = useState([]);
+  const [annealingPools, setAnnealingPools] = useState([]);
   const [annealingSendForm, setAnnealingSendForm] = useState(defaultAnnealingSendForm);
   const [annealingArrivalForm, setAnnealingArrivalForm] = useState(defaultAnnealingArrivalForm);
   const [annealingEditId, setAnnealingEditId] = useState(null);
@@ -489,6 +685,7 @@ export default function DailyBook() {
   const [annealingPoolDialog, setAnnealingPoolDialog] = useState({ open: false, pool: null });
   const [annealingPoolEntries, setAnnealingPoolEntries] = useState([]);
   const [annealingPoolLoading, setAnnealingPoolLoading] = useState(false);
+  const [annealingDeliverDialog, setAnnealingDeliverDialog] = useState({ open: false, record: null });
 
   const [jobWorks, setJobWorks] = useState([]);
   const [jobWorkStock, setJobWorkStock] = useState(null);
@@ -1478,6 +1675,24 @@ export default function DailyBook() {
             weightKg: Number(d.weightKg) || 0,
             labourRatePerKg: Number(d.labourRatePerKg) || 0,
             labourAmount: Number(d.labourAmount) || 0,
+          });
+        }
+      });
+      });
+
+      // Coil Returns to customer -> Outward
+      (jw.returns || []).forEach((r) => {
+        if (r.returnDate && matchesEntryDate(r.returnDate)) {
+          outStockRows.push({
+            ...r,
+            _id: r._id || `${jw._id}-ret-${r.weightKg}`,
+            jobWorkId: jw._id,
+            customerId: jw.customerId,
+            customerName: jw.customerName || jw.customerId?.name || 'Processing Customer',
+            sourceKind: 'ProcessingReturn',
+            weightKg: Number(r.weightKg) || 0,
+            coilCategory: r.coilType || jw.coilCategory || 'Coil',
+            reason: r.reason || '',
           });
         }
       });
@@ -2777,1406 +2992,6 @@ export default function DailyBook() {
     if (!targetLotId) {
       setSnack({ open: true, message: 'Please select a customer', severity: 'error' });
       return;
-    }
-    const weight = Number(jobWorkReturnForm.weightKg);
-    if (!weight || weight <= 0) {
-      setSnack({ open: true, message: 'Valid returned weight is required', severity: 'error' });
-      return;
-    }
-    setSubmittingJobWorkReturn(true);
-    try {
-      await jobWorkAPI.addReturn(targetLotId, {
-        weightKg: weight,
-        coilType: jobWorkReturnForm.coilType,
-        returnDate: jobWorkReturnForm.returnDate || entryDate,
-        reason: jobWorkReturnForm.reason,
-        returnedBy: jobWorkReturnForm.returnedBy,
-        note: jobWorkReturnForm.note,
-      });
-      setSnack({ open: true, message: 'Return recorded. Stock updated.', severity: 'success' });
-      setJobWorkReturnDialogOpen(false);
-      setJobWorkReturnTarget(null);
-      await fetchJobWorkData();
-    } catch (err) {
-      setSnack({ open: true, message: err.response?.data?.message || 'Failed to record return', severity: 'error' });
-    } finally {
-      setSubmittingJobWorkReturn(false);
-    }
-  };
-
-  const openJobWorkDeliveryDialog = (customerId = null) => {
-    const cid = customerId || selectedPartyId || processingCustomers[0]?._id || '';
-    setJobWorkDeliveryEdit(null);
-    setJobWorkDeliveryForm({
-      customerId: cid,
-      weightKg: '',
-      bundles: '',
-      wireNumber: '',
-      labourRatePerKg: '',
-      deliveredDate: entryDate,
-      notes: '',
-    });
-    setJobWorkDeliveryDialogOpen(true);
-  };
-
-  const openJobWorkDeliveryEdit = (jobWork, delivery) => {
-    setJobWorkDeliveryEdit({
-      jobWorkId: jobWork._id,
-      deliveryId: delivery._id,
-      originalWeightKg: Number(delivery.weightKg) || 0,
-      coilRatePerKg: Number(delivery.coilRatePerKg) || Number(jobWork.coilRatePerKg) || 0,
-    });
-    setJobWorkDeliveryForm({
-      customerId: String(jobWork.customerId?._id || jobWork.customerId),
-      weightKg: delivery.weightKg || '',
-      bundles: delivery.bundles || '',
-      wireNumber: delivery.wireNumber || '',
-      labourRatePerKg: delivery.labourRatePerKg || '',
-      deliveredDate: delivery.deliveredDate
-        ? new Date(delivery.deliveredDate).toISOString().slice(0, 10)
-        : entryDate,
-      notes: delivery.notes || '',
-    });
-    setJobWorkDeliveryDialogOpen(true);
-  };
-
-  const handleSaveJobWorkDelivery = async () => {
-    if (!Number(jobWorkDeliveryForm.weightKg)) {
-      setSnack({ open: true, message: 'Delivered weight required', severity: 'error' });
-      return;
-    }
-    if (!jobWorkDeliveryForm.customerId) {
-      setSnack({ open: true, message: 'Select a customer', severity: 'error' });
-      return;
-    }
-    if (!Number(jobWorkDeliveryForm.labourRatePerKg) || Number(jobWorkDeliveryForm.labourRatePerKg) <= 0) {
-      setSnack({ open: true, message: 'Labour rate per kg required at delivery', severity: 'error' });
-      return;
-    }
-    try {
-      const payload = {
-        customerId: jobWorkDeliveryForm.customerId,
-        weightKg: Number(jobWorkDeliveryForm.weightKg),
-        bundles: Number(jobWorkDeliveryForm.bundles) || 0,
-        wireNumber: jobWorkDeliveryForm.wireNumber ? Number(jobWorkDeliveryForm.wireNumber) : undefined,
-        labourRatePerKg: Number(jobWorkDeliveryForm.labourRatePerKg),
-        deliveredDate: jobWorkDeliveryForm.deliveredDate || entryDate,
-        notes: jobWorkDeliveryForm.notes,
-      };
-      const res = jobWorkDeliveryEdit
-        ? await jobWorkAPI.updateDelivery(
-          jobWorkDeliveryEdit.jobWorkId,
-          jobWorkDeliveryEdit.deliveryId,
-          payload
-        )
-        : await jobWorkAPI.poolDeliver(payload);
-      setSnack({
-        open: true,
-        message: res.data.message || (jobWorkDeliveryEdit ? 'Delivery updated' : 'Delivery recorded'),
-        severity: 'success',
-      });
-      setJobWorkDeliveryDialogOpen(false);
-      setJobWorkDeliveryEdit(null);
-      fetchJobWorkData();
-      fetchPartyLedger();
-      fetchParties();
-    } catch (err) {
-      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
-    }
-  };
-
-  const handleDeleteJobWorkDelivery = async () => {
-    const { jobWorkId, deliveryId } = deleteJobWorkDeliveryConfirm;
-    if (!jobWorkId || !deliveryId) return;
-    try {
-      const res = await jobWorkAPI.deleteDelivery(jobWorkId, deliveryId);
-      setSnack({
-        open: true,
-        message: res.data.message || 'Processing delivery deleted',
-        severity: 'success',
-      });
-      setDeleteJobWorkDeliveryConfirm({
-        open: false,
-        jobWorkId: null,
-        deliveryId: null,
-      });
-      fetchJobWorkData();
-      fetchPartyLedger();
-      fetchParties();
-    } catch (err) {
-      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
-    }
-  };
-
-  const handleDeleteJobWork = async () => {
-    if (!deleteJobWorkConfirm.id) return;
-    try {
-      await jobWorkAPI.delete(deleteJobWorkConfirm.id);
-      setSnack({ open: true, message: 'Job work record deleted', severity: 'success' });
-      setDeleteJobWorkConfirm({ open: false, id: null });
-      fetchJobWorkData();
-      fetchPartyLedger();
-      fetchParties();
-    } catch (err) {
-      setSnack({ open: true, message: err.response?.data?.message || 'Error', severity: 'error' });
-    }
-  };
-
-  // Pool delivery: remaining + latest arrival coil rate from full pool (not date-filtered list)
-  const deliveryPool = jobWorkPools.find((p) => p.customerId === jobWorkDeliveryForm.customerId);
-  const deliveryPoolRemaining = deliveryPool ? Math.max(0, deliveryPool.remainingKg) : 0;
-  const deliveryAvailableKg = deliveryPoolRemaining + (jobWorkDeliveryEdit?.originalWeightKg || 0);
-  const deliveryIncomingCoilRate = (() => {
-    if (jobWorkDeliveryEdit?.coilRatePerKg) return Number(jobWorkDeliveryEdit.coilRatePerKg) || 0;
-    if (jobWorkDeliveryEdit?.jobWorkId) {
-      const lot = jobWorks.find((j) => j._id === jobWorkDeliveryEdit.jobWorkId);
-      if (lot?.coilRatePerKg) return Number(lot.coilRatePerKg) || 0;
-    }
-    if (!deliveryPool) return 0;
-    return Number(deliveryPool.latestCoilRatePerKg || deliveryPool.coilRatePerKg || 0);
-  })();
-  const deliveryAvgCoilRate = Number(deliveryPool?.avgCoilRatePerKg) || 0;
-  const deliveryLabourPreview = Number(jobWorkDeliveryForm.weightKg) > 0 && Number(jobWorkDeliveryForm.labourRatePerKg) > 0
-    ? Number(jobWorkDeliveryForm.weightKg) * Number(jobWorkDeliveryForm.labourRatePerKg)
-    : 0;
-  const deliverySellingPreview = Number(jobWorkDeliveryForm.labourRatePerKg) > 0 && deliveryIncomingCoilRate > 0
-    ? deliveryIncomingCoilRate + Number(jobWorkDeliveryForm.labourRatePerKg)
-    : 0;
-
-  const selectedParty = parties.find((p) => p._id === selectedPartyId);
-  const partyIsLinked = !!(
-    selectedParty?.linkedSupplierId || selectedParty?.linkedCustomerId
-  );
-
-  const factoryCashOut = cashBook?.expenseTotals?.factoryTotal || 0;
-  const selfCashOut = cashBook?.expenseTotals?.selfTotal || 0;
-  const otherMoneyOut = cashBook?.transactionsOut || 0;
-  const fetchLedgerForDialog = useCallback(
-    (params) => {
-      const api = partyType === 'Customer' ? customersAPI : suppliersAPI;
-      return api.getLedger(selectedPartyId, params);
-    },
-    [selectedPartyId, partyType]
-  );
-
-  const customerOptions = mainTab === 1 ? dailyCustomers : mainTab === 5 ? processingCustomers : mainTab === 2 ? ledgerCustomers : customers;
-
-  return (
-    <Box>
-      <DailyBookHeader
-        entryDate={entryDate}
-        setEntryDate={setEntryDate}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-      />
-
-      <Tabs
-        value={mainTab}
-        onChange={(_, v) => { setMainTab(v); setSelectedPartyId(''); }}
-        variant="scrollable"
-        allowScrollButtonsMobile
-        sx={{
-          mb: 2,
-          '& .MuiTab-root': {
-            textTransform: 'none',
-            fontWeight: 600,
-            fontSize: '0.875rem',
-            minHeight: 48,
-          },
-        }}
-      >
-        {partyConfig.map((p) => (
-          <Tab
-            key={p.label}
-            label={p.label}
-            icon={p.icon}
-            iconPosition="start"
-          />
-        ))}
-      </Tabs>
-
-      {mainTab === 0 && registerViewMode !== 'stock' && (
-        <KpiEquationBanner
-          mode={cashBankTab}
-          openingBalance={
-            cashBankTab === 'bank'
-              ? (bankBook?.openingBalance || 0)
-              : (cashBook?.openingBalance || 0)
-          }
-          totalIn={
-            cashBankTab === 'combined'
-              ? (cashBook?.totalIn || 0) + (bankBook?.totalIn || 0)
-              : cashBankTab === 'bank'
-              ? (bankBook?.totalIn || 0)
-              : (cashBook?.totalIn || 0)
-          }
-          totalOut={
-            cashBankTab === 'combined'
-              ? (cashBook?.totalOut || 0) + (bankBook?.totalOut || 0)
-              : cashBankTab === 'bank'
-              ? (bankBook?.totalOut || 0)
-              : (cashBook?.totalOut || 0)
-          }
-          closingBalance={
-            cashBankTab === 'bank'
-              ? (bankBook?.closingBalance || 0)
-              : (cashBook?.closingBalance || 0)
-          }
-          cashClosingBalance={cashBook?.closingBalance || 0}
-          inCount={
-            cashBankTab === 'combined'
-              ? (list || []).filter((r) => r.transactionType === 'Money In').length
-              : cashBankTab === 'bank'
-              ? (bankBook?.transactions || []).filter((t) => t.transactionType === 'Money In').length
-              : (list || []).filter((r) => r.transactionType === 'Money In' && r.paymentMethod === 'Cash').length
-          }
-          factoryExpense={factoryCashOut}
-          selfExpense={selfCashOut}
-          bankOut={bankBook?.totalOut || 0}
-          bankIn={bankBook?.totalIn || 0}
-          entryDate={entryDate}
-        />
-      )}
-
-      <Paper
-        elevation={0}
-        className="no-print"
-        sx={{
-          mb: 2,
-          p: { xs: 1.5, sm: 2 },
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 2,
-          bgcolor: 'background.paper',
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          alignItems={{ sm: 'center' }}
-          justifyContent="space-between"
-        >
-          {mainTab === 0 ? (
-            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center">
-              <ToggleButtonGroup
-                value={registerViewMode}
-                exclusive
-                onChange={(_, v) => v && setRegisterViewMode(v)}
-                size="small"
-                sx={{
-                  '& .MuiToggleButton-root': {
-                    textTransform: 'none',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
-                    px: 1.5,
-                    py: 0.5,
-                  },
-                }}
-              >
-                <ToggleButton value="both">📊 All-in-One</ToggleButton>
-                <ToggleButton value="cash">💰 Money In/Out</ToggleButton>
-                <ToggleButton value="stock">📦 Stock Movement</ToggleButton>
-              </ToggleButtonGroup>
-
-              {registerViewMode !== 'stock' && (
-                <ToggleButtonGroup
-                  value={cashBankTab}
-                  exclusive
-                  onChange={(_, v) => v && setCashBankTab(v)}
-                  size="small"
-                  sx={{
-                    '& .MuiToggleButton-root': {
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      px: 1.25,
-                      py: 0.4,
-                    },
-                  }}
-                >
-                  <ToggleButton value="cash">💵 Cash in Hand</ToggleButton>
-                  <ToggleButton value="bank">🏦 Bank Accounts</ToggleButton>
-                  <ToggleButton value="combined">Combined</ToggleButton>
-                </ToggleButtonGroup>
-              )}
-            </Stack>
-          ) : (
-            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
-              <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-              {mainTab !== 4 && (
-                <Box sx={{ minWidth: { xs: '100%', sm: 240 }, maxWidth: { sm: 320 }, flex: 1 }}>
-                  <PartySearchSelect
-                    options={parties}
-                    value={selectedPartyId}
-                    onChange={setSelectedPartyId}
-                    label={partyType || 'Party'}
-                    allowEmpty
-                    emptyLabel="All"
-                    getOptionLabel={(p) => {
-                      if (!p?._id) return 'All';
-                      const linked = (p.linkedSupplierId || p.linkedCustomerId) ? '  ↔ linked' : '';
-                      return `${p.name}${linked}`;
-                    }}
-                  />
-                </Box>
-              )}
-            </Stack>
-          )}
-
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0, justifyContent: 'flex-end' }}
-          >
-            <Button
-              variant="outlined"
-              size={btnSize}
-              startIcon={<AssessmentIcon />}
-              onClick={() => setReportDialogOpen(true)}
-              sx={toolbarBtn}
-              fullWidth={isMobile}
-            >
-              Report
-            </Button>
-            {mainTab === 0 ? (
-              <Button
-                variant="contained"
-                size={btnSize}
-                startIcon={<AddIcon />}
-                onClick={() => setQuickAddOpen(true)}
-                sx={{ ...toolbarBtn, bgcolor: 'primary.main', color: '#fff', px: 2 }}
-                fullWidth={isMobile}
-              >
-                + Add Entry
-              </Button>
-            ) : mainTab !== 4 && mainTab !== 5 ? (
-              <Button variant="contained" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAdd)} sx={toolbarBtn} fullWidth={isMobile}>
-                {mainTab === 1 ? 'Add Daily Sale' : mainTab >= 2 ? 'Add Payment' : 'Add Transaction'}
-              </Button>
-            ) : mainTab === 5 ? (
-              <Button
-                variant="contained"
-                color="success"
-                size={btnSize}
-                startIcon={<AddIcon />}
-                onClick={requireAdmin(() => openJobWorkDeliveryDialog(selectedPartyId || null))}
-                sx={toolbarBtn}
-                fullWidth={isMobile}
-              >
-                Record Delivery
-              </Button>
-            ) : null}
-          </Stack>
-        </Stack>
-
-        {mainTab === 0 && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
-              <ToolbarSection label="Cash book shortcuts">
-                <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceWalletIcon />} onClick={requireAdmin(openOpeningDialog)} sx={toolbarBtn}>
-                  Opening Balance
-                </Button>
-                <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(openCashBreakdownDialog)} sx={toolbarBtn}>
-                  Cash Breakdown
-                </Button>
-                <Tooltip title="Cash or cheque from anyone who is not a customer or supplier — updates cash in hand">
-                  <Button variant="outlined" size={btnSize} startIcon={<SwapHorizIcon />} onClick={requireAdmin(() => openGeneralCashDialog('Money In'))} sx={toolbarBtn}>
-                    Cash / Cheque
-                  </Button>
-                </Tooltip>
-              </ToolbarSection>
-              <ToolbarSection label="Daily expense totals">
-                <Button variant="outlined" size={btnSize} startIcon={<ReceiptLongIcon />} onClick={requireAdmin(() => openExpenseDialog('FactoryExpense'))} sx={toolbarBtn}>
-                  Factory Total
-                </Button>
-                <Button
-                  variant="outlined"
-                  size={btnSize}
-                  endIcon={<ArrowDropDownIcon />}
-                  onClick={(e) => {
-                    if (isViewer) { setAccessDenied(true); return; }
-                    setSelfExpenseMenuAnchor(e.currentTarget);
-                  }}
-                  sx={toolbarBtn}
-                >
-                  Self Expense
-                </Button>
-                <Menu
-                  anchorEl={selfExpenseMenuAnchor}
-                  open={Boolean(selfExpenseMenuAnchor)}
-                  onClose={() => setSelfExpenseMenuAnchor(null)}
-                >
-                  {SELF_EXPENSE_CATEGORIES.map((cat) => (
-                    <MenuItem
-                      key={cat}
-                      onClick={() => {
-                        setSelfExpenseMenuAnchor(null);
-                        openExpenseDialog('SelfExpense', cat);
-                      }}
-                    >
-                      {cat.replace(' Expense', '')}
-                    </MenuItem>
-                  ))}
-                </Menu>
-              </ToolbarSection>
-              <ToolbarSection label="Bank & ATM">
-                <Button variant="outlined" size={btnSize} startIcon={<AccountBalanceIcon />} onClick={requireAdmin(openBankTransferDialog)} sx={toolbarBtn}>
-                  Bank Transfer
-                </Button>
-                <Button variant="outlined" size={btnSize} startIcon={<LocalAtmIcon />} onClick={requireAdmin(openAtmDialog)} sx={toolbarBtn}>
-                  ATM Withdrawal
-                </Button>
-                <Button
-                  variant="outlined"
-                  size={btnSize}
-                  startIcon={<ReceiptLongIcon sx={{ color: '#0D9488' }} />}
-                  onClick={requireAdmin(openSelfChequeDialog)}
-                  sx={{ ...toolbarBtn, borderColor: '#0D9488', color: isDark ? '#5EEAD4' : '#0F766E' }}
-                >
-                  Draw Self Cheque
-                </Button>
-              </ToolbarSection>
-              <ToolbarSection label="Personal">
-                <Button
-                  variant="outlined"
-                  size={btnSize}
-                  startIcon={<SavingsIcon sx={{ color: '#818CF8' }} />}
-                  onClick={requireAdmin(openPersonalPaymentQuickDialog)}
-                  sx={{ ...toolbarBtn, borderColor: '#818CF8', color: isDark ? '#A5B4FC' : '#4F46E5' }}
-                >
-                  Personal Payment
-                </Button>
-              </ToolbarSection>
-            </Stack>
-          </>
-        )}
-
-        {mainTab >= 1 && mainTab !== 4 && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} flexWrap="wrap" useFlexGap>
-              <ToolbarSection label="Party">
-                <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(handleOpenAddParty)} sx={toolbarBtn}>
-                  Add {getPartyTypeLabel()}
-                </Button>
-                {selectedPartyId && (
-                  <>
-                    <Button variant="outlined" size={btnSize} startIcon={<EditIcon />} onClick={requireAdmin(handleOpenEditParty)} sx={toolbarBtn}>
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size={btnSize}
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      onClick={requireAdmin(() => setPartyDeleteConfirm({ open: true, id: selectedPartyId }))}
-                      sx={toolbarBtn}
-                    >
-                      Drop
-                    </Button>
-                  </>
-                )}
-              </ToolbarSection>
-              {selectedPartyId && (
-                <ToolbarSection label="Ledger">
-                  <Button
-                    variant="outlined"
-                    size={btnSize}
-                    onClick={() => setLedgerDialogOpen(true)}
-                    sx={toolbarBtn}
-                  >
-                    Full Ledger
-                  </Button>
-                </ToolbarSection>
-              )}
-              {mainTab === 1 && (
-                <ToolbarSection label="Other">
-                  <Button
-                    variant="outlined"
-                    size={btnSize}
-                    onClick={requireAdmin(() => {
-                      setGeneralCashMode(false);
-                      setEditingId(null);
-                      setForm({
-                        entryKind: 'General',
-                        expenseGroup: 'Operations',
-                        expenseCategory: 'Miscellaneous',
-                        transactionType: 'Money Out',
-                        amount: '',
-                        paymentMethod: 'Cash',
-                        relatedTo: 'Customer',
-                        relatedId: selectedPartyId || dailyCustomers[0]?._id || '',
-                        relatedName: '',
-                        description: '',
-                        handledBy: '',
-                      });
-                      setDialogOpen(true);
-                    })}
-                    sx={toolbarBtn}
-                  >
-                    Add Transaction
-                  </Button>
-                </ToolbarSection>
-              )}
-              {mainTab === 2 && (
-                <ToolbarSection label="Sales & returns">
-                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openLedgerSaleDialog)} sx={toolbarBtn}>
-                    Add Sale
-                  </Button>
-                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
-                    Return Wire
-                  </Button>
-                </ToolbarSection>
-              )}
-              {mainTab === 3 && (
-                <ToolbarSection label="Stock">
-                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openStockArrivalDialog)} sx={toolbarBtn}>
-                    Stock Arrival
-                  </Button>
-                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openCoilReturnDialog)} sx={toolbarBtn}>
-                    Return Coil
-                  </Button>
-                </ToolbarSection>
-              )}
-              {mainTab === 5 && (
-                <ToolbarSection label="Processing">
-                  <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(() => openJobWorkDialog())} sx={toolbarBtn}>
-                    Coil Arrival
-                  </Button>
-                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AssignmentReturnIcon />} onClick={requireAdmin(() => openJobWorkReturnDialog())} sx={toolbarBtn}>
-                    Return Coil
-                  </Button>
-                  <Button variant="outlined" size={btnSize} color="warning" startIcon={<AddIcon />} onClick={requireAdmin(openReturnDialog)} sx={toolbarBtn}>
-                    Return Wire
-                  </Button>
-                </ToolbarSection>
-              )}
-            </Stack>
-          </>
-        )}
-
-        {mainTab === 4 && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
-            <ToolbarSection label="Annealing">
-              <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingSendDialog)} sx={toolbarBtn}>
-                Send for Annealing
-              </Button>
-              <Button variant="outlined" size={btnSize} startIcon={<AddIcon />} onClick={requireAdmin(openAnnealingArrivalDialog)} sx={toolbarBtn}>
-                Arrival from Annealing
-              </Button>
-            </ToolbarSection>
-          </>
-        )}
-      </Paper>
-
-      {/* Main Tab 0 View: Cash Register or Bank Accounts */}
-      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'cash' && (() => {
-        const { inRows, outRows } = buildRokarRows(false);
-        return (
-          <TwoColumnRokarLedger
-            openingBalance={cashBook?.openingBalance || 0}
-            closingBalance={cashBook?.closingBalance || 0}
-            inRows={inRows}
-            outRows={outRows}
-            onEditRow={openEditTransaction}
-            onDeleteRow={(row) => !row.isExpenseRow && !row.isContraRow && setDeleteConfirm({ open: true, id: row._id })}
-            onReturnCheque={openReturnChequeDialog}
-            onAddEntry={() => setQuickAddOpen(true)}
-            requireAdmin={requireAdmin}
-            inTitle="Cash Received"
-            inSubtitle="Money In"
-            outTitle="Cash Spent"
-            outSubtitle="Money Out"
-          />
-        );
-      })()}
-
-      {/* Cheque Transactions section — visible when in cash or bank subtab if cheques exist */}
-      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab !== 'combined' && (() => {
-        const chequeRows = (list || []).filter((r) => r.paymentMethod === 'Cheque');
-        if (chequeRows.length === 0) return null;
-        return (
-          <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', minWidth: 0 }}>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                🧾 Cheque Transactions
-              </Typography>
-              <Chip
-                label={`${chequeRows.length} cheque${chequeRows.length > 1 ? 's' : ''}`}
-                color="warning"
-                variant="outlined"
-                size="small"
-              />
-            </Box>
-            <TableContainer sx={{ overflowX: 'auto' }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'action.hover' }}>
-                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Party / From</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Cheque #</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Bank</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>In (+)</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Out (−)</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Status</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {chequeRows.map((t) => (
-                    <TableRow key={t._id} hover sx={t.isChequeReturned ? { opacity: 0.6 } : {}}>
-                      <TableCell>{formatDate(t.transactionDate)}</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{t.relatedName || t.relatedTo || '—'}</TableCell>
-                      <TableCell>{t.chequeNumber || '—'}</TableCell>
-                      <TableCell>{t.chequeBank || '—'}</TableCell>
-                      <TableCell>{t.description || '—'}</TableCell>
-                      <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>
-                        {t.transactionType === 'Money In' ? formatCurrency(t.amount) : ''}
-                      </TableCell>
-                      <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>
-                        {t.transactionType === 'Money Out' ? formatCurrency(t.amount) : ''}
-                      </TableCell>
-                      <TableCell align="right">
-                        {t.isChequeReturned ? (
-                          <Chip size="small" label="Returned" color="error" variant="filled" />
-                        ) : (
-                          <Chip size="small" label="Active" color="success" variant="outlined" />
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        <IconButton size="small" onClick={requireAdmin(() => openEditTransaction(t))}>
-                          <EditIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                        {!t.isChequeReturned && (
-                          <Tooltip title="Mark cheque as returned / bounced">
-                            <IconButton
-                              size="small"
-                              color="warning"
-                              onClick={requireAdmin(() => openReturnChequeDialog(t))}
-                            >
-                              <ReplayIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        <IconButton size="small" color="error" onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: t._id }))}>
-                          <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-        );
-      })()}
-
-      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'bank' && bankBook && (
-        <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main', minWidth: 0 }}>
-          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} flexWrap="wrap" gap={1} sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={700}>Bank Account Balance</Typography>
-            <Chip
-              label={`Net: ${formatCurrency(bankBook.closingBalance)}`}
-              color={bankBook.closingBalance >= 0 ? 'info' : 'error'}
-              variant="filled"
-              sx={{ fontWeight: 700 }}
-            />
-          </Box>
-          <Box display="flex" gap={3} flexWrap="wrap" mb={2} sx={{ minWidth: 0 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary">Opening (before period)</Typography>
-              <Typography variant="h6">{formatCurrency(bankBook.openingBalance)}</Typography>
-            </Box>
-            <Typography>+ Received: <strong>{formatCurrency(bankBook.totalIn)}</strong></Typography>
-            <Typography>− Sent: <strong>{formatCurrency(bankBook.totalOut)}</strong></Typography>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary">Closing Balance</Typography>
-              <Typography variant="h6" color="info.main">{formatCurrency(bankBook.closingBalance)}</Typography>
-            </Box>
-          </Box>
-          {bankBook.transactions.length > 0 ? (
-            <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'action.hover' }}>
-                  <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Bank Account</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Person / Party</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>In (+)</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>Out (−)</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>Balance</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {bankBook.transactions.map((t) => (
-                  <TableRow key={t._id} hover>
-                    <TableCell>{formatDate(t.date)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={t.bankAccount === 'Other' ? (t.bankAccountOtherName || 'Other') : (t.bankAccount || 'MBL')}
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>{t.relatedName || t.relatedTo || '—'}</TableCell>
-                    <TableCell>{t.description || '—'}</TableCell>
-                    <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>
-                      {t.transactionType === 'Money In' ? formatCurrency(t.amount) : ''}
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>
-                      {t.transactionType === 'Money Out' ? formatCurrency(t.amount) : ''}
-                    </TableCell>
-                    <TableCell align="right"><strong>{formatCurrency(t.balance)}</strong></TableCell>
-                    <TableCell align="right">
-                      {t.isChequeReturned ? (
-                        <Chip size="small" label="Returned" color="error" variant="outlined" sx={{ mr: 0.5 }} />
-                      ) : null}
-                      <IconButton size="small" onClick={requireAdmin(() => openEditTransaction(t))}>
-                        <EditIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                      {t.paymentMethod === 'Cheque' && !t.isChequeReturned && (
-                        <Tooltip title="Mark cheque as returned / bounced">
-                          <IconButton size="small" color="warning" onClick={requireAdmin(() => openReturnChequeDialog(t))}>
-                            <ReplayIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      <IconButton size="small" color="error" onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: t._id }))}>
-                        <DeleteIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </TableContainer>
-          ) : (
-            <Typography variant="body2" color="text.secondary">No bank transfers in this period.</Typography>
-          )}
-        </Paper>
-      )}
-
-      {/* Combined View — Two-column Money In (Left) and Money Out (Right) with all Cash, Bank, Cheques & Expenses */}
-      {mainTab === 0 && registerViewMode !== 'stock' && cashBankTab === 'combined' && (() => {
-        const { inRows, outRows } = buildRokarRows(true);
-        return (
-          <TwoColumnRokarLedger
-            openingBalance={cashBook?.openingBalance || 0}
-            closingBalance={cashBook?.closingBalance || 0}
-            inRows={inRows}
-            outRows={outRows}
-            onEditRow={openEditTransaction}
-            onDeleteRow={(row) => !row.isExpenseRow && !row.isContraRow && setDeleteConfirm({ open: true, id: row._id })}
-            onReturnCheque={openReturnChequeDialog}
-            onAddEntry={() => setQuickAddOpen(true)}
-            requireAdmin={requireAdmin}
-            inTitle="Money In (Aamad)"
-            inSubtitle="Cash + Bank + Cheques"
-            outTitle="Money Out (Kharch)"
-            outSubtitle="Expenses + Bank Deposits + Payments"
-            mode="combined"
-          />
-        );
-      })()}
-
-      {/* Daily Physical Stock Movement: Stock In (Purchases & Processing) vs Wire Out (Sales & Deliveries) */}
-      {mainTab === 0 && (registerViewMode === 'both' || registerViewMode === 'stock') && (() => {
-        const { inStockRows, outStockRows } = buildDailyStockRows();
-        return (
-          <Box sx={{ mt: registerViewMode === 'both' ? 3.5 : 0 }}>
-            {registerViewMode === 'both' && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  mb: 1.5,
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  pb: 1,
-                  borderBottom: '2px dashed',
-                  borderColor: 'divider',
-                }}
-              >
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Typography variant="subtitle1" fontWeight={800} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    📦 Daily Material Movement (Maal Aamad / Rawana)
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={`${inStockRows.length + outStockRows.length} movement${inStockRows.length + outStockRows.length !== 1 ? 's' : ''}`}
-                    color="primary"
-                    variant="outlined"
-                    sx={{ fontWeight: 700, height: 20, fontSize: '0.7rem' }}
-                  />
-                </Stack>
-
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  <Button
-                    variant="outlined"
-                    color="success"
-                    size="small"
-                    startIcon={<AddIcon />}
-                    onClick={requireAdmin(openStockArrivalDialog)}
-                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
-                  >
-                    + Stock Arrival
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<AddIcon />}
-                    onClick={requireAdmin(openLedgerSaleDialog)}
-                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
-                  >
-                    + Wire Sale
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="info"
-                    size="small"
-                    startIcon={<AddIcon />}
-                    onClick={requireAdmin(() => openJobWorkDialog())}
-                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
-                  >
-                    + Processing Inward
-                  </Button>
-                </Stack>
-              </Box>
-            )}
-
-            <TwoColumnStockLedger
-              inRows={inStockRows}
-              outRows={outStockRows}
-              onEditInRow={(row) => {
-                if (row.sourceKind === 'ProcessingArrival') {
-                  openJobWorkDialog(row);
-                } else if (row.sourceKind === 'SalesReturn') {
-                  setReturnForm({
-                    customerId: row.customerId?._id || row.customerId || '',
-                    wireNumber: row.wireNumber || '',
-                    coilCategory: row.coilCategory || '',
-                    initialWeightKg: row.initialWeightKg || row.weightKg || '',
-                    bundles: row.bundles || '',
-                    ratePerKg: row.ratePerKg || '',
-                    orderDate: row.orderDate ? new Date(row.orderDate).toISOString().slice(0, 10) : entryDate,
-                    notes: row.notes || '',
-                  });
-                  setReturnDialogOpen(true);
-                } else {
-                  // Raw material purchase
-                  setStockArrivalForm({
-                    supplierId: row.supplierId?._id || row.supplierId || '',
-                    coilCategory: row.coilCategory || 'Shiplet Coil',
-                    weightInKg: row.weightInKg || row.weightKg || '',
-                    bundles: row.bundles || '',
-                    ratePerKg: row.ratePerKg || '',
-                    amountPaid: row.amountPaid || '',
-                    paymentMethod: row.paymentMethod || 'Cash',
-                    purchaseDate: row.purchaseDate ? new Date(row.purchaseDate).toISOString().slice(0, 10) : entryDate,
-                    notes: row.notes || '',
-                  });
-                  setStockArrivalDialogOpen(true);
-                }
-              }}
-              onDeleteInRow={(row) => {
-                if (row.sourceKind === 'ProcessingArrival') {
-                  setDeleteJobWorkConfirm({ open: true, id: row._id });
-                } else if (row.sourceKind === 'SalesReturn') {
-                  setDeleteOrderConfirm({ open: true, id: row._id });
-                } else {
-                  // Raw material purchase delete
-                  setDeleteConfirm({ open: true, id: row._id, isRawMaterial: true });
-                }
-              }}
-              onEditOutRow={(row) => {
-                if (row.sourceKind === 'ProcessingDelivery') {
-                  openJobWorkDeliveryDialog(row.customerId, {
-                    jobWorkId: row.jobWorkId,
-                    deliveryId: row.deliveryId || row._id,
-                    weightKg: row.weightKg,
-                    bundles: row.bundles,
-                    wireNumber: row.wireNumber,
-                    labourRatePerKg: row.labourRatePerKg,
-                    deliveredDate: row.deliveredDate,
-                    notes: row.notes,
-                  });
-                } else if (row.sourceKind === 'CoilReturn') {
-                  setCoilReturnForm({
-                    supplierId: row.supplierId?._id || row.supplierId || '',
-                    coilCategory: row.coilCategory || 'Shiplet Coil',
-                    weightInKg: row.weightInKg || row.weightKg || '',
-                    bundles: row.bundles || '',
-                    ratePerKg: row.ratePerKg || '',
-                    purchaseDate: row.purchaseDate ? new Date(row.purchaseDate).toISOString().slice(0, 10) : entryDate,
-                    notes: row.notes || '',
-                  });
-                  setCoilReturnDialogOpen(true);
-                } else {
-                  // Sales Order
-                  openEditDailySale(row);
-                }
-              }}
-              onDeleteOutRow={(row) => {
-                if (row.sourceKind === 'ProcessingDelivery') {
-                  setDeleteJobWorkDeliveryConfirm({
-                    open: true,
-                    jobWorkId: row.jobWorkId,
-                    deliveryId: row.deliveryId || row._id,
-                  });
-                } else if (row.sourceKind === 'CoilReturn') {
-                  setDeleteConfirm({ open: true, id: row._id, isRawMaterial: true });
-                } else {
-                  setDeleteOrderConfirm({ open: true, id: row._id });
-                }
-              }}
-              onAddStockIn={openStockArrivalDialog}
-              onAddWireOut={openLedgerSaleDialog}
-              requireAdmin={requireAdmin}
-              inTitle="Stock In / Purchases (Maal Aamad)"
-              inSubtitle="Raw Material Purchases + Processing Customer Coils"
-              outTitle="Wire Out / Sales (Maal Rawana)"
-              outSubtitle="Wire Sales Orders + Processing Deliveries"
-            />
-          </Box>
-        );
-      })()}
-
-      {mainTab === 0 && startDate && endDate && cashBookRange.length > 0 && (
-        <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'action.hover' }}>
-                <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Opening</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Money In</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Money Out</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Closing</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {cashBookRange.map((row) => (
-                <TableRow key={row.date}>
-                  <TableCell>{formatDate(row.date)}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.openingBalance)}</TableCell>
-                  <TableCell align="right" sx={{ color: 'success.main' }}>+{formatCurrency(row.totalIn)}</TableCell>
-                  <TableCell align="right" sx={{ color: 'error.main' }}>−{formatCurrency(row.totalOut)}</TableCell>
-                  <TableCell align="right"><strong>{formatCurrency(row.closingBalance)}</strong></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-
-      {selectedParty && partyLedger && mainTab >= 1 && mainTab !== 4 && (
-        <Box display="flex" gap={2} mb={2} flexWrap="wrap" sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1, minWidth: 0 }}>
-          <Typography fontWeight={600}>{selectedParty.name}</Typography>
-          <Typography>Credit: <strong>{formatCurrency(partyLedger.summary?.totalCredit ?? partyLedger.summary?.totalPurchased ?? 0)}</strong></Typography>
-          <Typography>Debit: <strong>{formatCurrency(partyLedger.summary?.totalDebit ?? 0)}</strong></Typography>
-          <Typography>
-            Net Balance: <strong>{formatCurrency(Math.abs(partyLedger.summary?.balance ?? 0))}</strong>
-            {(partyLedger.summary?.balance ?? 0) > 0 ? ' — They owe us' : (partyLedger.summary?.balance ?? 0) < 0 ? ' — We owe them' : ' — Settled'}
-          </Typography>
-          <Typography>
-            Due: <strong>{formatCurrency(Math.max(0, mainTab === 3 ? -(partyLedger.summary?.balance ?? 0) : (partyLedger.summary?.balance ?? 0)))}</strong>
-            {Math.abs(partyLedger.summary?.balance ?? 0) < 0.01 ? ' — Settled' : ''}
-          </Typography>
-        </Box>
-      )}
-
-      {loading ? (
-        <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
-      ) : mainTab === 4 || mainTab === 5 ? null : selectedPartyId && partyLedger ? (
-        <>
-          <Box display="flex" justifyContent="flex-end" gap={1} mb={1}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<TableChartIcon />}
-              onClick={() => exportLedgerExcel(partyLedger, {
-                title: selectedParty?.name,
-                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
-              })}
-            >
-              Export Excel
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<PictureAsPdfIcon />}
-              onClick={() => exportLedgerPdf(partyLedger, {
-                title: selectedParty?.name,
-                partyType: mainTab === 3 ? 'Supplier' : 'Customer',
-              })}
-            >
-              Export PDF
-            </Button>
-          </Box>
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: { xs: 700, sm: 1020 }, '& td, & th': { py: 0.5, px: 1, fontSize: '0.8rem', verticalAlign: 'top' } }}>
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'grey.100' }}>
-                <TableCell sx={{ width: 96, fontWeight: 700 }}>Date</TableCell>
-                <TableCell sx={{ width: '24%', fontWeight: 700 }}>Description</TableCell>
-                <TableCell sx={{ width: 110, fontWeight: 700 }}>Source</TableCell>
-                <TableCell sx={{ width: 110, fontWeight: 700 }}>Payment</TableCell>
-                <TableCell sx={{ width: 72, fontWeight: 700 }} align="right">Wt</TableCell>
-                <TableCell sx={{ width: 88, fontWeight: 700 }} align="right">Rate</TableCell>
-                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Credit</TableCell>
-                <TableCell sx={{ width: 100, fontWeight: 700 }} align="right">Debit</TableCell>
-                <TableCell sx={{ width: 150, fontWeight: 700 }} align="right">Balance</TableCell>
-                <TableCell sx={{ width: 140, fontWeight: 700 }} align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(partyLedger.entries || []).map((row, i) => {
-                const canEditTxn = row.source === 'Daily Book' && !!row.sourceId;
-                return (
-                <TableRow key={i} hover>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(row.date)}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{row.description}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{row.source}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.paymentMethod || '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.weightKg ? Number(row.weightKg).toFixed(1) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{row.ratePerKg ? formatCurrency(row.ratePerKg) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.credit ? 'success.main' : undefined }}>{row.credit ? formatCurrency(row.credit) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: row.debit ? 'error.main' : undefined }}>{row.debit ? formatCurrency(row.debit) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {formatCurrency(Math.abs(row.balance))}
-                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, display: 'block', fontWeight: 400 }}>
-                      {row.balance > 0 ? 'They owe us' : row.balance < 0 ? 'We owe them' : ''}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                    {canEditTxn ? (
-                      <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditLedgerEntry(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
-                      </>
-                    ) : (row.source === 'Sale' || row.source === 'Order') && !!row.sourceId ? (
-                      <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditDailySale(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row.sourceId }))}>Delete</Button>
-                      </>
-                    ) : '—'}
-                  </TableCell>
-                </TableRow>
-                );
-              })}
-              {(partyLedger.entries || []).length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10}>
-                    <Typography variant="body2" color="text.secondary">
-                      No activity for selected dates — current due: {formatCurrency(selectedParty?.totalAmountDue || 0)}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        </>
-      ) : mainTab === 1 ? (
-        <>
-        <TableContainer component={Paper} sx={{ mb: 2, overflowX: 'auto' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Customer</TableCell>
-                <TableCell>Wire</TableCell>
-                <TableCell align="right">Weight (kg)</TableCell>
-                <TableCell align="right">Bundles</TableCell>
-                <TableCell align="right">Rate/kg</TableCell>
-                <TableCell align="right">Total</TableCell>
-                <TableCell align="right">Paid</TableCell>
-                <TableCell align="right">Due</TableCell>
-                <TableCell>Payment</TableCell>
-                <TableCell>Sold By</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {dailyOrders.map((row) => (
-                <TableRow key={row._id}>
-                  <TableCell>{formatDate(row.orderDate)}</TableCell>
-                  <TableCell>{row.customerName || row.customerId?.name}</TableCell>
-                  <TableCell>{row.wireType} {row.wireSize ? `(${row.wireSize})` : ''}{row.isAnnealed ? ' · annealed' : ''}{row.isReturn ? ' · RETURN' : ''}</TableCell>
-                  <TableCell align="right">{row.finalWeightKg ?? row.initialWeightKg}</TableCell>
-                  <TableCell align="right">{row.bundles || '—'}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.ratePerKg)}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.totalAmount)}</TableCell>
-                  <TableCell align="right">{formatCurrency(row.amountPaid ?? 0)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: row.amountDue > 0 ? 600 : 400, color: row.amountDue > 0 ? 'error.main' : 'text.secondary' }}>
-                    {formatCurrency(row.amountDue ?? 0)}
-                  </TableCell>
-                  <TableCell>{row.paymentMethod}</TableCell>
-                  <TableCell>{row.soldBy}</TableCell>
-                  <TableCell align="right">
-                    {(
-                      <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditDailySale(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteOrderConfirm({ open: true, id: row._id }))}>Delete</Button>
-                      </>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {dailyOrders.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={12}>
-                    <Typography variant="body2" color="text.secondary">No daily sales for selected date range.</Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {list.length > 0 && (
-          <>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Other Transactions (refunds / adjustments)</Typography>
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell align="right">Amount</TableCell>
-                <TableCell>Payment</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {list.map((row) => (
-                <TableRow key={row._id}>
-                  <TableCell>{formatDate(row.transactionDate)}</TableCell>
-                      <TableCell>
-                        <Chip size="small" label={row.transactionType} color={row.transactionType === 'Money In' ? 'success' : 'error'} variant="outlined" />
-                      </TableCell>
-                  <TableCell align="right">{formatCurrency(row.amount)}</TableCell>
-                  <TableCell>{row.paymentMethod}</TableCell>
-                  <TableCell>{row.description}</TableCell>
-                  <TableCell align="right">
-                    {(
-                      <>
-                        <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditTransaction(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                        <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row._id }))}>Delete</Button>
-                      </>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-          </>
-        )}
-        </>
-      ) : mainTab >= 2 && !selectedPartyId ? (
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{partyType}</TableCell>
-                <TableCell align="right">Total Purchased</TableCell>
-                <TableCell align="right">Total Paid</TableCell>
-                <TableCell align="right">Due</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {parties.map((p) => (
-                <TableRow key={p._id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedPartyId(p._id)}>
-                  <TableCell>{p.name}</TableCell>
-                  <TableCell align="right">{formatCurrency(p.totalAmountPurchased)}</TableCell>
-                  <TableCell align="right">{formatCurrency(p.totalAmountPaid)}</TableCell>
-                  <TableCell align="right">
-                    <strong>{formatCurrency(p.totalAmountDue)}</strong>
-                    {p.totalAmountDue > 0
-                      ? (mainTab === 3 ? ' — We owe them' : ' — They owe us')
-                      : ' — Settled'}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {parties.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4}>
-                    <Typography variant="body2" color="text.secondary">No {partyType.toLowerCase()}s added yet.</Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      ) : (
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell align="right">Amount</TableCell>
-                {mainTab === 0 && <TableCell>Source</TableCell>}
-                <TableCell>Payment</TableCell>
-                {mainTab === 0 && <TableCell>Related To</TableCell>}
-                <TableCell>Description</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {list.map((row) => {
-                const isIn = row.transactionType === 'Money In';
-                const isBankTransfer = row.paymentMethod === 'Bank Transfer';
-                const isReadOnlyRow = mainTab === 0 && row.sourceType === 'Expense' && !isDailyBookExpenseRow(row);
-                return (
-                  <TableRow key={row._id} sx={isBankTransfer ? { bgcolor: 'info.50', opacity: 0.9 } : undefined}>
-                    <TableCell>{formatDate(row.transactionDate)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={row.transactionType}
-                        color={isIn ? 'success' : 'error'}
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell align="right">{formatCurrency(row.amount)}</TableCell>
-                    {mainTab === 0 && <TableCell>{getSourceLabel(row)}</TableCell>}
-                    <TableCell>
-                      {isBankTransfer
-                        ? (
-                          <>
-                            <Chip size="small" label="Bank Transfer" color="info" variant="outlined" />
-                            {row.expenseCategory && (
-                              <Chip size="small" label={`Expense: ${row.expenseCategory}`} color="warning" variant="outlined" sx={{ ml: 0.5 }} />
-                            )}
-                          </>
-                        )
-                        : row.paymentMethod}
-                    </TableCell>
-                    {mainTab === 0 && <TableCell>
-                      {row.paymentMethod === 'Bank Transfer'
-                        ? (
-                          <>
-                            <Box component="span">{row.relatedName || row.relatedTo || '—'}</Box>
-                            <Typography variant="caption" display="block" color="text.secondary">
-                              {(row.bankAccount === 'Other' ? (row.bankAccountOtherName || 'Other') : (row.bankAccount || 'MBL'))}
-                              {row.bankAccountNumber ? ` · ${row.bankAccountNumber}` : ''}
-                            </Typography>
-                          </>
-                        )
-                        : (row.relatedName || row.relatedTo || '—')}
-                    </TableCell>}
-                    <TableCell>{row.description}</TableCell>
-                    <TableCell align="right">
-                      {!isReadOnlyRow && (
-                        <>
-                          <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openEditTransaction(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteConfirm({ open: true, id: row._id }))}>Delete</Button>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {list.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={mainTab === 0 ? 7 : 5}>
-                    <Typography variant="body2" color="text.secondary">No transactions for selected date range.</Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-
-      {mainTab === 4 && (
-        <Box sx={{ mt: 2 }}>
-          {annealingPools.filter((p) => p.remainingKg > 0.001 || p.remainingBundles > 0).length > 0 && (
-            <Paper sx={{ p: 1.5, mb: 1, bgcolor: 'action.hover' }}>
-              <Typography variant="subtitle2" fontWeight={600} gutterBottom>Pending at annealing</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Click a chip to edit or delete the send/arrival entries for that pool.
-              </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap">
-                {annealingPools
-                  .filter((p) => p.remainingKg > 0.001 || p.remainingBundles > 0)
-                  .map((p) => (
-                    <Chip
-                      key={p.key}
-                      color="warning"
-                      variant="outlined"
-                      onClick={requireAdmin(() => openAnnealingPoolManage(p))}
-                      onDelete={requireAdmin(() => openAnnealingPoolManage(p))}
-                      deleteIcon={<EditIcon />}
-                      label={`${p.partyName || 'Own stock'} — ${p.materialType}${p.coilCategory ? ` ${p.coilCategory}` : ''}${p.wireNumber ? ` #${p.wireNumber}` : ''}: ${p.remainingBundles > 0 ? `${p.remainingBundles} bundles / ` : ''}${p.remainingKg.toFixed(2)} kg pending`}
-                      sx={{ cursor: 'pointer' }}
-                    />
-                  ))}
-              </Box>
-            </Paper>
-          )}
-          <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-            <Typography variant="subtitle2" fontWeight={600} sx={{ p: 2, pb: 0 }}>
-              Annealing — Sent &amp; Arrived (all parties)
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Party</TableCell>
-                  <TableCell>Material</TableCell>
-                  <TableCell>Entry</TableCell>
-                  <TableCell align="right">Bundles</TableCell>
-                  <TableCell align="right">Initial (kg)</TableCell>
-                  <TableCell align="right">Final (kg)</TableCell>
-                  <TableCell align="right">Loss (kg)</TableCell>
-                  <TableCell>Notes</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {annealingRecords.map((row) => (
-                  <TableRow key={row._id}>
-                    <TableCell>{formatDate(row.date)}</TableCell>
-                    <TableCell>{row.partyName || 'Own stock'}</TableCell>
-                    <TableCell>{row.materialType === 'Wire' ? (row.wireNumber ? `Wire #${row.wireNumber}` : 'Wire') : row.coilCategory || 'Coil'}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={row.entryType === 'Send' ? 'Sent' : row.entryType === 'Sold' ? 'Sold' : 'Arrived'}
-                        color={row.entryType === 'Send' ? 'warning' : row.entryType === 'Sold' ? 'info' : 'success'}
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell align="right">{row.bundles > 0 ? row.bundles : '—'}</TableCell>
-                    <TableCell align="right">
-                      {(row.weightKg || 0).toFixed(2)}
-                      {row.weightEstimated ? ' (auto)' : ''}
-                    </TableCell>
-                    <TableCell align="right">{row.entryType === 'Arrival' ? (row.finalWeightKg || 0).toFixed(2) : '—'}</TableCell>
-                    <TableCell align="right">{row.entryType === 'Arrival' ? (row.weightLossKg || 0).toFixed(2) : '—'}</TableCell>
-                    <TableCell>{row.notes || '—'}</TableCell>
-                    <TableCell align="right">
-                      {(
-                        <>
-                          <Button size="small" startIcon={<EditIcon />} onClick={requireAdmin(() => openAnnealingEdit(row))} sx={{ mr: 0.5 }}>Edit</Button>
-                          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={requireAdmin(() => setDeleteAnnealingConfirm({ open: true, id: row._id }))}>Delete</Button>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
                 {annealingRecords.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={10}>

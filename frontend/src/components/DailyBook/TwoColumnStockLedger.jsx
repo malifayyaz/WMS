@@ -106,6 +106,23 @@ function KindChip({ kind, coilCategory, wireNumber, isAnnealed }) {
       />
     );
   }
+  if (kind === 'ProcessingReturn') {
+    return (
+      <Chip
+        size="small"
+        icon={<UndoIcon sx={{ fontSize: '13px !important' }} />}
+        label={`Returned ${coilCategory || 'Coil'}`}
+        sx={{
+          fontWeight: 700,
+          fontSize: '0.68rem',
+          height: 20,
+          bgcolor: '#FFFBEB',
+          color: '#B45309',
+          border: '1px solid #FDE68A',
+        }}
+      />
+    );
+  }
   if (kind === 'Order') {
     return (
       <Stack direction="row" spacing={0.5} alignItems="center">

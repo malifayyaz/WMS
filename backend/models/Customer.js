@@ -20,10 +20,17 @@ const customerSchema = new mongoose.Schema(
     totalAmountDue: { type: Number, default: 0 },
     openingBalance: { type: Number, default: 0 },
     openingBalanceDate: Date,
-    openingBalanceType: { type: String, enum: ['debit', 'credit', 'none'], default: 'none' },
+    openingBalanceType: {
+      type: String,
+      enum: ['credit', 'debit', 'none'],
+      default: 'none',
+    },
     customerType: { type: String, enum: ['Ledger', 'Daily', 'Processing'], default: 'Ledger' },
     /** Linked Supplier when same person is also a coil supplier */
-    linkedSupplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' },
+    linkedSupplierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Supplier',
+    },
     paymentHistory: [paymentHistorySchema],
   },
   { timestamps: true }

@@ -30,7 +30,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import { suppliersAPI } from '../services/api';
+import { suppliersAPI, customersAPI } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
@@ -80,6 +80,7 @@ export default function Suppliers() {
   const isMobile = useIsMobile();
   const [accessDenied, setAccessDenied] = useState(false);
   const [list, setList] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -99,8 +100,12 @@ export default function Suppliers() {
       const params = {};
       if (search) params.search = search;
       params.supplierType = activeTab;
-      const res = await suppliersAPI.getAll(params);
+      const [res, custRes] = await Promise.all([
+        suppliersAPI.getAll(params),
+        customersAPI.getAll({ type: 'Processing' })
+      ]);
       setList(res.data.data || []);
+      setCustomers(custRes.data.data || []);
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load', severity: 'error' });
     } finally {
@@ -130,11 +135,10 @@ export default function Suppliers() {
       address: row.address || '',
       materialTypes: row.materialTypes || [],
       openingBalance: row.openingBalance || '',
-      openingBalanceDate: row.openingBalanceDate
-        ? new Date(row.openingBalanceDate).toISOString().slice(0, 10)
-        : new Date().toISOString().slice(0, 10),
+      openingBalanceDate: row.openingBalanceDate ? row.openingBalanceDate.substring(0, 10) : new Date().toISOString().slice(0, 10),
       openingBalanceType: row.openingBalanceType || 'none',
       supplierType: row.supplierType || 'Raw Material',
+      linkedCustomerId: row.linkedCustomerId || '',
     });
     setEditingId(row._id);
     setDialogOpen(true);
@@ -357,6 +361,19 @@ export default function Suppliers() {
               <MenuItem value="none">None — No opening balance</MenuItem>
               <MenuItem value="credit">Debit — We owe supplier</MenuItem>
               <MenuItem value="debit">Credit — They owe us (advance paid)</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Link to Processing Customer</InputLabel>
+            <Select
+              value={form.linkedCustomerId || ''}
+              onChange={(e) => setForm((f) => ({ ...f, linkedCustomerId: e.target.value }))}
+              label="Link to Processing Customer"
+            >
+              <MenuItem value=""><em>None</em></MenuItem>
+              {customers.map((c) => (
+                <MenuItem key={c._id} value={c._id}>{c.name}</MenuItem>
+              ))}
             </Select>
           </FormControl>
           {form.openingBalanceType !== 'none' && (

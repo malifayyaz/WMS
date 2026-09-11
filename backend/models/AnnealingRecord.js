@@ -40,6 +40,9 @@ const annealingRecordSchema = new mongoose.Schema(
     /** Arrival only: weight received after annealing */
     finalWeightKg: Number,
     weightLossKg: Number,
+    
+    /** Arrival only: stock available for use / delivery */
+    remainingWeightKg: { type: Number, default: 0 },
 
     date: { type: Date, default: Date.now },
     notes: String,

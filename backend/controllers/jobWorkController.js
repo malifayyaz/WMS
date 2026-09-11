@@ -708,7 +708,13 @@ const addReturn = async (req, res, next) => {
 
     await jobWork.save();
 
-
+    const ActivityLog = require('../models/ActivityLog');
+    await ActivityLog.create({
+      userId: req.user?._id,
+      userName: req.user?.username || 'System',
+      action: 'Returned coil',
+      details: `${parsedWeight} kg ${resolvedCoilType} returned to ${jobWork.customerName || 'Customer'}`,
+    });
 
     res.status(201).json({
       success: true,
