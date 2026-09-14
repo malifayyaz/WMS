@@ -482,13 +482,7 @@ export default function DailyBook() {
   const [annealingArrivalDialogOpen, setAnnealingArrivalDialogOpen] = useState(false);
   const [annealingRecords, setAnnealingRecords] = useState([]);
   const [annealingPools, setAnnealingPools] = useState([]);
-    bankAccountNumber: '',
-    description: '',
-    transactionDate: '',
-    recordAsExpense: false,
-    expenseGroup: 'Manufacturing',
-    expenseCategory: 'Annealing',
-  });
+
   const [loading, setLoading] = useState(true);
   const {
     entryDate,
