@@ -671,18 +671,12 @@ const poolDeliver = async (req, res, next) => {
 
       let rawMaterialRatePerKg = 0;
 
-      if (sourceType === 'Annealing' && sourceAnnealingId) {
-        // We already deducted the physical stock from the Annealing batch above.
-        // We just need to record the billing to the customer.
-        // The rate is the one calculated for the Annealing delivery.
-        rawMaterialRatePerKg = 0; // The coil rate is tracked inside sellingRatePerKg
-      } else {
-        const RawMaterial = require('../models/RawMaterial');
-        const foundLot = await RawMaterial.findOne({
-          coilCategory: targetLot.coilCategory,
-          currentStock: { $gte: excessKg },
-          isReturn: false
-        }).sort({ purchaseDate: 1 });
+      const RawMaterial = require('../models/RawMaterial');
+      const foundLot = await RawMaterial.findOne({
+        coilCategory: targetLot.coilCategory,
+        currentStock: { $gte: excessKg },
+        isReturn: false
+      }).sort({ purchaseDate: 1 });
 
         if (!foundLot) {
           const aggr = await RawMaterial.aggregate([
@@ -702,8 +696,6 @@ const poolDeliver = async (req, res, next) => {
 
         foundLotId = foundLot._id;
         remainingRawStock = foundLot.currentStock;
-      }
-
       totalSaleAmount = Math.round(excessKg * sellingRatePerKg * 100) / 100;
       const profitPerKg = Math.round((sellingRatePerKg - rawMaterialRatePerKg) * 100) / 100;
       totalProfit = Math.round(profitPerKg * excessKg * 100) / 100;

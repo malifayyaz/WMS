@@ -945,17 +945,39 @@ const deliverAnnealedToProcessing = async (req, res, next) => {
     let totalSaleAmount = 0;
     if (excessKg > 0) {
       const saleRatePerKg = parsedCoilRate + parsedLabourRate;
+      
+      const RawMaterial = require('../models/RawMaterial');
+      const foundLot = await RawMaterial.findOne({
+        coilCategory: jobWork.coilCategory,
+        currentStock: { $gte: excessKg },
+        isReturn: false
+      }).sort({ purchaseDate: 1 });
+
+      if (!foundLot) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient raw material stock for excess delivery.`
+        });
+      }
+      
+      const rawMaterialRatePerKg = foundLot.ratePerKg || 0;
+      foundLot.currentStock -= excessKg;
+      await foundLot.save();
+
       totalSaleAmount = excessKg * saleRatePerKg;
+      const profitPerKg = saleRatePerKg - rawMaterialRatePerKg;
+      const totalProfit = profitPerKg * excessKg;
       
       jobWork.excessDeliveries.push({
         weightKg: excessKg,
         coilCategory: jobWork.coilCategory,
-        rawMaterialRatePerKg: 0, // No specific raw material lot deducted
+        rawMaterialRatePerKg,
         saleRatePerKg,
         totalSaleAmount,
-        profitPerKg: saleRatePerKg,
-        totalProfit: totalSaleAmount,
-        rawMaterialDeducted: false,
+        profitPerKg,
+        totalProfit,
+        rawMaterialDeducted: true,
+        rawMaterialLotId: foundLot._id,
         deliveryDate,
         deliveredBy: req.user?.username || '',
         note: `Excess from Annealing - ${notes || ''}`,
