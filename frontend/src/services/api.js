@@ -155,6 +155,7 @@ export const expensesAPI = {
 export const annealingAPI = {
   getAll: (params) => api.get('/annealing', { params }),
   getSummary: (params) => api.get('/annealing/summary', { params }),
+  getDeliverable: (params) => api.get('/annealing/deliverable', { params }),
   create: (data) => api.post('/annealing', data),
   createArrival: (data) => api.post('/annealing/arrival', data),
   update: (id, data) => api.put(`/annealing/${id}`, data),

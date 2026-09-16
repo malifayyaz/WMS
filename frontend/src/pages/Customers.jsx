@@ -449,7 +449,7 @@ export default function Customers() {
           title={`Ledger — ${ledgerCustomer.name}`}
           fetchLedger={fetchLedger}
           partyType="Customer"
-          linked={!!ledgerCustomer.linkedSupplierId && ledgerCustomer.customerType === 'Processing'}
+          linked={!!ledgerCustomer.linkedSupplierId}
           primaryRole={ledgerCustomer.customerType === 'Processing' ? 'processing' : 'customer'}
         />
       )}

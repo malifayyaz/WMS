@@ -27,6 +27,8 @@ const annealingRecordSchema = new mongoose.Schema(
     linkedOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
     /** Sold entries: which Send batch this sale consumed from */
     sourceSendId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnealingRecord' },
+    /** Delivered annealed stock to a processing customer (linked to job work delivery) */
+    jobWorkDeliveryId: { type: mongoose.Schema.Types.ObjectId },
 
     bundles: { type: Number, default: 0 },
     /** Send: weight sent. Arrival: initial (pre-annealing) weight of what arrived. */

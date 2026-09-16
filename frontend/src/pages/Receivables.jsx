@@ -631,7 +631,7 @@ export default function Receivables() {
           title={`Ledger — ${selectedParty.name}`}
           fetchLedger={(params) => customersAPI.getLedger(selectedParty._id, params)}
           partyType="Customer"
-          linked={!!selectedParty.linkedSupplierId && selectedParty.customerType === 'Processing'}
+          linked={!!selectedParty.linkedSupplierId}
           primaryRole={selectedParty.customerType === 'Processing' ? 'processing' : 'customer'}
         />
       )}

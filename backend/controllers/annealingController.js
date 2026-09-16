@@ -508,6 +508,36 @@ const getAnnealingRecords = async (req, res, next) => {
   }
 };
 
+const getDeliverableAnnealing = async (req, res, next) => {
+  try {
+    const { materialType } = req.query;
+    const filter = { entryType: { $in: ['Send', 'Arrival'] } };
+    if (materialType) filter.materialType = materialType;
+
+    const records = await AnnealingRecord.find(filter).sort({ date: -1 });
+    
+    const deliverable = [];
+    for (const record of records) {
+      if (record.entryType === 'Arrival') {
+        if (record.remainingWeightKg > 0) {
+          deliverable.push(record);
+        }
+      } else if (record.entryType === 'Send') {
+        const rem = await remainingOnSend(record);
+        if (rem.remKg > 0) {
+          const doc = record.toObject();
+          doc.remainingWeightKg = rem.remKg; // inject computed remaining weight
+          deliverable.push(doc);
+        }
+      }
+    }
+    
+    res.json({ success: true, data: deliverable, total: deliverable.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /** Pool summary: remaining bundles/weight per party + material type. */
 let soldBackfillDone = false;
 async function ensureSoldBackfillOnce() {
@@ -975,4 +1005,5 @@ module.exports = {
   computePools,
   deliverPreview,
   deliverAnnealedToProcessing,
+  getDeliverableAnnealing,
 };

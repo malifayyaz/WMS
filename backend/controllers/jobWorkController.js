@@ -282,6 +282,37 @@ const updateDelivery = async (req, res, next) => {
         if (changed) await lot.save();
       }
     }
+    
+    // Sync Annealing pool deduction if this was an Annealed delivery
+    if (delivery.sourceType === 'Annealing' && delivery.deliveryGroupId && delivery.sourceAnnealingId) {
+      const AnnealingRecord = require('../models/AnnealingRecord');
+      const sourceAnn = await AnnealingRecord.findById(delivery.sourceAnnealingId);
+      
+      if (sourceAnn) {
+        // Calculate the difference in weight for this delivery group
+        const oldWeight = delivery.weightKg || 0;
+        const allLots = await JobWork.find({ customerId: doc.customerId, 'deliveries.deliveryGroupId': delivery.deliveryGroupId });
+        let newTotalWeight = 0;
+        let oldTotalWeight = 0; // We need the previous total weight to compute diff
+        
+        // Wait, instead of recalculating oldTotalWeight complexly, let's just find the diff of THIS edited fragment
+        const diff = weightKg - oldWeight;
+
+        if (sourceAnn.entryType === 'Arrival') {
+          sourceAnn.remainingWeightKg -= diff;
+          await sourceAnn.save();
+        } else if (sourceAnn.entryType === 'Send') {
+          const annRecord = await AnnealingRecord.findOne({ entryType: 'Sold', jobWorkDeliveryId: delivery.deliveryGroupId });
+          if (annRecord) {
+            annRecord.weightKg = (annRecord.weightKg || 0) + diff;
+            if (req.body.deliveredDate) annRecord.date = new Date(req.body.deliveredDate);
+            annRecord.bundles = Number(req.body.bundles) || 0;
+            annRecord.wireNumber = req.body.wireNumber ? Number(req.body.wireNumber) : undefined;
+            await annRecord.save();
+          }
+        }
+      }
+    }
 
     await recalcCustomerTotals(doc.customerId);
     res.json({ success: true, data: doc, message: 'Processing delivery updated' });
@@ -302,6 +333,7 @@ const deleteDelivery = async (req, res, next) => {
 
     const groupId = delivery.deliveryGroupId ? String(delivery.deliveryGroupId) : null;
     const customerId = doc.customerId;
+    let totalDeletedWeight = 0;
 
     if (groupId) {
       const lots = await JobWork.find({
@@ -309,14 +341,36 @@ const deleteDelivery = async (req, res, next) => {
         'deliveries.deliveryGroupId': delivery.deliveryGroupId,
       });
       for (const lot of lots) {
+        (lot.deliveries || []).forEach(d => {
+          if (String(d.deliveryGroupId || '') === groupId) {
+            totalDeletedWeight += (d.weightKg || 0);
+          }
+        });
         lot.deliveries = (lot.deliveries || []).filter(
           (d) => String(d.deliveryGroupId || '') !== groupId
         );
         await lot.save();
       }
     } else {
+      totalDeletedWeight = delivery.weightKg || 0;
       delivery.deleteOne();
       await doc.save();
+    }
+
+    if (delivery.sourceType === 'Annealing' && delivery.deliveryGroupId && delivery.sourceAnnealingId) {
+      const AnnealingRecord = require('../models/AnnealingRecord');
+      const sourceAnn = await AnnealingRecord.findById(delivery.sourceAnnealingId);
+      if (sourceAnn) {
+        if (sourceAnn.entryType === 'Arrival') {
+          sourceAnn.remainingWeightKg += totalDeletedWeight;
+          await sourceAnn.save();
+        } else if (sourceAnn.entryType === 'Send') {
+          const annRecord = await AnnealingRecord.findOne({ entryType: 'Sold', jobWorkDeliveryId: delivery.deliveryGroupId });
+          if (annRecord) {
+            await annRecord.deleteOne();
+          }
+        }
+      }
     }
 
     await recalcCustomerTotals(customerId);
@@ -473,7 +527,9 @@ const poolDeliver = async (req, res, next) => {
       bundles,
       excessSaleRatePerKg,
       excessNote,
-      deliveredBy
+      deliveredBy,
+      sourceType,
+      sourceAnnealingId
     } = req.body;
     if (!customerId) return res.status(400).json({ success: false, message: 'Customer required' });
     const totalDelivery = Number(wRaw);
@@ -490,10 +546,31 @@ const poolDeliver = async (req, res, next) => {
     
     let normalDeliveryKg = totalDelivery;
     let excessKg = 0;
-    
     if (totalDelivery > poolRemaining) {
       normalDeliveryKg = poolRemaining;
       excessKg = totalDelivery - poolRemaining;
+    }
+    
+    let targetAnnealing = null;
+    const AnnealingRecord = require('../models/AnnealingRecord');
+    if (sourceType === 'Annealing' && sourceAnnealingId && normalDeliveryKg > 0) {
+      targetAnnealing = await AnnealingRecord.findById(sourceAnnealingId);
+      if (!targetAnnealing) {
+        return res.status(400).json({ success: false, message: 'Selected annealing batch not found.' });
+      }
+
+      let availableKg = 0;
+      if (targetAnnealing.entryType === 'Arrival') {
+        availableKg = targetAnnealing.remainingWeightKg || 0;
+      } else if (targetAnnealing.entryType === 'Send') {
+        const { remainingOnSend } = require('./annealingController');
+        const rem = await remainingOnSend(targetAnnealing);
+        availableKg = rem.remKg;
+      }
+
+      if (availableKg < normalDeliveryKg) {
+        return res.status(400).json({ success: false, message: `Insufficient remaining weight in the selected annealing batch. Available: ${availableKg} kg` });
+      }
     }
 
     const deliveryCoilRate = Number(req.body.coilRatePerKg) > 0
@@ -529,6 +606,8 @@ const poolDeliver = async (req, res, next) => {
           notes: notes || '',
           deliveryGroupId,
           isGroupPrimary: firstLot,
+          sourceType: sourceType || 'Processing',
+          sourceAnnealingId: sourceAnnealingId || undefined,
         });
         firstLot = false;
         await lot.save();
@@ -546,6 +625,37 @@ const poolDeliver = async (req, res, next) => {
         });
         totalLabour += labourAmount;
         remaining -= toDeduct;
+      }
+
+      if (sourceType === 'Annealing' && sourceAnnealingId) {
+        if (targetAnnealing.entryType === 'Arrival') {
+          targetAnnealing.remainingWeightKg -= normalDeliveryKg;
+          await targetAnnealing.save();
+        }
+        
+        let customerName = '';
+        if (lots.length > 0) customerName = lots[0].customerName;
+        else {
+          const cust = await require('../models/Customer').findById(customerId);
+          customerName = cust?.name || '';
+        }
+
+        if (targetAnnealing.entryType === 'Send') {
+          await AnnealingRecord.create({
+            entryType: 'Sold',
+            partyType: targetAnnealing.partyType || 'None',
+            partyId: targetAnnealing.partyId,
+            partyName: targetAnnealing.partyName || '',
+            materialType: 'Wire',
+            weightKg: normalDeliveryKg,
+            bundles: bund,
+            wireNumber: wn,
+            date: delivDate,
+            sourceSendId: sourceAnnealingId,
+            jobWorkDeliveryId: deliveryGroupId,
+            notes: `Delivered annealed stock to processing customer ${customerName}. Job Work group: ${deliveryGroupId}`
+          });
+        }
       }
     }
 

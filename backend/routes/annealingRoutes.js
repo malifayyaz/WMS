@@ -8,12 +8,14 @@ const {
   deleteAnnealing,
   deliverPreview,
   deliverAnnealedToProcessing,
+  getDeliverableAnnealing,
 } = require('../controllers/annealingController');
 const { blockViewer } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 router.get('/summary', getAnnealingSummary);
 router.get('/pending', getAnnealingSummary); // legacy alias
+router.get('/deliverable', getDeliverableAnnealing);
 router.post('/arrival', blockViewer, createArrival);
 router.route('/').get(getAnnealingRecords).post(blockViewer, createSend);
 router.get('/:id/deliver-preview', deliverPreview);
