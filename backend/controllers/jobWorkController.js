@@ -46,6 +46,7 @@ const getJobWorks = async (req, res, next) => {
       }
       clauses.push({ arrivalDate: range });
       clauses.push({ 'deliveries.deliveredDate': range });
+      clauses.push({ 'excessDeliveries.deliveryDate': range });
       filter.$or = clauses;
     }
     const list = await JobWork.find(filter).sort({ arrivalDate: -1 });
