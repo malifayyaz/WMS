@@ -508,6 +508,18 @@ const getAnnealingRecords = async (req, res, next) => {
   }
 };
 
+const remainingOnSend = async (sendRecord) => {
+  const usedDocs = await require('../models/AnnealingRecord').find({
+    entryType: 'Sold',
+    sourceSendId: sendRecord._id
+  });
+  const usedBundles = usedDocs.reduce((sum, r) => sum + (r.bundles || 0), 0);
+  const usedKg = usedDocs.reduce((sum, r) => sum + (r.weightKg || 0), 0);
+  const remBundles = Math.max(0, (sendRecord.bundles || 0) - usedBundles);
+  const remKg = remBundles <= 0 ? 0 : Math.max(0, (sendRecord.weightKg || 0) - usedKg);
+  return { remBundles, remKg };
+};
+
 const getDeliverableAnnealing = async (req, res, next) => {
   try {
     const { materialType } = req.query;
@@ -1006,4 +1018,5 @@ module.exports = {
   deliverPreview,
   deliverAnnealedToProcessing,
   getDeliverableAnnealing,
+  remainingOnSend,
 };
