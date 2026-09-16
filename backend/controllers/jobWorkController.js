@@ -629,7 +629,7 @@ const poolDeliver = async (req, res, next) => {
 
       if (sourceType === 'Annealing' && sourceAnnealingId) {
         if (targetAnnealing.entryType === 'Arrival') {
-          targetAnnealing.remainingWeightKg -= normalDeliveryKg;
+          targetAnnealing.remainingWeightKg -= totalDelivery;
           await targetAnnealing.save();
         }
         
@@ -647,7 +647,7 @@ const poolDeliver = async (req, res, next) => {
             partyId: targetAnnealing.partyId,
             partyName: targetAnnealing.partyName || '',
             materialType: 'Wire',
-            weightKg: normalDeliveryKg,
+            weightKg: totalDelivery,
             bundles: bund,
             wireNumber: wn,
             date: delivDate,
@@ -668,35 +668,44 @@ const poolDeliver = async (req, res, next) => {
       let targetLot = lots.length > 0 ? lots[lots.length - 1] : await JobWork.findOne({ customerId }).sort({ createdAt: -1 });
       if (!targetLot) return res.status(400).json({ success: false, message: 'No job work history found for this customer to attach excess delivery' });
 
-      const RawMaterial = require('../models/RawMaterial');
-      const foundLot = await RawMaterial.findOne({
-        coilCategory: targetLot.coilCategory,
-        currentStock: { $gte: excessKg },
-        isReturn: false
-      }).sort({ purchaseDate: 1 });
+      let rawMaterialRatePerKg = 0;
 
-      if (!foundLot) {
-        const aggr = await RawMaterial.aggregate([
-          { $match: { coilCategory: targetLot.coilCategory, isReturn: false } },
-          { $group: { _id: null, total: { $sum: "$currentStock" } } }
-        ]);
-        const available = aggr[0]?.total || 0;
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient raw material stock for excess delivery. Available stock: ${available} kg. Excess needed: ${excessKg} kg.`
-        });
+      if (sourceType === 'Annealing' && sourceAnnealingId) {
+        // We already deducted the physical stock from the Annealing batch above.
+        // We just need to record the billing to the customer.
+        // The rate is the one calculated for the Annealing delivery.
+        rawMaterialRatePerKg = 0; // The coil rate is tracked inside sellingRatePerKg
+      } else {
+        const RawMaterial = require('../models/RawMaterial');
+        const foundLot = await RawMaterial.findOne({
+          coilCategory: targetLot.coilCategory,
+          currentStock: { $gte: excessKg },
+          isReturn: false
+        }).sort({ purchaseDate: 1 });
+
+        if (!foundLot) {
+          const aggr = await RawMaterial.aggregate([
+            { $match: { coilCategory: targetLot.coilCategory, isReturn: false } },
+            { $group: { _id: null, total: { $sum: "$currentStock" } } }
+          ]);
+          const available = aggr[0]?.total || 0;
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient raw material stock for excess delivery. Available stock: ${available} kg. Excess needed: ${excessKg} kg.`
+          });
+        }
+
+        rawMaterialRatePerKg = foundLot.ratePerKg || 0;
+        foundLot.currentStock -= excessKg;
+        await foundLot.save();
+
+        foundLotId = foundLot._id;
+        remainingRawStock = foundLot.currentStock;
       }
 
-      const rawMaterialRatePerKg = foundLot.ratePerKg || 0;
       totalSaleAmount = Math.round(excessKg * sellingRatePerKg * 100) / 100;
       const profitPerKg = Math.round((sellingRatePerKg - rawMaterialRatePerKg) * 100) / 100;
       totalProfit = Math.round(profitPerKg * excessKg * 100) / 100;
-
-      foundLot.currentStock -= excessKg;
-      await foundLot.save();
-
-      foundLotId = foundLot._id;
-      remainingRawStock = foundLot.currentStock;
 
       targetLot.excessDeliveries.push({
         weightKg: excessKg,
@@ -706,8 +715,8 @@ const poolDeliver = async (req, res, next) => {
         totalSaleAmount,
         profitPerKg,
         totalProfit,
-        rawMaterialDeducted: true,
-        rawMaterialLotId: foundLot._id,
+        rawMaterialDeducted: foundLotId ? true : false,
+        rawMaterialLotId: foundLotId,
         deliveryDate: delivDate,
         deliveredBy: deliveredBy || '',
         note: excessNote || ''

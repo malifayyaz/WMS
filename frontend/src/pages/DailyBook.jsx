@@ -4414,6 +4414,30 @@ export default function DailyBook() {
                           </TableRow>
                         </>
                       )}
+                      {row.excessDeliveries && row.excessDeliveries.length > 0 && (
+                        <>
+                          {row.excessDeliveries.map((exc, eIdx) => (
+                            <TableRow key={exc._id || `${row._id}-exc-${eIdx}`} sx={{ bgcolor: 'rgba(211, 47, 47, 0.05)' }}>
+                              <TableCell colSpan={3} sx={{ pl: 4, fontSize: '0.85rem', color: 'error.main' }}>
+                                ⚠ Excess Delivery {eIdx + 1} — {formatDate(exc.deliveryDate)} (Our Stock Sold)
+                                {exc.deliveredBy ? ` · Handled by: ${exc.deliveredBy}` : ''}
+                              </TableCell>
+                              <TableCell colSpan={2} sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>
+                                {`Sold @ ${formatCurrency(exc.saleRatePerKg || 0)}/kg`}
+                                {exc.note ? ` (${exc.note})` : ''}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontSize: '0.85rem', color: 'error.main', fontWeight: 600 }}>
+                                {(Number(exc.weightKg) || 0).toFixed(2)}
+                              </TableCell>
+                              <TableCell colSpan={2} />
+                              <TableCell align="right" sx={{ fontSize: '0.85rem', color: 'error.main', fontWeight: 600 }}>
+                                {formatCurrency(exc.totalSaleAmount || 0)}
+                              </TableCell>
+                              <TableCell colSpan={2} />
+                            </TableRow>
+                          ))}
+                        </>
+                      )}
                     </React.Fragment>
                   );
                   });

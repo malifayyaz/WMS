@@ -229,6 +229,20 @@ async function collectRawEntries(partyType, party) {
           entryType: 'jobwork-return',
         });
       });
+      (j.excessDeliveries || []).forEach((e) => {
+        entries.push({
+          date: e.deliveryDate,
+          description: `Job work excess stock sold — ${e.weightKg} kg × Rs.${e.saleRatePerKg}/kg`,
+          credit: e.totalSaleAmount || 0,
+          debit: 0,
+          weightKg: e.weightKg || 0,
+          ratePerKg: e.saleRatePerKg || 0,
+          totalPrice: e.totalSaleAmount || 0,
+          source: 'Job Work — Excess Sale',
+          sourceId: j._id,
+          entryType: 'jobwork-excess',
+        });
+      });
     });
 
     // One customer delivery may be FIFO-split across arrival lots — show a single ledger line.
