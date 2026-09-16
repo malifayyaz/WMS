@@ -12,6 +12,8 @@ const {
   getJobWorkStock,
   addReturn,
   previewExcessDelivery,
+  updateExcessDelivery,
+  deleteExcessDelivery,
 } = require('../controllers/jobWorkController');
 const { blockViewer } = require('../middleware/roleMiddleware');
 
@@ -24,6 +26,8 @@ router.get('/:id/excess-preview', previewExcessDelivery);
 router.post('/:id/delivery', blockViewer, addDelivery);
 router.put('/:id/delivery/:deliveryId', blockViewer, updateDelivery);
 router.delete('/:id/delivery/:deliveryId', blockViewer, deleteDelivery);
+router.put('/:id/excess/:excessId', blockViewer, updateExcessDelivery);
+router.delete('/:id/excess/:excessId', blockViewer, deleteExcessDelivery);
 router.post('/:id/returns', blockViewer, addReturn);
 router.route('/:id').put(blockViewer, updateJobWork).delete(blockViewer, deleteJobWork);
 

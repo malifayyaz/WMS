@@ -523,6 +523,19 @@ export default function DailyBook() {
     jobWorkId: null,
     deliveryId: null,
   });
+  const [jobWorkExcessEdit, setJobWorkExcessEdit] = useState(null);
+  const [jobWorkExcessEditDialogOpen, setJobWorkExcessEditDialogOpen] = useState(false);
+  const [jobWorkExcessEditForm, setJobWorkExcessEditForm] = useState({
+    weightKg: '',
+    saleRatePerKg: '',
+    deliveredBy: '',
+    note: '',
+  });
+  const [deleteJobWorkExcessConfirm, setDeleteJobWorkExcessConfirm] = useState({
+    open: false,
+    jobWorkId: null,
+    excessId: null,
+  });
   const [deleteJobWorkConfirm, setDeleteJobWorkConfirm] = useState({ open: false, id: null });
   const [jobWorkReturnDialogOpen, setJobWorkReturnDialogOpen] = useState(false);
   const [jobWorkReturnTarget, setJobWorkReturnTarget] = useState(null);
@@ -2910,6 +2923,46 @@ export default function DailyBook() {
     }
   };
 
+  const openJobWorkExcessEdit = (jobWork, excess) => {
+    setJobWorkExcessEdit({ jobWorkId: jobWork._id, excessId: excess._id });
+    setJobWorkExcessEditForm({
+      weightKg: excess.weightKg,
+      saleRatePerKg: excess.saleRatePerKg,
+      deliveredBy: excess.deliveredBy || '',
+      note: excess.note || '',
+    });
+    setJobWorkExcessEditDialogOpen(true);
+  };
+
+  const handleUpdateJobWorkExcess = async () => {
+    if (!jobWorkExcessEdit) return;
+    try {
+      const payload = { ...jobWorkExcessEditForm };
+      await jobWorkAPI.updateExcessDelivery(jobWorkExcessEdit.jobWorkId, jobWorkExcessEdit.excessId, payload);
+      setSnack({ open: true, message: 'Excess delivery updated', severity: 'success' });
+      setJobWorkExcessEditDialogOpen(false);
+      setJobWorkExcessEdit(null);
+      fetchJobWorkData();
+      fetchPartyLedger();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error updating', severity: 'error' });
+    }
+  };
+
+  const handleDeleteJobWorkExcess = async () => {
+    const { jobWorkId, excessId } = deleteJobWorkExcessConfirm;
+    if (!jobWorkId || !excessId) return;
+    try {
+      await jobWorkAPI.deleteExcessDelivery(jobWorkId, excessId);
+      setSnack({ open: true, message: 'Excess delivery deleted', severity: 'success' });
+      setDeleteJobWorkExcessConfirm({ open: false, jobWorkId: null, excessId: null });
+      fetchJobWorkData();
+      fetchPartyLedger();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error deleting', severity: 'error' });
+    }
+  };
+
   const handleDeleteJobWork = async () => {
     if (!deleteJobWorkConfirm.id) return;
     try {
@@ -4433,7 +4486,22 @@ export default function DailyBook() {
                               <TableCell align="right" sx={{ fontSize: '0.85rem', color: 'error.main', fontWeight: 600 }}>
                                 {formatCurrency(exc.totalSaleAmount || 0)}
                               </TableCell>
-                              <TableCell colSpan={2} />
+                              <TableCell colSpan={2} align="right">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={requireAdmin(() => openJobWorkExcessEdit(row, exc))}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={requireAdmin(() => setDeleteJobWorkExcessConfirm({ open: true, jobWorkId: row._id, excessId: exc._id }))}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </>
@@ -7190,6 +7258,66 @@ export default function DailyBook() {
         open={reportDialogOpen}
         onClose={() => setReportDialogOpen(false)}
         defaultDate={entryDate}
+      />
+
+      {/* Job Work Excess Delivery Edit Dialog */}
+      <ResponsiveDialog
+        open={jobWorkExcessEditDialogOpen}
+        onClose={() => setJobWorkExcessEditDialogOpen(false)}
+        title="Edit Excess Delivery"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Weight (kg) *"
+              type="number"
+              value={jobWorkExcessEditForm.weightKg}
+              onChange={(e) => setJobWorkExcessEditForm({ ...jobWorkExcessEditForm, weightKg: e.target.value })}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Sale Rate (Rs/kg) *"
+              type="number"
+              value={jobWorkExcessEditForm.saleRatePerKg}
+              onChange={(e) => setJobWorkExcessEditForm({ ...jobWorkExcessEditForm, saleRatePerKg: e.target.value })}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Delivered By"
+              value={jobWorkExcessEditForm.deliveredBy}
+              onChange={(e) => setJobWorkExcessEditForm({ ...jobWorkExcessEditForm, deliveredBy: e.target.value })}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Note"
+              value={jobWorkExcessEditForm.note}
+              onChange={(e) => setJobWorkExcessEditForm({ ...jobWorkExcessEditForm, note: e.target.value })}
+              fullWidth
+              size="small"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setJobWorkExcessEditDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="primary" onClick={handleUpdateJobWorkExcess}>
+            Update
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      <ConfirmDialog
+        open={deleteJobWorkExcessConfirm.open}
+        title="Delete Excess Delivery"
+        message="Are you sure you want to delete this excess delivery? This will revert the customer's balance and Raw Material stock (if applicable)."
+        onConfirm={handleDeleteJobWorkExcess}
+        onCancel={() => setDeleteJobWorkExcessConfirm({ open: false, jobWorkId: null, excessId: null })}
+        confirmText="Delete"
+        confirmColor="error"
       />
 
       <Snackbar open={snack.open} autoHideDuration={6000} onClose={() => setSnack((p) => ({ ...p, open: false }))}>

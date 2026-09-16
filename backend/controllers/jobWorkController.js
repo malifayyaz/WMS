@@ -907,6 +907,100 @@ const previewExcessDelivery = async (req, res, next) => {
   }
 };
 
+const updateExcessDelivery = async (req, res, next) => {
+  try {
+    const doc = await JobWork.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: 'Job work not found' });
+    const excess = doc.excessDeliveries.id(req.params.excessId);
+    if (!excess) return res.status(404).json({ success: false, message: 'Excess delivery not found' });
+
+    const newWeight = Number(req.body.weightKg);
+    const newSaleRate = Number(req.body.saleRatePerKg);
+    if (!newWeight || newWeight <= 0) return res.status(400).json({ success: false, message: 'Valid weight required' });
+    if (!newSaleRate || newSaleRate <= 0) return res.status(400).json({ success: false, message: 'Valid sale rate required' });
+
+    const oldWeight = excess.weightKg;
+    const oldSaleAmount = excess.totalSaleAmount;
+    
+    const weightDiff = newWeight - oldWeight;
+    
+    if (excess.rawMaterialDeducted && excess.rawMaterialLotId) {
+      const RawMaterial = require('../models/RawMaterial');
+      const rm = await RawMaterial.findById(excess.rawMaterialLotId);
+      if (rm) {
+        if (rm.currentStock - weightDiff < 0) {
+          return res.status(400).json({ success: false, message: 'Not enough raw material stock to increase this excess delivery' });
+        }
+        rm.currentStock -= weightDiff;
+        await rm.save();
+      }
+    }
+
+    const newSaleAmount = Math.round(newWeight * newSaleRate * 100) / 100;
+    const amountDiff = newSaleAmount - oldSaleAmount;
+
+    excess.weightKg = newWeight;
+    excess.saleRatePerKg = newSaleRate;
+    excess.totalSaleAmount = newSaleAmount;
+    excess.profitPerKg = Math.round((newSaleRate - (excess.rawMaterialRatePerKg || 0)) * 100) / 100;
+    excess.totalProfit = Math.round(excess.profitPerKg * newWeight * 100) / 100;
+    
+    if (req.body.deliveredBy !== undefined) excess.deliveredBy = req.body.deliveredBy;
+    if (req.body.note !== undefined) excess.note = req.body.note;
+
+    await doc.save();
+
+    const Customer = require('../models/Customer');
+    const customer = await Customer.findById(doc.customerId);
+    if (customer) {
+      customer.totalAmountDue = (customer.totalAmountDue || 0) + amountDiff;
+      customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + amountDiff;
+      await customer.save();
+    }
+    await recalcCustomerTotals(doc.customerId);
+
+    res.json({ success: true, message: 'Excess delivery updated' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteExcessDelivery = async (req, res, next) => {
+  try {
+    const doc = await JobWork.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: 'Job work not found' });
+    const excess = doc.excessDeliveries.id(req.params.excessId);
+    if (!excess) return res.status(404).json({ success: false, message: 'Excess delivery not found' });
+
+    if (excess.rawMaterialDeducted && excess.rawMaterialLotId) {
+      const RawMaterial = require('../models/RawMaterial');
+      const rm = await RawMaterial.findById(excess.rawMaterialLotId);
+      if (rm) {
+        rm.currentStock += excess.weightKg;
+        await rm.save();
+      }
+    }
+
+    const amountDiff = -excess.totalSaleAmount;
+    
+    excess.deleteOne();
+    await doc.save();
+
+    const Customer = require('../models/Customer');
+    const customer = await Customer.findById(doc.customerId);
+    if (customer) {
+      customer.totalAmountDue = (customer.totalAmountDue || 0) + amountDiff;
+      customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + amountDiff;
+      await customer.save();
+    }
+    await recalcCustomerTotals(doc.customerId);
+
+    res.json({ success: true, message: 'Excess delivery deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createJobWork,
   getJobWorks,
@@ -920,4 +1014,6 @@ module.exports = {
   getJobWorkStock,
   addReturn,
   previewExcessDelivery,
+  updateExcessDelivery,
+  deleteExcessDelivery,
 };
