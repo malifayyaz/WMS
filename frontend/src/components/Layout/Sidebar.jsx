@@ -29,6 +29,7 @@ import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import SavingsIcon from '@mui/icons-material/Savings';
 import LockResetIcon from '@mui/icons-material/LockReset';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const drawerWidth = 260;
@@ -86,6 +87,7 @@ const settingsGroup = {
   title: 'Settings',
   items: [
     { label: 'User Management', path: '/users', icon: <ManageAccountsIcon /> },
+    { label: 'System Settings', path: '/settings', icon: <SettingsIcon />, adminOnly: false },
     { label: 'Security & Logs', path: '/security', icon: <SecurityIcon />, adminOnly: true },
     {
       label: 'Period Close',

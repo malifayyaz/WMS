@@ -7,165 +7,308 @@ const ReadyStock = require('../models/ReadyStock');
 const JobWork = require('../models/JobWork');
 const Transaction = require('../models/Transaction');
 const PersonalPayment = require('../models/PersonalPayment');
-const { getCashBookForDate } = require('../utils/cashBookService');
-const { buildAccountSummaries } = require('../utils/bankBalanceService');
+const Order = require('../models/Order');
 const { buildProfitReport } = require('../utils/profitReportService');
 
-/**
- * GET /api/balance-sheet
- * Generates comprehensive Balance Sheet (Assets, Liabilities, Net Worth / Equity)
- */
+function getOrderWeight(order) {
+  if (order.finalWeightKg > 0) return order.finalWeightKg;
+  if (order.initialWeightKg > 0) return order.initialWeightKg;
+  return 0;
+}
+
 exports.getBalanceSheet = async (req, res, next) => {
   try {
     const { date, startDate, endDate } = req.query;
-
-    const asOfDate = date ? new Date(date) : new Date();
+    const asOfDate = date ? endOfDay(new Date(date)) : new Date();
 
     // 1. ASSETS
-
-    // 1a. Cash in Hand
+    // 1a & 1b. Cash and Bank Balances
+    const transactions = await Transaction.find({ transactionDate: { $lte: asOfDate } }).lean();
+    
     let cashInHand = 0;
-    try {
-      const cashBook = await getCashBookForDate(asOfDate);
-      cashInHand = cashBook?.closingBalance || 0;
-    } catch {
-      cashInHand = 0;
-    }
-
-    // 1b. Bank Balances
-    let bankAccounts = [];
     let totalBankBalance = 0;
-    try {
-      bankAccounts = await buildAccountSummaries();
-      totalBankBalance = bankAccounts.reduce((sum, a) => sum + (a.balance || 0), 0);
-    } catch {
-      bankAccounts = [];
-      totalBankBalance = 0;
-    }
+    let bankAccountsObj = {};
+
+    transactions.forEach(t => {
+      const amt = Number(t.amount) || 0;
+      if (t.paymentMethod === 'Cash') {
+        if (t.transactionType === 'Money In') cashInHand += amt;
+        else cashInHand -= amt;
+      } else { // Bank Transfer or Cheque
+        const bank = t.bankAccount || 'Unknown';
+        if (!bankAccountsObj[bank]) bankAccountsObj[bank] = 0;
+        if (t.transactionType === 'Money In') {
+          totalBankBalance += amt;
+          bankAccountsObj[bank] += amt;
+        } else {
+          totalBankBalance -= amt;
+          bankAccountsObj[bank] -= amt;
+        }
+      }
+    });
+
+    const bankAccounts = Object.keys(bankAccountsObj).map(bank => ({
+      bankAccount: bank,
+      balance: bankAccountsObj[bank]
+    }));
 
     // 1c. Raw Material Stock Value
-    const rawMaterials = await RawMaterial.find({ isReturn: { $ne: true } }).lean();
+    const rawMaterials = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: false }).lean();
+    const allOrdersBefore = await Order.find({ orderDate: { $lte: asOfDate } }).lean();
+    const allReturnsToSupplierBefore = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: true }).lean();
 
-    const rawMaterialWeightKg = rawMaterials.reduce((sum, rm) => {
-      const stock = Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0;
-      return sum + (stock > 0 ? stock : 0);
-    }, 0);
+    // Same FIFO logic as Fix 1 to get exact stock kg as of date
+    let patriSold = 0;
+    let shipletSold = 0;
+    allOrdersBefore.forEach(o => {
+      const w = getOrderWeight(o);
+      const isPatri = o.coilCategory && o.coilCategory.includes('Patri');
+      if (o.isReturn) {
+        if (isPatri) patriSold -= w; else shipletSold -= w;
+      } else {
+        if (isPatri) patriSold += w; else shipletSold += w;
+      }
+    });
 
-    // Calculate average raw material rate per coil category (Patri & Shiplet)
-    const patriCoils = rawMaterials.filter(rm => rm.coilCategory === 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
-    const shipletCoils = rawMaterials.filter(rm => rm.coilCategory !== 'Patri Coil' && (Number(rm.currentStock != null ? rm.currentStock : rm.weightInKg) || 0) > 0);
-    const avgPatriRate = patriCoils.length > 0
-      ? patriCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / patriCoils.length
-      : 0;
-    const avgShipletRate = shipletCoils.length > 0
-      ? shipletCoils.reduce((sum, rm) => sum + (rm.ratePerKg || 0), 0) / shipletCoils.length
-      : 0;
+    let patriReturnedToSupplier = 0;
+    let shipletReturnedToSupplier = 0;
+    allReturnsToSupplierBefore.forEach(r => {
+      const w = Number(r.weightInKg) || 0;
+      const isPatri = r.coilCategory === 'Patri Coil';
+      if (isPatri) patriReturnedToSupplier += w; else shipletReturnedToSupplier += w;
+    });
+
+    let deductedPatri = patriSold + patriReturnedToSupplier;
+    let deductedShiplet = shipletSold + shipletReturnedToSupplier;
+
+    let rawMaterialWeightKg = 0;
+    let rawMaterialValue = 0;
     
-    // Simple average of both category rates
-    const avgRawRate = (avgPatriRate > 0 && avgShipletRate > 0)
-      ? (avgPatriRate + avgShipletRate) / 2
-      : (avgPatriRate || avgShipletRate || 270);
+    // Sort lots by purchaseDate ASC for FIFO
+    rawMaterials.sort((a, b) => new Date(a.purchaseDate) - new Date(b.purchaseDate));
 
-    // Value raw material stock at the global average raw material rate
-    const rawMaterialValue = Math.round(rawMaterialWeightKg * avgRawRate);
+    rawMaterials.forEach(lot => {
+      const isPatri = lot.coilCategory === 'Patri Coil';
+      let lotWeight = Number(lot.weightInKg) || 0;
+      let deductedSoFar = isPatri ? deductedPatri : deductedShiplet;
+      
+      let lotRemaining = lotWeight;
+      if (deductedSoFar >= lotWeight) {
+        lotRemaining = 0;
+        deductedSoFar -= lotWeight;
+      } else if (deductedSoFar > 0) {
+        lotRemaining = lotWeight - deductedSoFar;
+        deductedSoFar = 0;
+      }
+      
+      if (isPatri) deductedPatri = deductedSoFar;
+      else deductedShiplet = deductedSoFar;
+
+      if (lotRemaining > 0) {
+        rawMaterialWeightKg += lotRemaining;
+        rawMaterialValue += (lotRemaining * (lot.ratePerKg || 0));
+      }
+    });
+
+    const avgRawRate = rawMaterialWeightKg > 0 ? (rawMaterialValue / rawMaterialWeightKg) : 0;
 
     // 1d. Ready Stock Value
-    const readyStockItems = await ReadyStock.find().lean();
-    const totalReadyStockKg = readyStockItems.reduce((sum, s) => sum + (s.weightKg || 0), 0);
+    const readyStockItems = await ReadyStock.find({ productionDate: { $lte: asOfDate } }).lean();
+    let totalReadyStockKg = 0;
+    let readyStockValue = 0;
+    readyStockItems.forEach(s => {
+      // Prompt requests remainingStockKg for value calculation
+      const w = Number(s.remainingStockKg != null ? s.remainingStockKg : s.weightKg) || 0;
+      totalReadyStockKg += w;
+      
+      const costPerKg = Number(s.manufacturingCostPerKg) || avgRawRate;
+      readyStockValue += (w * costPerKg);
+    });
+    readyStockValue = Math.round(readyStockValue);
 
-    // We ignore the saved s.manufacturingCostPerKg and use the live dynamic average
-    const readyStockValue = Math.round(readyStockItems.reduce((sum, s) => {
-      const weight = s.weightKg || 0;
-      return sum + (weight * avgRawRate);
-    }, 0));
+    // 1e. Annealing Stock (Coil at Bhatti)
+    const activeAnnealing = await JobWork.find({ 
+      jobType: 'Annealing', 
+      arrivalDate: { $lte: asOfDate } // Reconstruct annealing stock
+    }).lean();
+    
+    let totalAnnealingStockKg = 0;
+    activeAnnealing.forEach(jw => {
+      let pool = Number(jw.arrivedWeightKg) || 0;
+      (jw.deliveries || []).forEach(del => {
+        if (new Date(del.deliveredDate || jw.arrivalDate) <= asOfDate) pool -= (Number(del.weightKg) || 0);
+      });
+      (jw.returns || []).forEach(ret => {
+        if (new Date(ret.returnedDate || jw.arrivalDate) <= asOfDate) pool -= (Number(ret.weightKg) || 0);
+      });
+      if (pool > 0) totalAnnealingStockKg += pool;
+    });
+    const annealingStockValue = Math.round(totalAnnealingStockKg * avgRawRate);
 
-    // 1e. Receivables (Ledgers with Debit/Positive Balances for Customers, or Negative/Advances for Suppliers)
-    // Customer Accounts (Ledger)
+    // 1f. Receivables (Customers, Processing, Advances)
+    let customerReceivables = 0;
+    let customerAdvances = 0;
+    let processingReceivables = 0;
+    let processingAdvances = 0;
+
+    const customerBalances = {};
     const allCustomers = await Customer.find().lean();
-    
-    // Normal Customers
-    const ledgerCustomers = allCustomers.filter(c => c.customerType !== 'Processing');
-    const customerReceivables = ledgerCustomers.filter(c => c.totalAmountDue > 0).reduce((sum, c) => sum + c.totalAmountDue, 0);
-    const customerAdvances = ledgerCustomers.filter(c => c.totalAmountDue < 0).reduce((sum, c) => sum + Math.abs(c.totalAmountDue), 0);
+    allCustomers.forEach(c => {
+      customerBalances[c._id.toString()] = { type: c.customerType, balance: 0 };
+    });
 
-    // Processing Customers
-    const processingCustomers = allCustomers.filter(c => c.customerType === 'Processing');
-    const processingReceivables = processingCustomers.filter(c => c.totalAmountDue > 0).reduce((sum, c) => sum + c.totalAmountDue, 0);
-    const processingAdvances = processingCustomers.filter(c => c.totalAmountDue < 0).reduce((sum, c) => sum + Math.abs(c.totalAmountDue), 0);
-    
-    // Calculate Processing Customer Stock (Job Work Coil) value as an Asset
-    // Processing stock is in the JobWork model, not Customer
-    const activeJobWorks = await JobWork.find({ status: { $ne: 'Delivered' } }).lean();
-    const totalProcessingStockKg = activeJobWorks.reduce((sum, jw) => {
-      const arrived = jw.arrivedWeightKg || 0;
-      const delivered = jw.deliveredWeightKg || 0;
-      const returned = (jw.returns || []).reduce((s, r) => s + (r.weightKg || 0), 0);
-      const remaining = arrived - delivered - returned;
-      return sum + (remaining > 0 ? remaining : 0);
-    }, 0);
+    allOrdersBefore.forEach(o => {
+      if (o.customerId) {
+        const cid = o.customerId.toString();
+        if (!customerBalances[cid]) customerBalances[cid] = { type: 'Ledger', balance: 0 };
+        if (!o.isReturn) {
+          customerBalances[cid].balance += (Number(o.totalAmount) || 0);
+        } else {
+          customerBalances[cid].balance -= (Number(o.totalAmount) || 0);
+        }
+      }
+    });
+
+    const allJobWorks = await JobWork.find({ arrivalDate: { $lte: asOfDate } }).lean();
+    allJobWorks.forEach(jw => {
+      if (jw.customerId) {
+        const cid = jw.customerId.toString();
+        if (!customerBalances[cid]) customerBalances[cid] = { type: 'Processing', balance: 0 };
+        (jw.deliveries || []).forEach(del => {
+          const dDate = del.deliveredDate || jw.arrivalDate;
+          if (new Date(dDate) <= asOfDate) {
+            customerBalances[cid].balance += (Number(del.labourAmount) || 0);
+          }
+        });
+        (jw.excessDeliveries || []).forEach(exc => {
+          const eDate = exc.deliveryDate || jw.arrivalDate;
+          if (new Date(eDate) <= asOfDate) {
+            customerBalances[cid].balance += (Number(exc.totalSaleAmount) || 0);
+          }
+        });
+      }
+    });
+
+    transactions.forEach(t => {
+      if (t.relatedTo === 'Customer' && t.relatedId) {
+        const cid = t.relatedId.toString();
+        if (!customerBalances[cid]) customerBalances[cid] = { type: 'Ledger', balance: 0 };
+        if (t.transactionType === 'Money In') {
+          customerBalances[cid].balance -= (Number(t.amount) || 0);
+        } else if (t.transactionType === 'Money Out') {
+          customerBalances[cid].balance += (Number(t.amount) || 0);
+        }
+      }
+    });
+
+    let customerCount = 0;
+    let processingCount = 0;
+
+    Object.values(customerBalances).forEach(c => {
+      if (c.type === 'Processing') {
+        if (c.balance > 0) { processingReceivables += c.balance; processingCount++; }
+        else if (c.balance < 0) processingAdvances += Math.abs(c.balance);
+      } else {
+        if (c.balance > 0) { customerReceivables += c.balance; customerCount++; }
+        else if (c.balance < 0) customerAdvances += Math.abs(c.balance);
+      }
+    });
+
+    // Processing Stock Value
+    let totalProcessingStockKg = 0;
+    allJobWorks.forEach(jw => {
+      let pool = Number(jw.arrivedWeightKg) || 0;
+      (jw.deliveries || []).forEach(del => {
+        if (new Date(del.deliveredDate || jw.arrivalDate) <= asOfDate) pool -= (Number(del.weightKg) || 0);
+      });
+      (jw.returns || []).forEach(ret => {
+        if (new Date(ret.returnedDate || jw.arrivalDate) <= asOfDate) pool -= (Number(ret.weightKg) || 0);
+      });
+      (jw.excessDeliveries || []).forEach(exc => {
+        if (new Date(exc.deliveryDate || jw.arrivalDate) <= asOfDate) pool -= (Number(exc.excessWeightKg) || 0);
+      });
+      if (pool > 0) totalProcessingStockKg += pool;
+    });
     const processingStockValue = Math.round(totalProcessingStockKg * avgRawRate);
 
-    // Supplier Advances (Debit Balances)
+    // 2. LIABILITIES
+    let supplierPayables = 0;
+    let supplierAdvances = 0;
+    const supplierBalances = {};
     const allSuppliers = await Supplier.find().lean();
-    const supplierAdvances = allSuppliers.filter(s => s.totalAmountDue < 0).reduce((sum, s) => sum + Math.abs(s.totalAmountDue), 0);
+    allSuppliers.forEach(s => {
+      supplierBalances[s._id.toString()] = 0;
+    });
 
-    // Annealing Person Advances (Debit Balances)
+    rawMaterials.forEach(rm => {
+      if (rm.supplierId) {
+        const sid = rm.supplierId.toString();
+        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        supplierBalances[sid] += (Number(rm.totalAmount) || 0);
+      }
+    });
+    allReturnsToSupplierBefore.forEach(rm => {
+      if (rm.supplierId) {
+        const sid = rm.supplierId.toString();
+        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        supplierBalances[sid] -= (Number(rm.totalAmount) || 0);
+      }
+    });
+
+    transactions.forEach(t => {
+      if (t.relatedTo === 'Supplier' && t.relatedId) {
+        const sid = t.relatedId.toString();
+        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        if (t.transactionType === 'Money Out') {
+          supplierBalances[sid] -= (Number(t.amount) || 0);
+        } else if (t.transactionType === 'Money In') {
+          supplierBalances[sid] += (Number(t.amount) || 0);
+        }
+      }
+    });
+
+    let supplierCount = 0;
+    Object.values(supplierBalances).forEach(bal => {
+      if (bal > 0) { supplierPayables += bal; supplierCount++; }
+      else if (bal < 0) supplierAdvances += Math.abs(bal);
+    });
+
+    let annealingPayables = 0;
+    let annealingAdvances = 0;
     const allAnnealers = await AnnealingPerson.find().lean();
-    const annealingAdvances = allAnnealers.filter(a => a.totalAmountDue < 0).reduce((sum, a) => sum + Math.abs(a.totalAmountDue), 0);
+    let annealingCount = 0;
+    allAnnealers.forEach(a => {
+      if (a.totalAmountDue > 0) { annealingPayables += a.totalAmountDue; annealingCount++; }
+      else if (a.totalAmountDue < 0) annealingAdvances += Math.abs(a.totalAmountDue);
+    });
 
-    // Personal Receivables (Committees, Savings, Loans Given)
     let personalReceivables = 0;
-    let personalReceivableItems = [];
-    try {
-      personalReceivableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: { $ne: 'Payable' } }).lean();
-      personalReceivables = personalReceivableItems.reduce((sum, p) => sum + (p.expectedLumpSum || 0), 0);
-    } catch {
-      personalReceivables = 0;
-    }
+    let personalPayables = 0;
+    const personalReceivableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: { $ne: 'Payable' }, createdAt: { $lte: asOfDate } }).lean();
+    const personalPayableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: 'Payable', createdAt: { $lte: asOfDate } }).lean();
+    
+    personalReceivables = personalReceivableItems.reduce((sum, p) => sum + (p.expectedLumpSum || 0), 0);
+    personalPayables = personalPayableItems.reduce((sum, p) => sum + (p.remainingToContribute || p.expectedLumpSum || 0), 0);
 
     const totalLiquidAssets = cashInHand + totalBankBalance;
     const totalReceivables = customerReceivables + processingReceivables + personalReceivables + supplierAdvances + annealingAdvances;
-    const totalInventoryValue = rawMaterialValue + readyStockValue + processingStockValue;
+    const totalInventoryValue = rawMaterialValue + readyStockValue + processingStockValue + annealingStockValue;
     const totalAssets = totalLiquidAssets + totalReceivables + totalInventoryValue;
 
-    // 2. LIABILITIES
-
-    // 2a. Payables (Ledgers with Credit/Positive Balances for Suppliers/Annealers, or Negative/Advances for Customers)
-    const supplierPayables = allSuppliers.filter(s => s.totalAmountDue > 0).reduce((sum, s) => sum + s.totalAmountDue, 0);
-    const annealingPayables = allAnnealers.filter(a => a.totalAmountDue > 0).reduce((sum, a) => sum + a.totalAmountDue, 0);
-    const customerPayables = customerAdvances + processingAdvances; // Advances received from customers are our liabilities
-
-    // 2b. Raw Material Lot Dues (informational breakdown)
-    const rawMaterialLotsWithDue = await RawMaterial.find({ amountDue: { $gt: 0 } }).lean();
-    const rawMaterialDues = rawMaterialLotsWithDue.reduce((sum, rm) => sum + (rm.amountDue || 0), 0);
-
-    // 2c. Personal Payables (Loans Taken)
-    let personalPayables = 0;
-    let personalPayableItems = [];
-    try {
-      personalPayableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: 'Payable' }).lean();
-      personalPayables = personalPayableItems.reduce((sum, p) => sum + (p.remainingToContribute || p.expectedLumpSum || 0), 0);
-    } catch {
-      personalPayables = 0;
-    }
-
+    const customerPayables = customerAdvances + processingAdvances;
+    const rawMaterialDues = 0;
     const totalLiabilities = supplierPayables + annealingPayables + customerPayables + personalPayables;
 
     // 3. EQUITY / NET POSITION
     let cumulativeProfit = 0;
     try {
-      const profitReport = await buildProfitReport(
-        startDate || null,
-        endDate || asOfDate.toISOString().slice(0, 10),
-        'combined'
-      );
-      cumulativeProfit = profitReport?.data?.netProfit || 0;
+      const profitReport = await buildProfitReport({ startDate: null, endDate: asOfDate });
+      cumulativeProfit = profitReport?.combined?.finalNetProfit || 0;
     } catch {
       cumulativeProfit = 0;
     }
 
-    // Self Expenses Total
-    const selfExpenseTxns = await Transaction.find({ expenseGroup: 'Self Expense' }).lean();
+    const selfExpenseTxns = transactions.filter(t => t.expenseGroup === 'Self Expense');
     const totalSelfExpenses = selfExpenseTxns.reduce((sum, t) => sum + (t.amount || 0), 0);
 
     const netWorth = totalAssets - totalLiabilities;
@@ -180,9 +323,9 @@ exports.getBalanceSheet = async (req, res, next) => {
           bankAccounts,
           totalLiquidAssets,
           customerReceivables,
-          customerCount: ledgerCustomers.filter(c => c.totalAmountDue > 0).length,
+          customerCount,
           processingReceivables,
-          processingCount: processingCustomers.filter(c => c.totalAmountDue > 0).length,
+          processingCount,
           supplierAdvances,
           annealingAdvances,
           personalReceivables,
@@ -194,15 +337,17 @@ exports.getBalanceSheet = async (req, res, next) => {
           totalReadyStockKg,
           processingStockValue,
           totalProcessingStockKg,
+          annealingStockValue,
+          totalAnnealingStockKg,
           avgRawRate: Math.round(avgRawRate * 100) / 100,
           totalInventoryValue,
           totalAssets,
         },
         liabilities: {
           supplierPayables,
-          supplierCount: allSuppliers.filter(s => s.totalAmountDue > 0).length,
+          supplierCount,
           annealingPayables,
-          annealingCount: allAnnealers.filter(a => a.totalAmountDue > 0).length,
+          annealingCount,
           customerPayables,
           rawMaterialDues,
           personalPayables,

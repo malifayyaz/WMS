@@ -1,0 +1,469 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WMS User Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px; }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+        h2 { border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
+        blockquote { border-left: 4px solid #3498db; background: #f9f9f9; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
+        @media print {
+            body { padding: 0; }
+            blockquote { page-break-inside: avoid; }
+            h2, h3 { page-break-after: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Wire Manufacturing Management System - User Guide</h1>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 1 — GETTING STARTED</h2>
+<p>─────────────────────────────────────────────</p>
+<h3>1.1 What is this software?</h3>
+<p>This software is a complete management system built specifically for your wire manufacturing factory. It replaces paper ledgers (khatas) and helps you track everything in one place. Instead of checking different notebooks for cash, stock, customer balances, and worker payments, you can find all that information here instantly.</p>
+<p>The system tracks your raw materials (like coil) when they arrive, follows them through the manufacturing process (like heating in the bhatti), and records the final wire sales. It automatically calculates how much money customers owe you, how much you owe suppliers, and gives you a clear picture of your factory&#39;s daily cash and bank balances. </p>
+<h3>1.2 How to open the software</h3>
+<ol>
+<li><strong>Accessing the system:</strong> Open your web browser (like Google Chrome) and enter the web address provided for your system.</li>
+<li><strong>Logging in:</strong> You will see a login screen. Enter your assigned Username and Password, then click the &quot;Login&quot; button.</li>
+<li><strong>Wrong password:</strong> If you enter the wrong password, an error message will appear. Check your typing and try again.</li>
+<li><strong>Too many attempts:</strong> For security, if you enter the wrong password 5 times in a row, your account will be temporarily locked to prevent unauthorized access.</li>
+<li><strong>Forgot password:</strong> If you forget your password or get locked out, you must contact the system Administrator. The Administrator can reset your password from their account.</li>
+</ol>
+<h3>1.3 Understanding the screen layout</h3>
+<p>Once you log in, the screen is divided into a few simple areas:</p>
+<ul>
+<li><strong>The sidebar menu (Left side):</strong> This is your main control panel. It lists all the different sections of the software (like Daily Book, Customers, Orders). Click on any name to go to that section.</li>
+<li><strong>The top navigation bar:</strong> This bar sits at the top of the screen. It shows the name of the section you are currently in. It also has a button to open the AI Assistant (chat) and a button to log out when you are done.</li>
+<li><strong>The main content area (Center/Right):</strong> This is the large space where all the information appears. When you click &quot;Customers&quot; on the left, the list of customers will appear here. This is where you will do all your reading and typing.</li>
+<li><strong>Navigating:</strong> To move between sections, simply click the name of the section you want in the left sidebar. You do not need to use the browser&#39;s &quot;Back&quot; button.</li>
+</ul>
+<h3>1.4 User types and what each can do</h3>
+<p>There are two types of accounts in this system: <strong>Admin</strong> and <strong>Viewer</strong>.</p>
+<ul>
+<li><strong>Admin (Owner/Manager):</strong> An Admin has full control. They can add new entries, edit mistakes, delete records, add new users, and perform the Period Close. They can see all financial reports and profits.</li>
+<li><strong>Viewer (Worker/Staff):</strong> A Viewer can only <em>look</em> at information. They cannot add, edit, or delete anything. They might also be restricted from seeing sensitive financial reports like the total business profit.</li>
+<li><strong>Why this difference exists:</strong> This protects your business. You can give a Viewer account to staff so they can check stock levels or customer orders, without worrying that they might accidentally delete important financial records or see your total profits.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 2 — DAILY BOOK</h2>
+<p>─────────────────────────────────────────────</p>
+<p>The Daily Book is the heart of the system. Think of the Daily Book like your paper khata (account book) but on the computer. This is where you record all money coming in and money going out every single day.</p>
+<h3>How the Daily Book Controls Everything</h3>
+<p>The Daily Book is not just a simple list of numbers. It is the &quot;control center&quot; that automatically updates almost every other part of the system. </p>
+<ul>
+<li><strong>Customer Balances:</strong> When you record a receipt from a customer here, their running balance (khata) is instantly reduced across the whole system. You don&#39;t need to update their account separately.</li>
+<li><strong>Supplier Dues:</strong> When you record a payment to a supplier here, the amount you owe them drops immediately. </li>
+<li><strong>Bank Accounts:</strong> If you record a bank transfer here, the system automatically adjusts your Bank Account balance as well.</li>
+<li><strong>Worker Advances:</strong> Recording a payment to a worker here will update their ledger instantly.</li>
+<li><strong>Profit and Loss:</strong> All your business expenses entered here are automatically sent to the Profit and Loss report, ensuring your profit calculations are always 100% accurate.</li>
+</ul>
+<p>Because everything is linked, a single entry in the Daily Book does the work of five manual entries, saving you time and preventing counting errors.</p>
+<h3>The Summary Cards</h3>
+<p>At the top of the Daily Book, you will see summary cards with large numbers. These show your totals for the selected day:</p>
+<ul>
+<li>Total cash received today.</li>
+<li>Total cash spent today.</li>
+<li>The Opening Balance (cash you had at the start of the day).</li>
+<li>The Closing Balance (cash you have left at the end of the day).</li>
+</ul>
+<h3>Date Navigation</h3>
+<p>By default, the Daily Book shows today&#39;s date. If you want to see a previous day or add an entry for yesterday, use the date picker at the top left to select a different date. The summary cards and lists will update automatically.</p>
+<h3>Recording Money Coming In (Receipts)</h3>
+<p>This tab is for recording any money you receive.</p>
+<ul>
+<li><strong>How to add:</strong> Click the &quot;Add Receipt&quot; button. Select who gave you the money (Customer, Bank, etc.), enter the amount, and type a short description (like &quot;Payment for Order 12&quot;).</li>
+<li><strong>Cash vs Bank:</strong> You must select if the money was received in Cash (in your hand/drawer) or transferred directly to your Bank Account.</li>
+</ul>
+<h3>Recording Money Going Out (Payments)</h3>
+<p>This tab is for recording any money you spend or pay to others.</p>
+<ul>
+<li><strong>How to add:</strong> Click the &quot;Add Payment&quot; button. Select who you paid (Supplier, Worker, Expense), enter the amount, and a description.</li>
+<li><strong>Cash vs Bank:</strong> Just like receipts, select if you paid from your cash drawer or via bank transfer.</li>
+</ul>
+<h3>Cheque Handling</h3>
+<p>If someone pays you with a cheque, or you pay someone with a cheque, you use the Cheques tab.</p>
+<ul>
+<li><strong>Recording a cheque:</strong> Enter the cheque number, bank name, date, and amount.</li>
+<li><strong>Clearing:</strong> When the money actually moves in or out of your bank, you mark the cheque as &quot;Cleared&quot;.</li>
+<li><strong>Bounced/Returned:</strong> If a cheque is returned by the bank, you mark it as &quot;Returned&quot;. The system will automatically reverse the payment and adjust the customer&#39;s balance back to what it was.</li>
+</ul>
+<h3>Self Expenses (Fayyaz and Faisal)</h3>
+<p>The owners (Fayyaz and Faisal) have their own specific expense categories. When taking money out of the business for personal use, record it under the specific owner&#39;s name. This keeps personal drawings separate from factory running costs.</p>
+<h3>Opening and Closing Balances</h3>
+<ul>
+<li><strong>Opening Balance:</strong> The amount of cash you started the day with. (This is automatically yesterday&#39;s closing balance).</li>
+<li><strong>Closing Balance:</strong> Your Opening Balance + All Cash Received Today - All Cash Spent Today. This number should exactly match the physical cash in your drawer at the end of the day.</li>
+</ul>
+<h3>Editing, Deleting, and Saving</h3>
+<ul>
+<li><strong>Edit:</strong> If you make a mistake, click the small pencil icon next to the entry to fix it.</li>
+<li><strong>Delete:</strong> Click the red trash can icon to remove an entry completely.</li>
+<li><strong>Saving:</strong> When you add or edit an entry and click Save, the system instantly updates the Daily Book, the customer/supplier balances, and your total cash.</li>
+</ul>
+<h3>Printing the Summary</h3>
+<p>Click the &quot;Print&quot; button at the top to print a neat summary of the day&#39;s transactions for your physical records.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>The Daily Book tracks all daily money movements.</li>
+<li>Always double-check if a payment is &quot;Cash&quot; or &quot;Bank&quot;.</li>
+<li>Your Closing Balance on screen should match your actual physical cash.</li>
+<li>Bounced cheques can be marked &quot;Returned&quot; to automatically fix balances.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 3 — CUSTOMERS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section manages all the people or businesses you sell wire to.</p>
+<h3>Adding a New Customer</h3>
+<p>Click &quot;Add Customer&quot;. You must provide their Name. Phone number and address are optional but recommended. </p>
+<h3>Types of Customers</h3>
+<p>When adding a customer, you choose their type:</p>
+<ul>
+<li><strong>Regular Customer:</strong> Buys your finished wire normally.</li>
+<li><strong>Processing Customer (Job Work):</strong> A customer who brings their own raw material to you. You process it (heat it, draw it) and give it back, charging them only for the labor/processing.</li>
+</ul>
+<h3>Viewing Customer History and Ledgers</h3>
+<p>Click on any customer&#39;s name to open their Ledger. The ledger shows their entire history with you in chronological order: what they bought, what they paid, and their running balance (baaki raqam).</p>
+<h3>Recording Payments and Viewing Dues</h3>
+<ul>
+<li><strong>How much they owe:</strong> The main customer list shows exactly how much each person currently owes you.</li>
+<li><strong>Recording payment:</strong> You can record a payment directly from the customer&#39;s profile, or from the Daily Book. Both do the same thing and update the ledger instantly.</li>
+</ul>
+<h3>Searching and Editing</h3>
+<ul>
+<li>Use the search bar at the top to quickly find a customer by name.</li>
+<li>Click &quot;Edit&quot; next to a customer to update their phone number or address.</li>
+</ul>
+<h3>Linked Accounts (Customer is also a Supplier)</h3>
+<p>Sometimes a person buys wire from you (Customer) but also sells you raw materials (Supplier). In the system, you can link their Customer account and Supplier account together. This allows you to see their combined &quot;Net Balance&quot; — combining what they owe you and what you owe them into one final number.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Add customers as either Regular or Processing.</li>
+<li>Click a customer&#39;s name to see their full transaction history (Ledger).</li>
+<li>You can link a customer and supplier account if they are the same person.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 4 — SUPPLIERS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section manages the people or businesses you buy raw materials (coil) from.</p>
+<h3>Adding and Managing Suppliers</h3>
+<p>Click &quot;Add Supplier&quot; to create a new record. Just like customers, you can view their full history (Ledger) by clicking their name. </p>
+<h3>Recording Purchases and Payments</h3>
+<ul>
+<li><strong>Purchases:</strong> When you buy coil, you record the purchase. This adds the coil to your stock and increases the amount you owe the supplier.</li>
+<li><strong>Payments:</strong> When you pay the supplier, you record the payment. This decreases the amount you owe them.</li>
+</ul>
+<h3>Linked Accounts</h3>
+<p>Just like in the Customers section, if a supplier also buys finished wire from you, their accounts can be linked so you can settle the final balance easily.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Suppliers are who you buy raw materials from.</li>
+<li>Every purchase increases your payable balance to them.</li>
+<li>View their ledger to see a full history of all purchases and payments.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 5 — RAW MATERIALS AND STOCK</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section tracks the raw coil you use to make wire.</p>
+<h3>The Two Types of Coil</h3>
+<ol>
+<li><strong>Shiplet:</strong> A specific grade/type of raw coil used in the factory.</li>
+<li><strong>Patri:</strong> Another grade/type of raw coil used.
+<em>(Select the correct one when receiving stock based on what the supplier delivered).</em></li>
+</ol>
+<h3>Recording Arriving Coil</h3>
+<p>When a truck arrives with coil:</p>
+<ol>
+<li>Go to Raw Materials.</li>
+<li>Click &quot;Receive Stock&quot;.</li>
+<li>Select the Supplier, the type of coil (Shiplet or Patri), the weight in kg, and the price per kg.</li>
+<li><strong>Payment:</strong> The system will calculate the total cost and add it to the supplier&#39;s balance.</li>
+</ol>
+<h3>Direct to Annealing (Bhatti)</h3>
+<p>Often, coil arrives and is immediately sent to the bhatti (furnace) for heating, without ever sitting in the storeroom. When receiving stock, you can check a box that says &quot;Send directly to Annealing&quot;. This saves you from having to do two separate steps in the software.</p>
+<h3>Tracking Stock and Low Alerts</h3>
+<ul>
+<li><strong>Current Stock:</strong> The main screen shows exactly how many kilograms of Shiplet and Patri you currently have in the factory.</li>
+<li><strong>Automatic Tracking:</strong> As you manufacture wire, the system automatically subtracts raw material from your stock.</li>
+<li><strong>Low Stock Alerts:</strong> If your stock drops below a certain level, the system will show a warning alert, letting you know it is time to order more.</li>
+</ul>
+<h3>Returning Coil</h3>
+<p>If coil is defective, you can click &quot;Return Stock&quot;, select the supplier, and enter the weight. The system will remove the stock from your inventory and reduce the amount you owe the supplier.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Track Shiplet and Patri stock separately.</li>
+<li>Send coil straight to the bhatti when receiving it to save time.</li>
+<li>Watch out for low stock alerts so production doesn&#39;t stop.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 6 — ORDERS AND WIRE SALES</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section manages the creation and sale of finished wire to your customers.</p>
+<h3>Creating a New Order</h3>
+<ol>
+<li>Click &quot;New Order&quot;.</li>
+<li>Select the Customer.</li>
+<li>Select the <strong>Wire Number</strong> (this is the gauge or thickness of the wire the customer wants).</li>
+<li>Enter the required weight and the agreed price.</li>
+</ol>
+<h3>The Three Stages of an Order</h3>
+<p>Every order goes through three stages:</p>
+<ol>
+<li><strong>Outer:</strong> The order is just placed. It has not been sent for heating yet.</li>
+<li><strong>In Process:</strong> The raw wire has been sent to the bhatti (furnace) for annealing.</li>
+<li><strong>Done:</strong> The wire is fully processed, ready, and billed to the customer.</li>
+</ol>
+<h3>Updating Weight After Heating (Important!)</h3>
+<p>When wire is heated in the bhatti, it loses a small amount of weight (burning loss). 
+When an order moves from &quot;In Process&quot; to &quot;Done&quot;, you must enter the <strong>final actual weight</strong> that came out of the bhatti. 
+Because the weight changes, the system will <strong>recalculate the final total bill</strong> based on this new weight, ensuring the customer is billed accurately for exactly what they receive.</p>
+<h3>Recording Payment and Viewing Orders</h3>
+<ul>
+<li>Payments for orders are usually recorded in the Daily Book or the Customer&#39;s profile.</li>
+<li>You can view all orders on the main Orders screen. Use the filters at the top to only see orders that are &quot;Outer&quot;, &quot;In Process&quot;, or &quot;Done&quot;.</li>
+</ul>
+<h3>Wire Returns</h3>
+<p>If a customer returns wire because of a defect, use the &quot;Return Order&quot; feature. This will take the wire back, add it to your Ready Stock (if it&#39;s still usable), and refund the customer&#39;s balance.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Orders move through three stages: Outer, In Process, and Done.</li>
+<li><strong>Always</strong> update the final weight after heating; the system will recalculate the bill automatically.</li>
+<li>Use filters to quickly see which orders are currently in the bhatti (In Process).</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 7 — ANNEALING (BHATTI)</h2>
+<p>─────────────────────────────────────────────</p>
+<p>Annealing (Bhatti) is the process of heating the wire to soften it. </p>
+<h3>Recording the Process</h3>
+<ol>
+<li><strong>Sending to Bhatti:</strong> When raw coil is ready to be heated, you create an &quot;Annealing Send&quot; record. You select which Bhatti Worker (Annealing Person) is doing the job and how much weight they are taking.</li>
+<li><strong>Coming Back:</strong> When the heating is finished, you record it coming back.</li>
+</ol>
+<h3>Weight Loss</h3>
+<p>Just like with orders, wire loses weight in the bhatti. You must enter the exact weight that is returned. The system tracks this weight loss automatically.</p>
+<h3>Deliver to Processing Customer</h3>
+<p>If the wire being heated belongs to a Processing Customer (Job Work), you can use the &quot;Deliver&quot; option right as it comes out of the bhatti to send it directly back to the customer.</p>
+<h3>Annealing Pools</h3>
+<p>The system uses &quot;Pools&quot; to track what is currently inside the bhatti. If you send 500kg to the bhatti, the pool shows 500kg. As wire comes out and is marked finished, the pool weight decreases. You can always check the pool to see exactly how much un-finished wire is currently sitting at the bhatti.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>The Bhatti process tracks wire sent for heating and wire returned.</li>
+<li>The difference in weight (burning loss) is expected and tracked.</li>
+<li>Check the &quot;Pools&quot; to see exactly what is currently at the bhatti.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 8 — PROCESSING CUSTOMERS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>Processing Customers (Job Work) are customers who provide their own raw material. You do not sell them wire; you only charge them for the labor of processing it.</p>
+<h3>How it Works</h3>
+<ol>
+<li><strong>Coil Arrives:</strong> When their truck arrives, you record a &quot;Job Work Receipt&quot;. This logs that you are holding their material, but it does <em>not</em> mix with your own factory stock.</li>
+<li><strong>Delivery:</strong> After processing the wire, you record a &quot;Delivery&quot;. The system calculates your labor charges based on the delivered weight and adds it to their balance.</li>
+</ol>
+<h3>Excess Delivery</h3>
+<p>Sometimes, due to mixing in the factory, you might deliver back 510kg to a customer who only brought 500kg of raw material. This is an <strong>Excess Delivery</strong>. 
+The system handles this simply: It will warn you that you are delivering more than they gave you. If you proceed, the extra 10kg is deducted from <em>your</em> factory&#39;s raw stock, because you essentially gave them 10kg of your own material.</p>
+<h3>Ledgers and Returns</h3>
+<ul>
+<li>The Job Work Ledger tracks exactly how much raw material you are currently holding for them.</li>
+<li>If they take back unprocessed coil, use the Return function to deduct it from the ledger.</li>
+</ul>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Job work tracks material that belongs to the customer, not you.</li>
+<li>You only charge them for labor upon delivery.</li>
+<li>If you deliver more weight than they provided (Excess), the system subtracts the difference from your own factory stock.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 9 — EXPENSES</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section tracks all money spent that is not buying raw coil.</p>
+<h3>Factory vs Self Expenses</h3>
+<ul>
+<li><strong>Factory Expenses:</strong> The costs of running the business (electricity, salaries, maintenance). This affects the factory&#39;s profit.</li>
+<li><strong>Self Expenses:</strong> Money taken out by the owners (Fayyaz and Faisal) for personal use. This does <em>not</em> affect the factory&#39;s operating profit, it is simply a withdrawal of owner funds.</li>
+</ul>
+<h3>Types of Factory Expenses</h3>
+<p>When adding an expense, choose the correct category:</p>
+<ul>
+<li><strong>Labour:</strong> Salaries, weekly payments, tea money, or advances.</li>
+<li><strong>Rental:</strong> Rent for the premises.</li>
+<li><strong>Electricity/Utility:</strong> Factory power bills.</li>
+<li><strong>Hardware/Maintenance:</strong> Machine repairs, spare parts.</li>
+<li><strong>Office:</strong> Stationery, internet.</li>
+</ul>
+<h3>Process Materials</h3>
+<p>Materials used during manufacturing (like Acid, Dye, Soap). </p>
+<ul>
+<li>When you buy these, record the purchase.</li>
+<li>The system tracks how much you have. You can record &quot;Usage&quot; when workers take soap or acid, so you know exactly what is left in the storeroom.</li>
+</ul>
+<h3>Credit Purchases (Buying on Udhaar)</h3>
+<p>If you buy hardware or acid but don&#39;t pay immediately:</p>
+<ol>
+<li>Enter the expense.</li>
+<li>Set the &quot;Paid Amount&quot; to 0 (or a partial amount).</li>
+<li>The remaining amount becomes &quot;Due&quot;.</li>
+<li>Later, when you pay the shopkeeper, go to Expenses, find the entry, and record the payment against that due amount.</li>
+</ol>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Keep Factory Expenses and Self Expenses strictly separate.</li>
+<li>Track process materials (acid, soap) usage to prevent waste.</li>
+<li>You can record expenses bought on credit (udhaar) and pay them off later.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 10 — WORKERS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section manages your factory staff&#39;s pay.</p>
+<h3>Worker Management</h3>
+<ul>
+<li>Click &quot;Add Worker&quot; to create a profile for an employee.</li>
+<li><strong>Advances:</strong> If a worker asks for money mid-week, record an &quot;Advance&quot;.</li>
+<li><strong>Salary Payment:</strong> At the end of the week, record their &quot;Salary&quot;.</li>
+</ul>
+<h3>How Advances Work</h3>
+<p>If a worker takes a 2,000 advance on Wednesday, their profile will show they owe the factory 2,000. When you pay their 10,000 salary on Saturday, the system will remind you about the advance, so you only hand them 8,000 cash.</p>
+<blockquote>
+<p><strong>QUICK SUMMARY</strong></p>
+<ul>
+<li>Record advances immediately when cash is handed out.</li>
+<li>Check a worker&#39;s ledger to see their history of advances and salaries.</li>
+</ul>
+</blockquote>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 11 — READY STOCK</h2>
+<p>─────────────────────────────────────────────</p>
+<p>Ready Stock is finished wire that you manufactured <em>without</em> a specific customer order. You made it just to keep in the storeroom to sell later.</p>
+<ul>
+<li><strong>Adding to Stock:</strong> When wire is finished but not ordered, add it to Ready Stock. Specify the wire number and weight.</li>
+<li><strong>Selling:</strong> When a customer walks in to buy, you record a sale directly from the Ready Stock list. This reduces the stock and bills the customer.</li>
+<li><strong>Statuses:</strong> An entry might be &quot;Available&quot; (sitting in the room) or &quot;Sold&quot; (gone).</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 12 — RECEIVABLES AND PAYABLES</h2>
+<p>─────────────────────────────────────────────</p>
+<p>These are summary screens to give you a bird&#39;s-eye view of your finances.</p>
+<ul>
+<li><strong>Receivables (Money owed TO you):</strong> This screen lists every Customer and Job Work client who currently owes you money. The grand total at the bottom shows how much cash is out in the market.</li>
+<li><strong>Payables (Money YOU owe):</strong> This screen lists every Supplier and unpaid Expense you owe money to.</li>
+</ul>
+<p>These screens pull data automatically from the Customers and Suppliers sections. You cannot edit numbers here; you must go to the specific customer or supplier to make changes.</p>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 13 — PERSONAL PAYMENTS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section is for personal savings or &quot;Committees&quot; (bisi). It is completely separate from factory profits and losses.</p>
+<ul>
+<li><strong>Creating a Committee:</strong> Set up a new category (e.g., &quot;Monthly Committee&quot;).</li>
+<li><strong>Contributions:</strong> Each month, record the payment you make toward it. The system keeps a running total of how much you have paid in.</li>
+<li><strong>Completion:</strong> When it is your turn to receive the lump sum, you mark the committee as &quot;Completed&quot;.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 14 — REPORTS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>Reports help you understand how the business is performing.</p>
+<ul>
+<li><strong>Profit and Loss:</strong> This is the most important report. It takes your total sales, subtracts the cost of raw materials and all factory expenses, and shows your actual net profit for the period.</li>
+<li><strong>Financial Report:</strong> A summary of cash flow.</li>
+<li><strong>Inventory Report:</strong> Shows how much stock came in and went out.</li>
+<li><strong>Date Ranges:</strong> You can change the dates at the top to see the profit for just today, last week, or the whole year.</li>
+<li><strong>Exporting:</strong> You can click the Export buttons to save any report as an Excel spreadsheet or a PDF document to share with your accountant.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 15 — BALANCE SHEET</h2>
+<p>─────────────────────────────────────────────</p>
+<p>The Balance Sheet is a snapshot of your business&#39;s financial health on any specific day. 
+Think of it like weighing your business on a scale.</p>
+<ul>
+<li><strong>Assets (What you HAVE):</strong> This includes cash in the drawer, money in the bank, the value of raw materials in the storeroom, and all the money customers owe you (Receivables).</li>
+<li><strong>Liabilities (What you OWE):</strong> This includes all the money you owe to suppliers and unpaid expenses (Payables).</li>
+<li><strong>Net Worth:</strong> Assets minus Liabilities. This is the true value of your business. If you closed the factory today, sold all stock, collected all debts, and paid off all suppliers, this is the cash you would walk away with.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 16 — AI ASSISTANT</h2>
+<p>─────────────────────────────────────────────</p>
+<p>The software includes a smart AI Assistant to help you work faster.</p>
+<ul>
+<li><strong>How to open:</strong> Click the chat icon at the top of the screen.</li>
+<li><strong>How to ask:</strong> You can type questions in English or simple Roman Urdu.<ul>
+<li><em>Example English:</em> &quot;How much does Ali Traders owe me?&quot; or &quot;Record 5000 cash payment to Supplier Usman.&quot;</li>
+<li><em>Example Urdu:</em> &quot;Ali Traders ka kitna balance baaki hai?&quot; or &quot;Aaj ka total kharcha kitna hai?&quot;</li>
+</ul>
+</li>
+<li><strong>Taking Action:</strong> The AI can actually make entries for you. If you tell it to &quot;Add a 2000 electricity expense&quot;, it will prepare the form.</li>
+<li><strong>Preview and Confirm:</strong> The AI will <strong>never</strong> save anything without your permission. It will always show you a preview box. You must click &quot;Confirm&quot; to actually save the entry.</li>
+<li><strong>Undo:</strong> If you confirm an AI action and realize it was a mistake, a quick &quot;Undo&quot; button allows you to reverse it instantly.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 17 — USER MANAGEMENT (Admin Only)</h2>
+<p>─────────────────────────────────────────────</p>
+<p>If you are an Admin, you can manage who has access to the system.</p>
+<ul>
+<li><strong>Add User:</strong> Create new logins for your staff.</li>
+<li><strong>Roles:</strong> Assign them as Admin (full power) or Viewer (read-only).</li>
+<li><strong>Reset Password:</strong> If a worker forgets their password, you can reset it for them here.</li>
+<li><strong>Deactivate:</strong> If an employee leaves the company, you can deactivate their account so they can no longer log in. </li>
+<li><em>Note:</em> You cannot delete your own Admin account.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 18 — PERIOD CLOSE AND FRESH START</h2>
+<p>─────────────────────────────────────────────</p>
+<blockquote>
+<p><strong>WARNING: This is a powerful feature. Only use this at the end of a financial year or when you want to wipe the system and start completely fresh.</strong></p>
+</blockquote>
+<h3>What it does</h3>
+<p>A Period Close archives all your old daily transactions, orders, and expenses. It wipes the slate clean, but it carries forward your important balances (like how much customers owe you, and your current stock) as new &quot;Opening Balances&quot;.</p>
+<h3>The Process</h3>
+<ol>
+<li><strong>Automatic Backup:</strong> Before it does anything, the system creates a full safety backup of the database.</li>
+<li><strong>Closing Password:</strong> You must enter the special Admin closing password to authorize this action.</li>
+<li><strong>The Wipe:</strong> Old daily data is removed to make the system run fast for the new year.</li>
+<li><strong>Opening Balances:</strong> You will be taken to a screen to confirm the starting numbers for the new period (Starting Cash, Starting Bank, Customer Dues, Supplier Dues, Stock). Ensure these numbers are perfectly accurate before saving.</li>
+</ol>
+<p>Once completed, this action <strong>cannot be undone</strong>.</p>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 19 — BANK ACCOUNTS</h2>
+<p>─────────────────────────────────────────────</p>
+<p>This section tracks money stored in your bank, separate from your factory cash drawer.</p>
+<ul>
+<li><strong>Balances:</strong> View the current balance of all your linked bank accounts.</li>
+<li><strong>Transfers:</strong> If you take cash from the factory drawer and deposit it into the bank, record a &quot;Bank Transfer&quot;.</li>
+<li><strong>Withdrawals:</strong> If you use an ATM to take cash out of the bank for the factory, record a withdrawal.</li>
+<li><strong>Bank Book:</strong> Similar to the Daily Book, this shows a history of every single transaction that went in or out of the bank account.</li>
+</ul>
+<p>─────────────────────────────────────────────</p>
+<h2>PART 20 — TIPS AND COMMON QUESTIONS</h2>
+<p>─────────────────────────────────────────────</p>
+<p><strong>What do I do if I make a wrong entry?</strong>
+Don&#39;t panic. Almost every entry in the system has a small pencil icon (Edit) or trash can icon (Delete) next to it. Just click edit, fix the number, and save. The system will automatically recalculate everything.</p>
+<p><strong>Why does my Daily Closing Balance look wrong?</strong>
+Check your Daily Book payments and receipts. Did you accidentally mark a cash payment as a &quot;Bank&quot; payment? If you told the system the money came from the bank, it won&#39;t subtract it from your cash drawer.</p>
+<p><strong>How do I find a specific transaction from months ago?</strong>
+Go to the ledger of the specific customer, supplier, or the Daily Book. Use the Date picker at the top to select the date range you are looking for.</p>
+<p><strong>The system is loading very slowly right now. What&#39;s wrong?</strong>
+If you haven&#39;t used the software for a few hours, the server (the computer hosting your software) goes to sleep to save power. When you log in, it takes about 30 to 60 seconds to &quot;wake up&quot;. Just wait a minute, refresh the page, and it will run at full speed again.</p>
+<p><strong>Who do I contact if the software breaks?</strong>
+Contact your system administrator or the developer who installed the software. Do not try to run &quot;Period Close&quot; to fix bugs.</p>
+
+</body>
+</html>

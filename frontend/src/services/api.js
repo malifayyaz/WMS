@@ -293,5 +293,8 @@ export const openingBalanceAPI = {
   delete: (id) => api.delete(`/opening-balances/${id}`),
 };
 
-
-
+// Settings
+export const settingsAPI = {
+  getSettings: () => api.get('/settings'),
+  updateSetting: (key, data) => api.put(`/settings/${key}`, data),
+};

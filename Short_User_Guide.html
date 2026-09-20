@@ -1,0 +1,83 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WMS Quick Reference Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px; }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+        h2 { border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
+        blockquote { border-left: 4px solid #3498db; background: #f9f9f9; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
+        ul { margin-bottom: 20px; }
+        li { margin-bottom: 8px; }
+        @media print {
+            body { padding: 0; }
+            blockquote { page-break-inside: avoid; }
+            h2, h3, li { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <h1>WMS Quick Reference Guide</h1>
+<p>This is a short, one-page guide covering the essential daily tasks for the Wire Manufacturing Management System.</p>
+<hr>
+<h3>1. Dashboard (Home Screen)</h3>
+<p><em>Your daily business overview.</em></p>
+<ul>
+<li><strong>Summary Cards:</strong> Shows total sales, current cash/bank balances, and outstanding receivables at a glance.</li>
+<li><strong>Charts:</strong> Visualizes your profit, revenue, and expenses over the last week or month.</li>
+<li><strong>Low Stock Alerts:</strong> Instantly see if you are running low on Shiplet or Patri coil so you can order more.</li>
+</ul>
+<h3>2. Daily Book (Cash &amp; Bank)</h3>
+<p><em>The central hub for all money coming in and going out.</em></p>
+<ul>
+<li><strong>To record money received:</strong> Click <strong>Add Receipt</strong>. Select who paid (Customer, etc.), the amount, and choose Cash or Bank. This automatically reduces their pending balance.</li>
+<li><strong>To record money spent:</strong> Click <strong>Add Payment</strong>. Select who you paid (Supplier, Expense, Worker), the amount, and choose Cash or Bank.</li>
+<li><strong>End of Day:</strong> Check the &quot;Closing Balance&quot; at the top. This number must exactly match the physical cash in your drawer.</li>
+</ul>
+<h3>3. Customers &amp; Orders (Sales)</h3>
+<p><em>Tracking your finished wire sales.</em></p>
+<ul>
+<li><strong>New Order:</strong> Go to <strong>Orders</strong> &gt; <strong>New Order</strong>. Select the customer, wire number, weight, and price. </li>
+<li><strong>The Bhatti Rule:</strong> When an order comes out of the Bhatti (furnace) and is marked &quot;Done&quot;, you <strong>must</strong> update the final weight. The system will automatically recalculate the customer&#39;s final bill based on this new weight.</li>
+<li><strong>Payments:</strong> You can record their payments directly in their Customer Ledger or in the Daily Book.</li>
+</ul>
+<h3>4. Raw Materials &amp; Suppliers (Purchases)</h3>
+<p><em>Tracking your Shiplet and Patri coil.</em></p>
+<ul>
+<li><strong>Receiving Coil:</strong> Go to <strong>Raw Materials</strong> &gt; <strong>Receive Stock</strong>. Enter the supplier, coil type, weight, and price. This updates your factory stock and increases the amount you owe the supplier.</li>
+<li><strong>Quick Bhatti:</strong> Check &quot;Send directly to Annealing&quot; if the truck unloads the coil straight to the furnace.</li>
+</ul>
+<h3>5. Annealing / Bhatti</h3>
+<p><em>Heating the wire.</em></p>
+<ul>
+<li><strong>Send to Bhatti:</strong> Create an &quot;Annealing Send&quot; record to track which worker took how much weight.</li>
+<li><strong>Return from Bhatti:</strong> When the wire is ready, record it coming back. Always enter the exact returned weight so the system can calculate the burning loss.</li>
+</ul>
+<h3>6. Job Work (Processing Customers)</h3>
+<p><em>Customers who bring their own coil for you to process.</em></p>
+<ul>
+<li><strong>Receiving:</strong> Log a &quot;Job Work Receipt&quot;. This keeps their material separate from your factory&#39;s stock.</li>
+<li><strong>Delivery &amp; Excess:</strong> Deliver the processed wire to them. If you deliver <em>more</em> weight than they originally gave you, the system will warn you and deduct the extra weight from your own factory stock.</li>
+</ul>
+<h3>7. Expenses &amp; Workers</h3>
+<p><em>Running costs and salaries.</em></p>
+<ul>
+<li><strong>Factory vs Self:</strong> Keep factory running costs (electricity, labour) separate from personal withdrawals (Fayyaz &amp; Faisal).</li>
+<li><strong>Worker Advances:</strong> If you give a worker cash mid-week, record an <strong>Advance</strong>. The system will automatically remind you to deduct it from their salary at the end of the week.</li>
+</ul>
+<h3>8. AI Assistant</h3>
+<p><em>The fastest way to get answers.</em></p>
+<ul>
+<li>Click the chat icon at the top of the screen.</li>
+<li>You can ask simple questions in English or Urdu: <em>&quot;Ali Traders ka balance kya hai?&quot;</em> or <em>&quot;Record 5000 cash payment to Usman&quot;</em>.</li>
+<li>The AI will always show you a preview before saving anything. Click <strong>Confirm</strong> to save.</li>
+</ul>
+<hr>
+<p><strong>Need to fix a mistake?</strong> Almost every entry has a small pencil icon (Edit) or a red trash can (Delete) next to it. Just edit the entry and save; the system will automatically fix all related balances.</p>
+
+</body>
+</html>

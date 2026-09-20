@@ -24,6 +24,7 @@ import PersonalPayments from './pages/PersonalPayments';
 import BalanceSheet from './pages/BalanceSheet';
 import PeriodClose from './pages/PeriodClose';
 import AnnealingPersons from './pages/AnnealingPersons';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -226,6 +227,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout title="Security & Logs">
               <SecuritySettings />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <AppLayout title="Settings">
+              <Settings />
             </AppLayout>
           </ProtectedRoute>
         }

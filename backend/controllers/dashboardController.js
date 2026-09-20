@@ -174,12 +174,12 @@ const getStats = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        totalRevenueThisMonth: profit.main.netRevenue + profit.processing.labourEarned,
-        monthMainGrossProfit: profit.main.grossProfit,
-        monthProcessingLabour: profit.processing.labourEarned,
-        monthCombinedGrossProfit: profit.combined.grossProfit,
-        monthFinalNetProfit: profit.combined.finalNetProfit,
-        totalExpenses: profit.combined.factoryExpenses + profit.combined.selfExpenses,
+        totalRevenueThisMonth: profit.combined.totalRevenue || 0,
+        monthMainGrossProfit: (profit.combined.revenue || 0) - (profit.combined.costOfWireSold || 0),
+        monthProcessingLabour: profit.combined.labourIncome || 0,
+        monthCombinedGrossProfit: profit.combined.grossProfit || 0,
+        monthFinalNetProfit: profit.combined.finalNetProfit || 0,
+        totalExpenses: (profit.combined.factoryExpenses || 0) + (profit.combined.selfExpenses || 0) + (profit.combined.consumptionCost || 0),
         pendingFromCustomers: customers[0]?.pending || 0,
         pendingToSuppliers: suppliers[0]?.pending || 0,
         activeOrdersInProcess: inProcessCount,
@@ -237,10 +237,10 @@ const getCharts = async (req, res, next) => {
       return {
         month: start.toISOString().slice(0, 7),
         label: start.toLocaleString('default', { month: 'short', year: '2-digit' }),
-        mainGross: profit.main.grossProfit,
-        processingLabour: profit.processing.labourEarned,
-        expenses: profit.combined.factoryExpenses + profit.combined.selfExpenses,
-        netProfit: profit.combined.finalNetProfit,
+        mainGross: (profit.combined.revenue || 0) - (profit.combined.costOfWireSold || 0),
+        processingLabour: profit.combined.labourIncome || 0,
+        expenses: (profit.combined.factoryExpenses || 0) + (profit.combined.selfExpenses || 0) + (profit.combined.consumptionCost || 0),
+        netProfit: profit.combined.finalNetProfit || 0,
       };
     });
 

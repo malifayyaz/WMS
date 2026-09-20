@@ -217,224 +217,57 @@ function CoilAnalysisTable({ coilAnalysis, title = 'Coil Purchase & Sale Average
   );
 }
 
-function MainProfit({ data }) {
-  const main = data?.main;
-  if (!main) return null;
-  const annealing = main.annealing || {};
-  const breakdown = main.expenseBreakdown || {};
-  const rows = [
-    ...(main.sales || []).map((row) => ({ ...row, work: 'Sale', party: row.customerName, sign: 1 })),
-    ...(main.returns || []).map((row) => ({ ...row, work: 'Wire Return', party: row.customerName, sign: -1 })),
-    ...(main.purchases || []).map((row) => ({ ...row, work: 'Coil Purchase', party: row.supplierName, sign: -1 })),
-    ...(main.coilReturns || []).map((row) => ({ ...row, work: 'Coil Return', party: row.supplierName, sign: 1 })),
-  ].sort((a, b) => new Date(a.date) - new Date(b.date));
+function CategoryProfit({ data, title, isCombined }) {
+  if (!data) return null;
+  
   return (
     <>
-      <Grid container spacing={1.5} mb={2}>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Net Sales Earned" value={formatCurrency(main.netRevenue)} helper={`Returns: ${formatCurrency(main.wireReturnCredits)}`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Net Material Cost" value={formatCurrency(main.netMaterialCost)} helper={`Coil returns: ${formatCurrency(main.coilReturnCredits)}`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Main Gross Profit" value={formatCurrency(main.grossProfit)} color={main.grossProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Main Net Profit" value={formatCurrency(main.netProfit)} color={main.netProfit >= 0 ? 'success.main' : 'error.main'} helper={`After factory expenses: ${formatCurrency((main.factoryExpenses || 0) + (main.consumptionMaterials || 0))}`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Wastage (5%)" value={formatCurrency(main.wastageDeduction || 0)} color="warning.main" helper="Deducted from gross profit" /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Sales Volume" value={`${Number(main.salesWeightKg || 0).toFixed(1)} kg`} helper={`${main.salesBundles || 0} bundles`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Annealing Sent (Period)" value={`${Number(annealing.sentKg || 0).toFixed(1)} kg`} helper={`${annealing.sentBundles || 0} bundles`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Annealing Arrived (Period)" value={`${Number(annealing.arrivedKg || 0).toFixed(1)} kg`} helper={`${annealing.arrivedBundles || 0} bundles`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Annealed Sold (Period)" value={`${Number(annealing.soldKg || 0).toFixed(1)} kg`} helper={`${annealing.soldBundles || 0} bundles`} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Annealing Pending Now" value={`${Number(annealing.pendingKg || 0).toFixed(1)} kg`} helper={`${annealing.pendingBundles || 0} bundles`} color="warning.main" /></Grid>
-      </Grid>
-
-      <CoilAnalysisTable coilAnalysis={main.coilAnalysis} />
-
-      <Grid container spacing={2}>
+      <Typography variant="h6" fontWeight={700} mb={2}>{title}</Typography>
+      
+      <Grid container spacing={2} mb={3}>
         <Grid item xs={12} md={6}>
-          <StatementTable title="Main Business Profit Calculation" lines={main.statement} />
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow><TableCell sx={head} colSpan={2}>Calculation Flow</TableCell></TableRow>
+              </TableHead>
+              <TableBody>
+                <TableRow><TableCell sx={dense}>A. Opening Stock</TableCell><TableCell sx={dense} align="right">{Number(data.openingStockKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>B. Purchases This Period</TableCell><TableCell sx={dense} align="right">{Number(data.purchasesKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>C. Coil Returns This Period</TableCell><TableCell sx={dense} align="right" color="error.main">-{Number(data.returnsKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>D. Processing Customer Stock in Factory</TableCell><TableCell sx={dense} align="right">(Included in Opening & Purchases)</TableCell></TableRow>
+                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>E. Total Stock Available</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{Number(data.totalAvailableKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>F. Weighted Average Purchase Rate</TableCell><TableCell sx={dense} align="right">{formatCurrency(data.weightedAvgPurchaseRate || 0)}</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>G. Wire Sold (incl. Processing)</TableCell><TableCell sx={dense} align="right">{Number(data.wireSoldKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>H. Wire Returns</TableCell><TableCell sx={dense} align="right" color="error.main">-{Number(data.wireReturnsKg || 0).toFixed(1)} kg</TableCell></TableRow>
+                <TableRow><TableCell sx={dense}>I. Weighted Average Sale Rate</TableCell><TableCell sx={dense} align="right">{formatCurrency(data.weightedAvgSaleRate || 0)}</TableCell></TableRow>
+                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>J. Cost of Wire Sold</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{formatCurrency(data.costOfWireSold || 0)}</TableCell></TableRow>
+                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>K. Revenue</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{formatCurrency(data.revenue || 0)}</TableCell></TableRow>
+                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>L. Closing Stock</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{Number(data.closingStockKg || 0).toFixed(1)} kg</TableCell></TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Grid>
-        <Grid item xs={12} md={6}>
-          <BreakdownTable
-            title="Factory Expenses Deducted (by group)"
-            rows={breakdown.factoryByGroup}
-            total={breakdown.factoryTotal}
-            totalLabel="Total factory expenses"
-          />
-          <BreakdownTable
-            title="Consumption Materials Deducted"
-            rows={breakdown.consumptionByType}
-            total={breakdown.consumptionTotal}
-            totalLabel="Total consumption materials"
-          />
-        </Grid>
-      </Grid>
 
-      <Typography variant="subtitle1" fontWeight={700} mb={0.5}>Sales, Returns and Purchases</Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={head}>Date</TableCell>
-              <TableCell sx={head}>Work</TableCell>
-              <TableCell sx={head}>Party</TableCell>
-              <TableCell sx={head}>Material</TableCell>
-              <TableCell sx={head} align="right">Bundles</TableCell>
-              <TableCell sx={head} align="right">Kg</TableCell>
-              <TableCell sx={head} align="right">Amount</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row, i) => (
-              <TableRow key={`${row.work}-${row._id}-${i}`}>
-                <TableCell sx={dense}>{formatDate(row.date)}</TableCell>
-                <TableCell sx={dense}>{row.work}</TableCell>
-                <TableCell sx={dense}>{row.party}</TableCell>
-                <TableCell sx={dense}>{row.wireNumber ? `Wire #${row.wireNumber}` : row.coilCategory || row.materialType}</TableCell>
-                <TableCell sx={dense} align="right">{row.bundles || 0}</TableCell>
-                <TableCell sx={dense} align="right">{Number(row.weightKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right" color={row.sign > 0 ? 'success.main' : 'error.main'}>
-                  {row.sign < 0 ? '−' : '+'}{formatCurrency(row.amount)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!rows.length && <TableRow><TableCell colSpan={7} sx={dense}>No Main Business activity in this period.</TableCell></TableRow>}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <Typography variant="subtitle1" fontWeight={700} mt={2} mb={0.5}>Annealing Activity</Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead><TableRow><TableCell sx={head}>Date</TableCell><TableCell sx={head}>Action</TableCell><TableCell sx={head}>Party</TableCell><TableCell sx={head}>Material</TableCell><TableCell sx={head} align="right">Bundles</TableCell><TableCell sx={head} align="right">Kg</TableCell></TableRow></TableHead>
-          <TableBody>
-            {(annealing.rows || []).map((row) => (
-              <TableRow key={row._id}>
-                <TableCell sx={dense}>{formatDate(row.date)}</TableCell>
-                <TableCell sx={dense}>{row.entryType}</TableCell>
-                <TableCell sx={dense}>{row.partyName}</TableCell>
-                <TableCell sx={dense}>{row.materialType === 'Wire' ? `Wire #${row.wireNumber || '?'}` : row.coilCategory}</TableCell>
-                <TableCell sx={dense} align="right">{row.bundles || 0}</TableCell>
-                <TableCell sx={dense} align="right">{Number(row.weightKg || 0).toFixed(1)}</TableCell>
-              </TableRow>
-            ))}
-            {!(annealing.rows || []).length && <TableRow><TableCell colSpan={6} sx={dense}>No annealing activity in this period.</TableCell></TableRow>}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </>
-  );
-}
-
-function ProcessingProfit({ data }) {
-  const processing = data?.processing;
-  if (!processing) return null;
-  return (
-    <>
-      <Grid container spacing={1.5} mb={2}>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Labour Earned" value={formatCurrency(processing.labourEarned)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Labour Received" value={formatCurrency(processing.labourReceived)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Labour Outstanding" value={formatCurrency(processing.labourOutstanding)} color={processing.labourOutstanding > 0 ? 'warning.main' : 'success.main'} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Processing Direct Profit" value={formatCurrency(processing.directProfit)} color="success.main" helper="Shared expenses deducted in Combined" /></Grid>
-        <Grid item xs={12} sm={6}><MetricCard title="Customer Coil In" value={`${Number(processing.coilInKg || 0).toFixed(1)} kg`} /></Grid>
-        <Grid item xs={12} sm={6}><MetricCard title="Wire Delivered" value={`${Number(processing.wireOutKg || 0).toFixed(1)} kg`} helper={`${processing.wireOutBundles || 0} bundles`} /></Grid>
-        <Grid item xs={12} sm={6}><MetricCard title="Current Processing WIP" value={`${Number(processing.currentWipKg || 0).toFixed(1)} kg`} color="warning.main" /></Grid>
-      </Grid>
-
-      <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
-          <StatementTable title="Processing / Labour Profit Calculation" lines={processing.statement} />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Alert severity="info">
-            Customer coil is not our material, so it is no cost here. Shared factory and self expenses are
-            deducted in the Combined view only.
-          </Alert>
+          <Grid container spacing={1.5}>
+            <Grid item xs={12} sm={6}><MetricCard title="Cost of Wire Sold" value={formatCurrency(data.costOfWireSold)} /></Grid>
+            <Grid item xs={12} sm={6}><MetricCard title="Total Revenue" value={formatCurrency(data.totalRevenue || data.revenue)} helper={data.labourIncome > 0 ? `Incl. Labour: ${formatCurrency(data.labourIncome)}` : ''} /></Grid>
+            <Grid item xs={12} sm={6}><MetricCard title="Closing Stock Value" value={formatCurrency(data.closingStockValue)} /></Grid>
+            {isCombined && (
+              <>
+                <Grid item xs={12} sm={6}><MetricCard title="Gross Profit" value={formatCurrency(data.grossProfit)} color={data.grossProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title={`Wastage (${data.wastePercentage || 5}%)`} value={formatCurrency(data.wasteAmount || 0)} color="warning.main" helper="Deducted from gross profit" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title="Factory Expenses" value={formatCurrency(data.factoryExpenses || 0)} color="error.main" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title="Consumption Cost" value={formatCurrency(data.consumptionCost || 0)} color="error.main" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title="Operating Profit" value={formatCurrency(data.operatingProfit)} color={data.operatingProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title="Self Expenses" value={formatCurrency(data.selfExpenses || 0)} color="warning.main" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title="Final Net Profit" value={formatCurrency(data.finalNetProfit)} color={data.finalNetProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
+              </>
+            )}
+          </Grid>
         </Grid>
       </Grid>
-
-      <Typography variant="subtitle1" fontWeight={700} mb={0.5}>Wire Deliveries and Labour Charged</Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={head}>Date</TableCell>
-              <TableCell sx={head}>Customer</TableCell>
-              <TableCell sx={head}>Wire</TableCell>
-              <TableCell sx={head} align="right">Bundles</TableCell>
-              <TableCell sx={head} align="right">Delivered kg</TableCell>
-              <TableCell sx={head} align="right">Labour rate</TableCell>
-              <TableCell sx={head} align="right">Labour earned</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(processing.deliveries || []).map((row) => (
-              <TableRow key={row.deliveryId}>
-                <TableCell sx={dense}>{formatDate(row.date)}</TableCell>
-                <TableCell sx={dense}>{row.customerName}</TableCell>
-                <TableCell sx={dense}>{row.wireNumber ? `#${row.wireNumber}` : '—'}</TableCell>
-                <TableCell sx={dense} align="right">{row.bundles || 0}</TableCell>
-                <TableCell sx={dense} align="right">{Number(row.weightKg || 0).toFixed(1)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.labourRatePerKg)}</TableCell>
-                <TableCell sx={dense} align="right">{formatCurrency(row.labourAmount)}</TableCell>
-              </TableRow>
-            ))}
-            {!(processing.deliveries || []).length && <TableRow><TableCell colSpan={7} sx={dense}>No processing deliveries in this period.</TableCell></TableRow>}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </>
-  );
-}
-
-function CombinedProfit({ data }) {
-  const combined = data?.combined;
-  if (!combined) return null;
-  const breakdown = combined.expenseBreakdown || {};
-  return (
-    <>
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Main and Processing direct results are separate. Shared factory and self expenses are deducted here only.
-      </Alert>
-      <Grid container spacing={1.5}>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Main Gross Profit" value={formatCurrency(combined.mainGrossProfit)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Processing Direct Profit" value={formatCurrency(combined.processingDirectProfit)} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Gross Profit" value={formatCurrency(combined.grossProfit)} color={combined.grossProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Factory Expenses" value={formatCurrency(combined.factoryExpenses)} color="error.main" /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Consumption Materials" value={formatCurrency(combined.consumptionMaterials)} color="error.main" /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Self Expenses" value={formatCurrency(combined.selfExpenses)} color="warning.main" /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Wastage (5%)" value={formatCurrency(combined.wastageDeduction || 0)} color="warning.main" /></Grid>
-        <Grid item xs={12} sm={6} md={3}><MetricCard title="Net Profit" value={formatCurrency(combined.finalNetProfit)} color={combined.finalNetProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
-      </Grid>
-
-      <CoilAnalysisTable coilAnalysis={combined.coilAnalysis || data?.main?.coilAnalysis} />
-
-      <Grid container spacing={2} sx={{ mt: 1 }}>
-        <Grid item xs={12} md={6}>
-          <StatementTable title="Combined Profit Calculation" lines={combined.statement} />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <BreakdownTable
-            title="Factory Expenses (by group)"
-            rows={breakdown.factoryByGroup}
-            total={breakdown.factoryTotal}
-            totalLabel="Total factory expenses"
-          />
-          <BreakdownTable
-            title="Self Expenses (by person / category)"
-            rows={breakdown.selfByCategory}
-            total={breakdown.selfTotal}
-            totalLabel="Total self expenses"
-          />
-          <BreakdownTable
-            title="Consumption Materials"
-            rows={breakdown.consumptionByType}
-            total={breakdown.consumptionTotal}
-            totalLabel="Total consumption materials"
-          />
-        </Grid>
-      </Grid>
-
-      <BreakdownTable
-        title="Factory Expenses (detailed by category)"
-        rows={breakdown.factoryByCategory}
-        total={breakdown.factoryTotal}
-        totalLabel="Total factory expenses"
-      />
     </>
   );
 }
@@ -443,7 +276,7 @@ function ProfitLossPanel() {
   const isMobile = useIsMobile();
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [scope, setScope] = useState('combined');
+  const [tabIndex, setTabIndex] = useState(0);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -453,7 +286,7 @@ function ProfitLossPanel() {
     setLoading(true);
     setError('');
     try {
-      const response = await reportsAPI.getProfitLoss({ startDate, endDate, scope: 'combined' });
+      const response = await reportsAPI.getProfitLoss({ startDate, endDate });
       setData(response.data.data);
     } catch (err) {
       setData(null);
@@ -467,30 +300,27 @@ function ProfitLossPanel() {
     <Box>
       <PageToolbar>
         <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-        <Button
-          variant="contained"
-          fullWidth={isMobile}
-          onClick={fetchReport}
-          disabled={!startDate || !endDate || loading}
-        >
-          Generate Report
-        </Button>
+        <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <Button variant="contained" fullWidth={isMobile} onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
+        </Box>
       </PageToolbar>
-      <ScopeHeader scope={scope} setScope={setScope} data={data} />
+      
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {loading && <CircularProgress />}
-      {data && !data.hasActivity && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          No sales, purchases, deliveries or expenses were recorded between {formatDate(startDate)} and {formatDate(endDate)}, so every
-          profit figure is zero.
-          {data.availableDataRange
-            ? ` Your recorded activity runs from ${formatDate(data.availableDataRange.firstEntry)} to ${formatDate(data.availableDataRange.lastEntry)} — pick a range inside those dates.`
-            : ''}
-        </Alert>
+      
+      {data && (
+        <Box mt={2}>
+          <Tabs value={tabIndex} onChange={(_, val) => setTabIndex(val)} variant="fullWidth" sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Tab label="Shiplet" />
+            <Tab label="Patri" />
+            <Tab label="Combined" />
+          </Tabs>
+
+          {tabIndex === 0 && <CategoryProfit data={data.shiplet} title="Shiplet Profit & Loss" isCombined={false} />}
+          {tabIndex === 1 && <CategoryProfit data={data.patri} title="Patri Profit & Loss" isCombined={false} />}
+          {tabIndex === 2 && <CategoryProfit data={data.combined} title="Combined Profit & Loss" isCombined={true} />}
+        </Box>
       )}
-      {data && scope === 'main' && <MainProfit data={data} />}
-      {data && scope === 'processing' && <ProcessingProfit data={data} />}
-      {data && scope === 'combined' && <CombinedProfit data={data} />}
     </Box>
   );
 }
