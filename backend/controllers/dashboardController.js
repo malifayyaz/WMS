@@ -155,6 +155,7 @@ const getStats = async (req, res, next) => {
       RawMaterial.find({
         purchaseDate: { $gte: todayStart, $lte: todayEnd },
         isReturn: { $ne: true },
+        isOpeningBalance: { $ne: true },
       }).select('weightInKg bundles'),
     ]);
 
@@ -285,11 +286,13 @@ const getActivity = async (req, res, next) => {
       RawMaterial.find({
         purchaseDate: { $gte: start, $lte: end },
         isReturn: { $ne: true },
+        isOpeningBalance: { $ne: true },
       })
         .select('purchaseDate weightInKg bundles totalAmount ratePerKg supplierName')
         .lean(),
       Transaction.find({
         transactionDate: { $gte: start, $lte: end },
+        isOpeningBalance: { $ne: true },
       })
         .sort({ transactionDate: -1 })
         .select('transactionDate transactionType amount relatedName description paymentMethod sourceType')

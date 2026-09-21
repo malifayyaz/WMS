@@ -56,8 +56,17 @@ async function getOurOpeningStock(category, startDate) {
   if (!startDate) return []; 
   const sDate = startOfDay(new Date(startDate));
 
-  // Find all lots purchased before startDate
-  let query = { purchaseDate: { $lt: sDate }, isReturn: false };
+  // Find all lots purchased before startDate OR opening balances on the start date
+  let query = { 
+    $or: [
+      { purchaseDate: { $lt: sDate } },
+      { 
+        purchaseDate: { $gte: sDate, $lte: endOfDay(sDate) },
+        isOpeningBalance: true 
+      }
+    ],
+    isReturn: false 
+  };
   if (category) {
     if (category === SHIPLET_COIL) {
       query.$or = [{ coilCategory: SHIPLET_COIL }, { coilCategory: { $exists: false } }, { coilCategory: null }];
@@ -180,8 +189,16 @@ async function buildProfitReport({ startDate, endDate } = {}) {
   const eDate = endDate ? endOfDay(new Date(endDate)) : new Date();
 
   const jobWorks = await JobWork.find().lean();
-  const purchasesPeriod = await RawMaterial.find({ ...withDate('purchaseDate', startDate, endDate), isReturn: false }).lean();
-  const returnsPeriod = await RawMaterial.find({ ...withDate('purchaseDate', startDate, endDate), isReturn: true }).lean();
+  const purchasesPeriod = await RawMaterial.find({ 
+    ...withDate('purchaseDate', startDate, endDate), 
+    isReturn: false,
+    isOpeningBalance: { $ne: true }
+  }).lean();
+  const returnsPeriod = await RawMaterial.find({ 
+    ...withDate('purchaseDate', startDate, endDate), 
+    isReturn: true,
+    isOpeningBalance: { $ne: true }
+  }).lean();
   const ordersPeriod = await Order.find({ ...withDate('orderDate', startDate, endDate) }).lean();
   const factoryExpenses = await Expense.find({ ...withDate('expenseDate', startDate, endDate), expenseGroup: { $ne: 'Self Expense' } }).lean();
   const selfExpenses = await Expense.find({ ...withDate('expenseDate', startDate, endDate), expenseGroup: 'Self Expense' }).lean();
