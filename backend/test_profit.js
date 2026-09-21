@@ -1,0 +1,1 @@
+require('dotenv').config({ path: __dirname + '/.env' }); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const { buildProfitReport } = require('./utils/profitReportService'); const r = await buildProfitReport({ startDate: '2026-05-27T00:00:00Z', endDate: '2026-05-27T23:59:59Z' }); console.log(r.shiplet.openingStockKg); process.exit(0); });

@@ -263,8 +263,8 @@ async function buildProfitReport({ startDate, endDate } = {}) {
       ourAvgRate = (ourOpeningValue + ourPurchasesValue) / ourTotalKg;
     }
 
-    const openingStockKg = ourOpeningKg + procStats.openingKg;
-    const purchasesKg = ourPurchasesKg + procStats.arrivalsPeriodKg;
+    const openingStockKg = ourOpeningKg;
+    const purchasesKg = ourPurchasesKg;
     const returnsKg = coilReturnsKg; 
 
     const totalAvailableKg = openingStockKg + purchasesKg - returnsKg;
@@ -291,7 +291,7 @@ async function buildProfitReport({ startDate, endDate } = {}) {
       ourWireReturnCredits += (w * (o.ratePerKg || 0));
     }
 
-    const wireSoldKg = ourWireSoldKg + procStats.deliveriesPeriodKg;
+    const wireSoldKg = ourWireSoldKg;
     const wireReturnsKg = ourWireReturnsKg;
     
     const weightedAvgSaleRate = ourWireSoldKg > 0 ? ourWireSoldValue / ourWireSoldKg : 0;
