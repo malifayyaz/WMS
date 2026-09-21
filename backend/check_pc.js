@@ -1,0 +1,1 @@
+require('dotenv').config({ path: __dirname + '/.env' }); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const PC = require('./models/PeriodClose'); const r = await PC.find(); console.log(r); process.exit(0); });

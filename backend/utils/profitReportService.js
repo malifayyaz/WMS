@@ -55,15 +55,20 @@ function getOrderCategory(order) {
 async function getOurOpeningStock(category, startDate) {
   if (!startDate) return []; 
   const sDate = startOfDay(new Date(startDate));
+  const PeriodClose = require('../models/PeriodClose');
+  const latestClose = await PeriodClose.findOne({
+    closeDate: { $lte: endOfDay(sDate) },
+    status: 'Completed'
+  }).sort({ closeDate: -1 }).lean();
 
-  // Find all lots purchased before startDate OR opening balances on the start date
+  const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+
+
+  // Find all lots purchased between dawnOfTime and sDate
   let query = { 
     $or: [
-      { purchaseDate: { $lt: sDate } },
-      { 
-        purchaseDate: { $gte: sDate, $lte: endOfDay(sDate) },
-        isOpeningBalance: true 
-      }
+      { purchaseDate: { $gte: dawnOfTime, $lt: sDate }, isOpeningBalance: { $ne: true } },
+      { purchaseDate: { $gte: dawnOfTime, $lte: endOfDay(sDate) }, isOpeningBalance: true }
     ],
     isReturn: false 
   };
@@ -76,8 +81,8 @@ async function getOurOpeningStock(category, startDate) {
   }
   const lots = await RawMaterial.find(query).sort({ purchaseDate: 1 }).lean();
 
-  // Find all orders sold before startDate
-  let orderQuery = { orderDate: { $lt: sDate } };
+  // Find all orders sold between dawnOfTime and sDate
+  let orderQuery = { orderDate: { $gte: dawnOfTime, $lt: sDate } };
   const orders = await Order.find(orderQuery).lean();
   let netSold = 0;
   for (const o of orders) {
@@ -89,8 +94,8 @@ async function getOurOpeningStock(category, startDate) {
     else netSold += w;
   }
 
-  // Find all coil returns to supplier before startDate
-  let returnQuery = { purchaseDate: { $lt: sDate }, isReturn: true };
+  // Find all coil returns to supplier between dawnOfTime and sDate
+  let returnQuery = { purchaseDate: { $gte: dawnOfTime, $lt: sDate }, isReturn: true };
   if (category) {
     if (category === SHIPLET_COIL) {
       returnQuery.$or = [{ coilCategory: SHIPLET_COIL }, { coilCategory: { $exists: false } }, { coilCategory: null }];
@@ -188,7 +193,14 @@ async function buildProfitReport({ startDate, endDate } = {}) {
   const sDate = startDate ? startOfDay(new Date(startDate)) : new Date(0);
   const eDate = endDate ? endOfDay(new Date(endDate)) : new Date();
 
-  const jobWorks = await JobWork.find().lean();
+  const PeriodClose = require('../models/PeriodClose');
+  const latestClose = await PeriodClose.findOne({
+    closeDate: { $lte: eDate },
+    status: 'Completed'
+  }).sort({ closeDate: -1 }).lean();
+  const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+
+  const jobWorks = await JobWork.find({ arrivalDate: { $gte: dawnOfTime } }).lean();
   const purchasesPeriod = await RawMaterial.find({ 
     ...withDate('purchaseDate', startDate, endDate), 
     isReturn: false,
@@ -337,10 +349,16 @@ async function buildProfitReport({ startDate, endDate } = {}) {
   combined.wastePercentage = wastePercentage;
   combined.wasteAmount = round2(combined.costOfWireSold * (wastePercentage / 100));
 
+  // Add wastage to cost of wire sold
+  combined.costOfWireSold = round2(combined.costOfWireSold + combined.wasteAmount);
+
+  // Recalculate gross profit
+  combined.grossProfit = round2(combined.totalRevenue - combined.costOfWireSold);
+
   combined.factoryExpenses = round2(sum(factoryExpenses, 'amount'));
   combined.consumptionCost = round2(sum(consumptionMaterials, 'totalCost'));
 
-  combined.operatingProfit = round2(combined.grossProfit - combined.wasteAmount - combined.factoryExpenses - combined.consumptionCost);
+  combined.operatingProfit = round2(combined.grossProfit - combined.factoryExpenses - combined.consumptionCost);
 
   combined.selfExpenses = round2(sum(selfExpenses, 'amount'));
   combined.finalNetProfit = round2(combined.operatingProfit - combined.selfExpenses);

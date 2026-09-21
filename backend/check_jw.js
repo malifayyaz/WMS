@@ -1,0 +1,1 @@
+require('dotenv').config({ path: __dirname + '/.env' }); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const JW = require('./models/JobWork'); const r = await JW.find(); let sum = 0; r.forEach(x => sum += x.arrivedWeightKg); console.log('Total JW count:', r.length, 'Total Weight:', sum); process.exit(0); });

@@ -1,0 +1,1 @@
+require('dotenv').config({ path: __dirname + '/.env' }); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const RM = require('./models/RawMaterial'); const r = await RM.aggregate([{ \: { _id: null, total: { \: '\' } } }]); console.log(r); process.exit(0); });

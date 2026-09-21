@@ -21,9 +21,16 @@ exports.getBalanceSheet = async (req, res, next) => {
     const { date, startDate, endDate } = req.query;
     const asOfDate = date ? endOfDay(new Date(date)) : new Date();
 
+    const PeriodClose = require('../models/PeriodClose');
+    const latestClose = await PeriodClose.findOne({
+      closeDate: { $lte: asOfDate },
+      status: 'Completed'
+    }).sort({ closeDate: -1 }).lean();
+    const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+
     // 1. ASSETS
     // 1a & 1b. Cash and Bank Balances
-    const transactions = await Transaction.find({ transactionDate: { $lte: asOfDate } }).lean();
+    const transactions = await Transaction.find({ transactionDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
     
     let cashInHand = 0;
     let totalBankBalance = 0;
@@ -53,9 +60,9 @@ exports.getBalanceSheet = async (req, res, next) => {
     }));
 
     // 1c. Raw Material Stock Value
-    const rawMaterials = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: false }).lean();
-    const allOrdersBefore = await Order.find({ orderDate: { $lte: asOfDate } }).lean();
-    const allReturnsToSupplierBefore = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: true }).lean();
+    const rawMaterials = await RawMaterial.find({ purchaseDate: { $gte: dawnOfTime, $lte: asOfDate }, isReturn: false }).lean();
+    const allOrdersBefore = await Order.find({ orderDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
+    const allReturnsToSupplierBefore = await RawMaterial.find({ purchaseDate: { $gte: dawnOfTime, $lte: asOfDate }, isReturn: true }).lean();
 
     // Same FIFO logic as Fix 1 to get exact stock kg as of date
     let patriSold = 0;
@@ -113,23 +120,31 @@ exports.getBalanceSheet = async (req, res, next) => {
     const avgRawRate = rawMaterialWeightKg > 0 ? (rawMaterialValue / rawMaterialWeightKg) : 0;
 
     // 1d. Ready Stock Value
-    const readyStockItems = await ReadyStock.find({ productionDate: { $lte: asOfDate } }).lean();
+    const readyStockItems = await ReadyStock.find({ productionDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
     let totalReadyStockKg = 0;
     let readyStockValue = 0;
-    readyStockItems.forEach(s => {
-      // Prompt requests remainingStockKg for value calculation
-      const w = Number(s.remainingStockKg != null ? s.remainingStockKg : s.weightKg) || 0;
-      totalReadyStockKg += w;
-      
-      const costPerKg = Number(s.manufacturingCostPerKg) || avgRawRate;
-      readyStockValue += (w * costPerKg);
+
+    let wireSoldKg = 0;
+    let wireReturnedKg = 0;
+    allOrdersBefore.forEach(o => {
+      if (!o.isAnnealed) {
+        if (o.isReturn) wireReturnedKg += getOrderWeight(o);
+        else wireSoldKg += getOrderWeight(o);
+      }
     });
-    readyStockValue = Math.round(readyStockValue);
+    
+    let totalProduced = 0;
+    readyStockItems.forEach(s => {
+      totalProduced += (Number(s.weightKg) || 0);
+    });
+
+    totalReadyStockKg = Math.max(0, totalProduced - wireSoldKg + wireReturnedKg);
+    readyStockValue = Math.round(totalReadyStockKg * avgRawRate);
 
     // 1e. Annealing Stock (Coil at Bhatti)
     const activeAnnealing = await JobWork.find({ 
       jobType: 'Annealing', 
-      arrivalDate: { $lte: asOfDate } // Reconstruct annealing stock
+      arrivalDate: { $gte: dawnOfTime, $lte: asOfDate } // Reconstruct annealing stock
     }).lean();
     
     let totalAnnealingStockKg = 0;
@@ -169,7 +184,7 @@ exports.getBalanceSheet = async (req, res, next) => {
       }
     });
 
-    const allJobWorks = await JobWork.find({ arrivalDate: { $lte: asOfDate } }).lean();
+    const allJobWorks = await JobWork.find({ arrivalDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
     allJobWorks.forEach(jw => {
       if (jw.customerId) {
         const cid = jw.customerId.toString();
@@ -284,8 +299,8 @@ exports.getBalanceSheet = async (req, res, next) => {
 
     let personalReceivables = 0;
     let personalPayables = 0;
-    const personalReceivableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: { $ne: 'Payable' }, createdAt: { $lte: asOfDate } }).lean();
-    const personalPayableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: 'Payable', createdAt: { $lte: asOfDate } }).lean();
+    const personalReceivableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: { $ne: 'Payable' }, createdAt: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
+    const personalPayableItems = await PersonalPayment.find({ status: 'Active', paymentDirection: 'Payable', createdAt: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
     
     personalReceivables = personalReceivableItems.reduce((sum, p) => sum + (p.expectedLumpSum || 0), 0);
     personalPayables = personalPayableItems.reduce((sum, p) => sum + (p.remainingToContribute || p.expectedLumpSum || 0), 0);

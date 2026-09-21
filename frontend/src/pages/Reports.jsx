@@ -257,7 +257,7 @@ function CategoryProfit({ data, title, isCombined }) {
             {isCombined && (
               <>
                 <Grid item xs={12} sm={6}><MetricCard title="Gross Profit" value={formatCurrency(data.grossProfit)} color={data.grossProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
-                <Grid item xs={12} sm={6}><MetricCard title={`Wastage (${data.wastePercentage || 5}%)`} value={formatCurrency(data.wasteAmount || 0)} color="warning.main" helper="Deducted from gross profit" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title={`Wastage (${data.wastePercentage || 5}%)`} value={formatCurrency(data.wasteAmount || 0)} color="warning.main" helper="Included in Cost of Wire Sold" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Factory Expenses" value={formatCurrency(data.factoryExpenses || 0)} color="error.main" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Consumption Cost" value={formatCurrency(data.consumptionCost || 0)} color="error.main" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Operating Profit" value={formatCurrency(data.operatingProfit)} color={data.operatingProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>

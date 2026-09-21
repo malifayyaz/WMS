@@ -1,0 +1,1 @@
+require('dotenv').config({ path: __dirname + '/.env' }); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const RM = require('./models/RawMaterial'); const r = await RM.find(); let sum = 0; r.forEach(x => sum += x.weightInKg); console.log('Total RM count:', r.length, 'Total Weight:', sum); process.exit(0); });
