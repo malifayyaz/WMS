@@ -61,7 +61,19 @@ async function getOurOpeningStock(category, startDate) {
     status: 'Completed'
   }).sort({ closeDate: -1 }).lean();
 
-  const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+  const latestOB = await RawMaterial.findOne({
+    purchaseDate: { $lte: endOfDay(sDate) },
+    isOpeningBalance: true
+  }).sort({ purchaseDate: -1 }).lean();
+
+  let dawnOfTime = new Date(0);
+  if (latestClose && latestOB) {
+    dawnOfTime = startOfDay(new Date(Math.max(new Date(latestClose.closeDate).getTime(), new Date(latestOB.purchaseDate).getTime())));
+  } else if (latestOB) {
+    dawnOfTime = startOfDay(new Date(latestOB.purchaseDate));
+  } else if (latestClose) {
+    dawnOfTime = startOfDay(new Date(latestClose.closeDate));
+  }
 
 
   // Find all lots purchased between dawnOfTime and sDate
@@ -142,8 +154,9 @@ function getProcessingStats(jobWorks, category, sDate, eDate) {
     if (!matchesCoilCategory(job.coilCategory, category)) continue;
 
     const arrivedDate = job.arrivalDate;
-    const isBeforeStart = sDate && arrivedDate < sDate;
-    const isInPeriod = arrivedDate >= sDate && arrivedDate <= eDate;
+    const isOB = job.notes === 'Opening processing stock from period close';
+    const isBeforeStart = (sDate && arrivedDate < sDate) || (isOB && sDate && arrivedDate <= endOfDay(sDate));
+    const isInPeriod = arrivedDate >= sDate && arrivedDate <= eDate && !isOB;
 
     if (isBeforeStart) openingKg += (job.arrivedWeightKg || 0);
     if (isInPeriod) arrivalsPeriodKg += (job.arrivedWeightKg || 0);
@@ -198,7 +211,20 @@ async function buildProfitReport({ startDate, endDate } = {}) {
     closeDate: { $lte: eDate },
     status: 'Completed'
   }).sort({ closeDate: -1 }).lean();
-  const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+
+  const latestOB = await RawMaterial.findOne({
+    purchaseDate: { $lte: eDate },
+    isOpeningBalance: true
+  }).sort({ purchaseDate: -1 }).lean();
+
+  let dawnOfTime = new Date(0);
+  if (latestClose && latestOB) {
+    dawnOfTime = startOfDay(new Date(Math.max(new Date(latestClose.closeDate).getTime(), new Date(latestOB.purchaseDate).getTime())));
+  } else if (latestOB) {
+    dawnOfTime = startOfDay(new Date(latestOB.purchaseDate));
+  } else if (latestClose) {
+    dawnOfTime = startOfDay(new Date(latestClose.closeDate));
+  }
 
   const jobWorks = await JobWork.find({ arrivalDate: { $gte: dawnOfTime } }).lean();
   const purchasesPeriod = await RawMaterial.find({ 

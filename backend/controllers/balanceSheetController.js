@@ -26,7 +26,20 @@ exports.getBalanceSheet = async (req, res, next) => {
       closeDate: { $lte: asOfDate },
       status: 'Completed'
     }).sort({ closeDate: -1 }).lean();
-    const dawnOfTime = latestClose ? startOfDay(new Date(latestClose.closeDate)) : new Date(0);
+    
+    const latestOB = await RawMaterial.findOne({
+      purchaseDate: { $lte: asOfDate },
+      isOpeningBalance: true
+    }).sort({ purchaseDate: -1 }).lean();
+
+    let dawnOfTime = new Date(0);
+    if (latestClose && latestOB) {
+      dawnOfTime = startOfDay(new Date(Math.max(new Date(latestClose.closeDate).getTime(), new Date(latestOB.purchaseDate).getTime())));
+    } else if (latestOB) {
+      dawnOfTime = startOfDay(new Date(latestOB.purchaseDate));
+    } else if (latestClose) {
+      dawnOfTime = startOfDay(new Date(latestClose.closeDate));
+    }
 
     // 1. ASSETS
     // 1a & 1b. Cash and Bank Balances
