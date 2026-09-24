@@ -188,6 +188,8 @@ export const jobWorkAPI = {
   updateExcessDelivery: (id, excessId, data) => api.put(`/jobwork/${id}/excess/${excessId}`, data),
   deleteExcessDelivery: (id, excessId) => api.delete(`/jobwork/${id}/excess/${excessId}`),
   addReturn: (id, data) => api.post(`/jobwork/${id}/returns`, data),
+  updateReturn: (id, returnId, data) => api.put(`/jobwork/${id}/returns/${returnId}`, data),
+  deleteReturn: (id, returnId) => api.delete(`/jobwork/${id}/returns/${returnId}`),
   update: (id, data) => api.put(`/jobwork/${id}`, data),
   delete: (id) => api.delete(`/jobwork/${id}`),
 };

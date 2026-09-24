@@ -47,6 +47,7 @@ const getJobWorks = async (req, res, next) => {
       clauses.push({ arrivalDate: range });
       clauses.push({ 'deliveries.deliveredDate': range });
       clauses.push({ 'excessDeliveries.deliveryDate': range });
+      clauses.push({ 'returns.returnDate': range });
       filter.$or = clauses;
     }
     const list = await JobWork.find(filter).sort({ arrivalDate: -1 });
@@ -838,6 +839,44 @@ const addReturn = async (req, res, next) => {
   }
 };
 
+const updateReturn = async (req, res, next) => {
+  try {
+    const jobWork = await JobWork.findById(req.params.id);
+    if (!jobWork) return res.status(404).json({ success: false, message: 'Job work not found' });
+    const ret = jobWork.returns.id(req.params.returnId);
+    if (!ret) return res.status(404).json({ success: false, message: 'Return record not found' });
+
+    if (req.body.weightKg !== undefined) ret.weightKg = Number(req.body.weightKg);
+    if (req.body.returnDate) ret.returnDate = new Date(req.body.returnDate);
+    if (req.body.coilType !== undefined) ret.coilType = req.body.coilType;
+    if (req.body.reason !== undefined) ret.reason = req.body.reason;
+    if (req.body.returnedBy !== undefined) ret.returnedBy = req.body.returnedBy;
+    if (req.body.note !== undefined) ret.note = req.body.note;
+
+    await jobWork.save();
+
+    res.json({ success: true, data: jobWork, message: 'Return record updated' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteReturn = async (req, res, next) => {
+  try {
+    const jobWork = await JobWork.findById(req.params.id);
+    if (!jobWork) return res.status(404).json({ success: false, message: 'Job work not found' });
+    const ret = jobWork.returns.id(req.params.returnId);
+    if (!ret) return res.status(404).json({ success: false, message: 'Return record not found' });
+
+    jobWork.returns.pull(req.params.returnId);
+    await jobWork.save();
+
+    res.json({ success: true, message: 'Return record deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const previewExcessDelivery = async (req, res, next) => {
   try {
     let jobWork = await JobWork.findById(req.params.id);
@@ -1005,6 +1044,8 @@ module.exports = {
   deleteJobWork,
   getJobWorkStock,
   addReturn,
+  updateReturn,
+  deleteReturn,
   previewExcessDelivery,
   updateExcessDelivery,
   deleteExcessDelivery,

@@ -11,6 +11,8 @@ const {
   deleteJobWork,
   getJobWorkStock,
   addReturn,
+  updateReturn,
+  deleteReturn,
   previewExcessDelivery,
   updateExcessDelivery,
   deleteExcessDelivery,
@@ -29,6 +31,8 @@ router.delete('/:id/delivery/:deliveryId', blockViewer, deleteDelivery);
 router.put('/:id/excess/:excessId', blockViewer, updateExcessDelivery);
 router.delete('/:id/excess/:excessId', blockViewer, deleteExcessDelivery);
 router.post('/:id/returns', blockViewer, addReturn);
+router.put('/:id/returns/:returnId', blockViewer, updateReturn);
+router.delete('/:id/returns/:returnId', blockViewer, deleteReturn);
 router.route('/:id').put(blockViewer, updateJobWork).delete(blockViewer, deleteJobWork);
 
 module.exports = router;

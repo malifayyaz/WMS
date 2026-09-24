@@ -539,6 +539,12 @@ export default function DailyBook() {
   const [deleteJobWorkConfirm, setDeleteJobWorkConfirm] = useState({ open: false, id: null });
   const [jobWorkReturnDialogOpen, setJobWorkReturnDialogOpen] = useState(false);
   const [jobWorkReturnTarget, setJobWorkReturnTarget] = useState(null);
+  const [jobWorkReturnEdit, setJobWorkReturnEdit] = useState(null);
+  const [deleteJobWorkReturnConfirm, setDeleteJobWorkReturnConfirm] = useState({
+    open: false,
+    jobWorkId: null,
+    returnId: null,
+  });
   const [jobWorkReturnForm, setJobWorkReturnForm] = useState({
     weightKg: '',
     coilType: 'Shiplet Coil',
@@ -2767,6 +2773,25 @@ export default function DailyBook() {
     setJobWorkReturnDialogOpen(true);
   };
 
+  const openJobWorkReturnEdit = (jobWork, ret) => {
+    setJobWorkReturnEdit({
+      jobWorkId: jobWork._id,
+      returnId: ret._id,
+    });
+    setJobWorkReturnTarget(jobWork);
+    setJobWorkReturnForm({
+      customerId: jobWork.customerId?._id || jobWork.customerId,
+      jobWorkId: jobWork._id,
+      weightKg: ret.weightKg || '',
+      coilType: ret.coilType || jobWork.coilCategory || 'Shiplet Coil',
+      returnDate: ret.returnDate ? new Date(ret.returnDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      reason: ret.reason || '',
+      returnedBy: ret.returnedBy || '',
+      note: ret.note || '',
+    });
+    setJobWorkReturnDialogOpen(true);
+  };
+
   const handleJobWorkReturnSubmit = async () => {
     let targetLotId = jobWorkReturnTarget?._id || jobWorkReturnForm.jobWorkId;
     if (!targetLotId && jobWorkReturnForm.customerId) {
@@ -2790,22 +2815,40 @@ export default function DailyBook() {
     }
     setSubmittingJobWorkReturn(true);
     try {
-      await jobWorkAPI.addReturn(targetLotId, {
+      const payload = {
         weightKg: weight,
         coilType: jobWorkReturnForm.coilType,
         returnDate: jobWorkReturnForm.returnDate || entryDate,
         reason: jobWorkReturnForm.reason,
         returnedBy: jobWorkReturnForm.returnedBy,
         note: jobWorkReturnForm.note,
-      });
-      setSnack({ open: true, message: 'Return recorded. Stock updated.', severity: 'success' });
+      };
+      if (jobWorkReturnEdit) {
+        await jobWorkAPI.updateReturn(targetLotId, jobWorkReturnEdit.returnId, payload);
+        setSnack({ open: true, message: 'Return updated successfully', severity: 'success' });
+      } else {
+        await jobWorkAPI.addReturn(targetLotId, payload);
+        setSnack({ open: true, message: 'Return recorded. Stock updated.', severity: 'success' });
+      }
       setJobWorkReturnDialogOpen(false);
       setJobWorkReturnTarget(null);
+      setJobWorkReturnEdit(null);
       await fetchJobWorkData();
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to record return', severity: 'error' });
     } finally {
       setSubmittingJobWorkReturn(false);
+    }
+  };
+
+  const handleDeleteJobWorkReturn = async () => {
+    try {
+      await jobWorkAPI.deleteReturn(deleteJobWorkReturnConfirm.jobWorkId, deleteJobWorkReturnConfirm.returnId);
+      setSnack({ open: true, message: 'Return deleted successfully', severity: 'success' });
+      setDeleteJobWorkReturnConfirm({ open: false, jobWorkId: null, returnId: null });
+      fetchJobWorkData();
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Error deleting return', severity: 'error' });
     }
   };
 
@@ -4453,7 +4496,29 @@ export default function DailyBook() {
                               <TableCell align="right" sx={{ fontSize: '0.85rem', color: 'warning.main', fontWeight: 600 }}>
                                 {(Number(ret.weightKg) || 0).toFixed(2)}
                               </TableCell>
-                              <TableCell colSpan={4} />
+                              <TableCell colSpan={4}>
+                                <Box display="flex" alignItems="center" justifyContent="flex-end" gap={0.5}>
+                                  <Button
+                                    size="small"
+                                    startIcon={<EditIcon />}
+                                    onClick={requireAdmin(() => openJobWorkReturnEdit(row, ret))}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={requireAdmin(() => setDeleteJobWorkReturnConfirm({
+                                      open: true,
+                                      jobWorkId: row._id,
+                                      returnId: ret._id,
+                                    }))}
+                                  >
+                                    Delete
+                                  </Button>
+                                </Box>
+                              </TableCell>
                             </TableRow>
                           ))}
                           <TableRow sx={{ bgcolor: 'rgba(237, 108, 2, 0.08)' }}>
@@ -5998,12 +6063,13 @@ export default function DailyBook() {
           if (submittingJobWorkReturn) return;
           setJobWorkReturnDialogOpen(false);
           setJobWorkReturnTarget(null);
+          setJobWorkReturnEdit(null);
         }}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>
-          Record Coil Return — {jobWorkReturnTarget?.customerName || 'Customer'}
+          {jobWorkReturnEdit ? 'Edit Returned Coil' : 'Record Coil Return'} — {jobWorkReturnTarget?.customerName || 'Customer'}
         </DialogTitle>
         <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 2 }}>
@@ -6130,6 +6196,7 @@ export default function DailyBook() {
             onClick={() => {
               setJobWorkReturnDialogOpen(false);
               setJobWorkReturnTarget(null);
+              setJobWorkReturnEdit(null);
             }}
             disabled={submittingJobWorkReturn}
           >
@@ -6142,7 +6209,7 @@ export default function DailyBook() {
             disabled={submittingJobWorkReturn}
             startIcon={submittingJobWorkReturn ? <CircularProgress size={18} /> : undefined}
           >
-            Record Return
+            {jobWorkReturnEdit ? 'Save Changes' : 'Record Return'}
           </Button>
         </DialogActions>
       </ResponsiveDialog>
@@ -6532,6 +6599,17 @@ export default function DailyBook() {
           open: false,
           jobWorkId: null,
           deliveryId: null,
+        })}
+      />
+      <ConfirmDialog
+        open={deleteJobWorkReturnConfirm.open}
+        title="Delete Return Coil"
+        message="Are you sure you want to delete this returned coil? The weight will be added back to the customer's processing stock."
+        onConfirm={handleDeleteJobWorkReturn}
+        onCancel={() => setDeleteJobWorkReturnConfirm({
+          open: false,
+          jobWorkId: null,
+          returnId: null,
         })}
       />
       <ConfirmDialog open={deleteOrderConfirm.open} title="Delete Daily Sale" message="Are you sure you want to delete this sale?" onConfirm={handleDeleteOrder} onCancel={() => setDeleteOrderConfirm({ open: false, id: null })} />
