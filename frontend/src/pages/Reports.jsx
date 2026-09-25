@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import {
   Alert,
   Box,
   Button,
+  ButtonGroup,
   Card,
   CardContent,
   CircularProgress,
@@ -38,6 +40,71 @@ import {
   exportProfitExcel,
   exportProfitPdf,
 } from '../utils/managementReportExport';
+
+/**
+ * G4 FIX: Quick date preset buttons.
+ * Lets users pick Today / This Week / This Month / Last Month / This Year
+ * with a single click instead of manually typing both dates.
+ */
+function DatePresets({ onApply }) {
+  const presets = [
+    {
+      label: 'Today',
+      getRange: () => {
+        const d = dayjs();
+        return [d.format('YYYY-MM-DD'), d.format('YYYY-MM-DD')];
+      },
+    },
+    {
+      label: 'This Week',
+      getRange: () => [
+        dayjs().startOf('week').format('YYYY-MM-DD'),
+        dayjs().endOf('week').format('YYYY-MM-DD'),
+      ],
+    },
+    {
+      label: 'This Month',
+      getRange: () => [
+        dayjs().startOf('month').format('YYYY-MM-DD'),
+        dayjs().endOf('month').format('YYYY-MM-DD'),
+      ],
+    },
+    {
+      label: 'Last Month',
+      getRange: () => [
+        dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD'),
+        dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD'),
+      ],
+    },
+    {
+      label: 'This Year',
+      getRange: () => [
+        dayjs().startOf('year').format('YYYY-MM-DD'),
+        dayjs().endOf('year').format('YYYY-MM-DD'),
+      ],
+    },
+  ];
+
+  return (
+    <Box display="flex" gap={0.75} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+      {presets.map(({ label, getRange }) => (
+        <Button
+          key={label}
+          size="small"
+          variant="outlined"
+          color="secondary"
+          onClick={() => {
+            const [s, e] = getRange();
+            onApply(s, e);
+          }}
+          sx={{ textTransform: 'none', fontSize: '0.72rem', py: 0.4, px: 1 }}
+        >
+          {label}
+        </Button>
+      ))}
+    </Box>
+  );
+}
 
 const dense = { py: 0.55, px: 1, fontSize: '0.78rem' };
 const head = { ...dense, fontWeight: 700, bgcolor: 'grey.100' };
@@ -299,7 +366,11 @@ function ProfitLossPanel() {
   return (
     <Box>
       <PageToolbar>
-        <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+        <Box display="flex" flexDirection="column" gap={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          {/* G4 FIX: Date preset shortcuts */}
+          <DatePresets onApply={(s, e) => { setStartDate(s); setEndDate(e); }} />
+          <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+        </Box>
         <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" fullWidth={isMobile} onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
         </Box>
@@ -350,7 +421,11 @@ function FinancialPanel() {
   return (
     <Box>
       <PageToolbar>
-        <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+        <Box display="flex" flexDirection="column" gap={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          {/* G4 FIX: Date preset shortcuts */}
+          <DatePresets onApply={(s, e) => { setStartDate(s); setEndDate(e); }} />
+          <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+        </Box>
         <Box display="flex" gap={1} flexWrap="wrap" sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" fullWidth={isMobile} onClick={fetchReport} disabled={!startDate || !endDate || loading}>Generate Report</Button>
           {data && <Button variant="outlined" fullWidth={isMobile} startIcon={<TableChartIcon />} onClick={() => exportFinancialExcel(data, startDate, endDate)}>Export Excel</Button>}

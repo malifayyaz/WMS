@@ -3,6 +3,7 @@ const JobWork = require('../models/JobWork');
 const Customer = require('../models/Customer');
 const RawMaterial = require('../models/RawMaterial');
 const { recalcCustomerTotals } = require('../utils/transactionSyncService');
+const { restoreStockByCategory, deductStockByCategory } = require('../utils/stockService');
 
 const createJobWork = async (req, res, next) => {
   try {
@@ -162,28 +163,8 @@ const addDelivery = async (req, res, next) => {
         note: excessNote || ''
       });
 
-      // Add excess amount to customer balance
-      const customer = await Customer.findById(doc.customerId);
-      if (customer) {
-        customer.totalAmountDue = (customer.totalAmountDue || 0) + totalSaleAmount;
-        customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + totalSaleAmount;
-        await customer.save();
-      }
-
-      // Create Transaction record
-      const Transaction = require('../models/Transaction');
-      await Transaction.create({
-        transactionType: "Money In",
-        amount: 0,
-        relatedTo: "Customer",
-        relatedId: doc.customerId,
-        relatedName: doc.customerName,
-        description: `Excess stock delivery ${excessKg}kg — added to customer balance`,
-        sourceType: "ExcessDelivery",
-        sourceId: doc._id,
-        transactionDate: new Date(),
-        isExcessDelivery: true
-      });
+      // NOTE: Customer balance is updated by recalcCustomerTotals below via collectRawEntries.
+      // Direct mutation removed (G2 fix) — it was overwritten by recalc immediately.
     }
 
     await doc.save();
@@ -717,15 +698,8 @@ const poolDeliver = async (req, res, next) => {
       });
       await targetLot.save();
 
-      const Customer = require('../models/Customer');
-      const customer = await Customer.findById(customerId);
-      if (customer) {
-        customer.totalAmountDue = (customer.totalAmountDue || 0) + totalSaleAmount;
-        customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + totalSaleAmount;
-        await customer.save();
-      }
-
-
+      // NOTE: Customer balance is updated by recalcCustomerTotals below via collectRawEntries.
+      // Direct mutation removed (G2 fix) — it was overwritten by recalc immediately.
     }
 
     await recalcCustomerTotals(customerId);
@@ -787,7 +761,7 @@ const getJobWorkStock = async (req, res, next) => {
   }
 };
 
-/** Record returned coil from processing customer and add back to factory stock. */
+/** Record returned coil from processing customer and add back to factory raw material stock. */
 const addReturn = async (req, res, next) => {
   try {
     const jobWorkId = req.params.id;
@@ -821,18 +795,24 @@ const addReturn = async (req, res, next) => {
 
     await jobWork.save();
 
+    // G1 FIX: Restore the returned coil weight back into our raw material stock.
+    // The customer's coil is being returned, so it re-enters our factory inventory.
+    await restoreStockByCategory(resolvedCoilType, parsedWeight);
+
+    await recalcCustomerTotals(jobWork.customerId);
+
     const ActivityLog = require('../models/ActivityLog');
     await ActivityLog.create({
       userId: req.user?._id,
       userName: req.user?.username || 'System',
       action: 'Returned coil',
-      details: `${parsedWeight} kg ${resolvedCoilType} returned to ${jobWork.customerName || 'Customer'}`,
+      details: `${parsedWeight} kg ${resolvedCoilType} returned from ${jobWork.customerName || 'Customer'} — added back to raw material stock`,
     });
 
     res.status(201).json({
       success: true,
       data: { jobWork },
-      message: 'Return recorded and stock updated',
+      message: `Return recorded — ${parsedWeight} kg ${resolvedCoilType} added back to raw material stock`,
     });
   } catch (error) {
     next(error);
@@ -846,6 +826,9 @@ const updateReturn = async (req, res, next) => {
     const ret = jobWork.returns.id(req.params.returnId);
     if (!ret) return res.status(404).json({ success: false, message: 'Return record not found' });
 
+    const oldWeight = Number(ret.weightKg) || 0;
+    const oldCoilType = ret.coilType || jobWork.coilCategory || 'Shiplet Coil';
+
     if (req.body.weightKg !== undefined) ret.weightKg = Number(req.body.weightKg);
     if (req.body.returnDate) ret.returnDate = new Date(req.body.returnDate);
     if (req.body.coilType !== undefined) ret.coilType = req.body.coilType;
@@ -855,6 +838,19 @@ const updateReturn = async (req, res, next) => {
 
     await jobWork.save();
 
+    // G1 FIX: Adjust raw material stock by the weight delta.
+    const newWeight = Number(ret.weightKg) || 0;
+    const weightDelta = newWeight - oldWeight;
+    const coilType = ret.coilType || oldCoilType;
+    if (weightDelta > 0) {
+      // More weight returned — restore extra to stock
+      await restoreStockByCategory(coilType, weightDelta);
+    } else if (weightDelta < 0) {
+      // Less weight returned — deduct the difference back from stock
+      await deductStockByCategory(coilType, Math.abs(weightDelta));
+    }
+
+    await recalcCustomerTotals(jobWork.customerId);
     res.json({ success: true, data: jobWork, message: 'Return record updated' });
   } catch (error) {
     next(error);
@@ -868,10 +864,19 @@ const deleteReturn = async (req, res, next) => {
     const ret = jobWork.returns.id(req.params.returnId);
     if (!ret) return res.status(404).json({ success: false, message: 'Return record not found' });
 
+    const weightToDeduct = Number(ret.weightKg) || 0;
+    const coilType = ret.coilType || jobWork.coilCategory || 'Shiplet Coil';
+
     jobWork.returns.pull(req.params.returnId);
     await jobWork.save();
 
-    res.json({ success: true, message: 'Return record deleted' });
+    // G1 FIX: Deleting a return means the stock that was restored must be deducted again.
+    if (weightToDeduct > 0) {
+      await deductStockByCategory(coilType, weightToDeduct);
+    }
+
+    await recalcCustomerTotals(jobWork.customerId);
+    res.json({ success: true, message: 'Return record deleted — stock adjusted accordingly' });
   } catch (error) {
     next(error);
   }
@@ -981,13 +986,8 @@ const updateExcessDelivery = async (req, res, next) => {
 
     await doc.save();
 
-    const Customer = require('../models/Customer');
-    const customer = await Customer.findById(doc.customerId);
-    if (customer) {
-      customer.totalAmountDue = (customer.totalAmountDue || 0) + amountDiff;
-      customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + amountDiff;
-      await customer.save();
-    }
+    // NOTE: Customer balance is updated by recalcCustomerTotals below via collectRawEntries.
+    // Direct mutation removed (G2 fix) — it was overwritten by recalc immediately.
     await recalcCustomerTotals(doc.customerId);
 
     res.json({ success: true, message: 'Excess delivery updated' });
@@ -1012,18 +1012,11 @@ const deleteExcessDelivery = async (req, res, next) => {
       }
     }
 
-    const amountDiff = -excess.totalSaleAmount;
-    
     excess.deleteOne();
     await doc.save();
 
-    const Customer = require('../models/Customer');
-    const customer = await Customer.findById(doc.customerId);
-    if (customer) {
-      customer.totalAmountDue = (customer.totalAmountDue || 0) + amountDiff;
-      customer.totalAmountPurchased = (customer.totalAmountPurchased || 0) + amountDiff;
-      await customer.save();
-    }
+    // NOTE: Customer balance is updated by recalcCustomerTotals below via collectRawEntries.
+    // Direct mutation removed (G2 fix) — it was overwritten by recalc immediately.
     await recalcCustomerTotals(doc.customerId);
 
     res.json({ success: true, message: 'Excess delivery deleted' });

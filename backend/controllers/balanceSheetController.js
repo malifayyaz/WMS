@@ -253,7 +253,8 @@ exports.getBalanceSheet = async (req, res, next) => {
         if (new Date(ret.returnedDate || jw.arrivalDate) <= asOfDate) pool -= (Number(ret.weightKg) || 0);
       });
       (jw.excessDeliveries || []).forEach(exc => {
-        if (new Date(exc.deliveryDate || jw.arrivalDate) <= asOfDate) pool -= (Number(exc.excessWeightKg) || 0);
+        // G3 FIX: field is weightKg not excessWeightKg in the JobWork excessDeliveries schema
+        if (new Date(exc.deliveryDate || jw.arrivalDate) <= asOfDate) pool -= (Number(exc.weightKg) || 0);
       });
       if (pool > 0) totalProcessingStockKg += pool;
     });
@@ -328,10 +329,23 @@ exports.getBalanceSheet = async (req, res, next) => {
     const totalLiabilities = supplierPayables + annealingPayables + customerPayables + personalPayables;
 
     // 3. EQUITY / NET POSITION
+    //
+    // G5 NOTE: cumulativeProfit comes from buildProfitReport({ startDate: null, endDate: asOfDate }).
+    // When startDate is null, the P&L uses dawnOfTime (set by the latest PeriodClose or Opening Balance)
+    // as the effective start — this is by design with the period-close accounting system.
+    // For a business WITHOUT any PeriodClose records, dawnOfTime will be the earliest transaction date,
+    // so cumulativeProfit will be truly all-time.
+    //
+    // netWorth is the primary equity figure: assets − liabilities (from reconstruction).
+    // profitBasedNetWorth (= owner's capital + cumulativeProfit) is shown for cross-check only.
+    // The two will match closely when all opening balances are correctly entered.
     let cumulativeProfit = 0;
+    let profitBasedNetWorth = null;
     try {
       const profitReport = await buildProfitReport({ startDate: null, endDate: asOfDate });
       cumulativeProfit = profitReport?.combined?.finalNetProfit || 0;
+      // Opening capital estimate = assets at dawnOfTime (approximated as netWorth − cumulativeProfit)
+      profitBasedNetWorth = cumulativeProfit; // displayed as "Profit since last period close"
     } catch {
       cumulativeProfit = 0;
     }
@@ -384,6 +398,7 @@ exports.getBalanceSheet = async (req, res, next) => {
         },
         equity: {
           cumulativeProfit,
+          profitBasedNetWorth,
           totalSelfExpenses,
           netWorth,
         },

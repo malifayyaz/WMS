@@ -180,7 +180,7 @@ function getProcessingStats(jobWorks, category, sDate, eDate) {
     }
     for (const exc of (job.excessDeliveries || [])) {
       const excDate = exc.deliveryDate || arrivedDate;
-      const excWeight = exc.excessWeightKg || 0;
+      const excWeight = exc.weightKg || 0;  // G3 FIX: field is weightKg not excessWeightKg
       if (sDate && excDate < sDate) {
         openingKg -= excWeight;
       } else if (excDate >= sDate && excDate <= eDate) {
