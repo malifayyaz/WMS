@@ -132,6 +132,14 @@ const createExpense = async (req, res, next) => {
           body.isEndorsedCheque = true;
         }
       } else if (!body.chequeId) {
+        const existingCheque = await Cheque.findOne({
+          chequeNumber: chqNumber,
+          bankName: chqBank,
+        });
+        if (existingCheque) {
+          return res.status(400).json({ success: false, message: `Cheque #${existingCheque.chequeNumber} from ${existingCheque.bankName} already exists. Please select it from the dropdown.` });
+        }
+
         const newCheque = await Cheque.create({
           chequeNumber: chqNumber,
           chequeType: chqType,

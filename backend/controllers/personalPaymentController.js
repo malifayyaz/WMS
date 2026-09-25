@@ -326,6 +326,14 @@ exports.addPayment = async (req, res, next) => {
           finalIsEndorsed = true;
         }
       } else {
+        const existingCheque = await Cheque.findOne({
+          chequeNumber: finalChequeNum,
+          bankName: finalChequeBank,
+        });
+        if (existingCheque) {
+          return res.status(400).json({ success: false, message: `Cheque #${existingCheque.chequeNumber} from ${existingCheque.bankName} already exists. Please select it from the dropdown.` });
+        }
+
         const newCheque = await Cheque.create({
           chequeNumber: finalChequeNum,
           chequeType: finalIsEndorsed ? 'Customer Cheque' : finalChequeType,

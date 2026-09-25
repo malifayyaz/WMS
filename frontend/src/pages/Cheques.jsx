@@ -115,8 +115,19 @@ export default function Cheques() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const monthDefaults = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const pad = (n) => String(n).padStart(2, '0');
+    const start = `${y}-${pad(m + 1)}-01`;
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    const end = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+    return { start, end };
+  }, []);
+
+  const [startDate, setStartDate] = useState(monthDefaults.start);
+  const [endDate, setEndDate] = useState(monthDefaults.end);
 
   // Dialogs
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);

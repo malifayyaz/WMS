@@ -24,6 +24,7 @@ const getCheques = async (req, res, next) => {
     } = req.query;
 
     const filter = {};
+    const andConditions = [];
 
     if (direction) filter.direction = direction;
     if (status) {
@@ -36,27 +37,46 @@ const getCheques = async (req, res, next) => {
     if (chequeType) filter.chequeType = chequeType;
 
     if (partyId) {
-      filter.$or = [{ 'receivedFrom.partyId': partyId }, { 'givenTo.partyId': partyId }];
+      andConditions.push({ $or: [{ 'receivedFrom.partyId': partyId }, { 'givenTo.partyId': partyId }] });
     } else if (partyType) {
-      filter.$or = [{ 'receivedFrom.partyType': partyType }, { 'givenTo.partyType': partyType }];
+      andConditions.push({ $or: [{ 'receivedFrom.partyType': partyType }, { 'givenTo.partyType': partyType }] });
     }
 
     if (startDate || endDate) {
-      filter.chequeDate = {};
-      if (startDate) filter.chequeDate.$gte = startOfDay(new Date(startDate));
-      if (endDate) filter.chequeDate.$lte = endOfDay(new Date(endDate));
+      const dateCondition = {};
+      if (startDate) dateCondition.$gte = startOfDay(new Date(startDate));
+      if (endDate) dateCondition.$lte = endOfDay(new Date(endDate));
+
+      if (status === 'In Hand') {
+        // In Hand cheques are active assets. Do not filter them out by date.
+      } else if (status) {
+        filter.chequeDate = dateCondition;
+      } else {
+        andConditions.push({
+          $or: [
+            { chequeDate: dateCondition },
+            { status: 'In Hand' }
+          ]
+        });
+      }
     }
 
     if (search && String(search).trim()) {
       const q = String(search).trim();
       const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [
-        { chequeNumber: regex },
-        { bankName: regex },
-        { 'receivedFrom.partyName': regex },
-        { 'givenTo.partyName': regex },
-        { notes: regex },
-      ];
+      andConditions.push({
+        $or: [
+          { chequeNumber: regex },
+          { bankName: regex },
+          { 'receivedFrom.partyName': regex },
+          { 'givenTo.partyName': regex },
+          { notes: regex },
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
     }
 
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 500, 1), 2000);
@@ -237,6 +257,15 @@ const createCheque = async (req, res, next) => {
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Valid cheque amount is required' });
     }
+
+    const existingCheque = await Cheque.findOne({
+      chequeNumber: String(body.chequeNumber).trim(),
+      bankName: String(body.bankName).trim(),
+    });
+    if (existingCheque) {
+      return res.status(400).json({ success: false, message: `Cheque #${existingCheque.chequeNumber} from ${existingCheque.bankName} already exists.` });
+    }
+
 
     const direction = body.direction || (body.chequeType === 'Customer Cheque' ? 'Received' : 'Issued');
     const chequeType = body.chequeType || (direction === 'Received' ? 'Customer Cheque' : 'Company Cheque');
