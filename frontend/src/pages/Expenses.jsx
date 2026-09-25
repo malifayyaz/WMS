@@ -62,6 +62,7 @@ const defaultForm = {
   chequeType: 'Company Cheque',
   isEndorsedCheque: false,
   sourceChequeId: '',
+  matchedCheques: [],
   chequeNumber: '',
   chequeBank: 'MBL',
   chequeDate: new Date().toISOString().slice(0, 10),
@@ -71,6 +72,33 @@ const defaultForm = {
   coilType: '',
   rentalRoute: '',
   expenseDate: new Date().toISOString().slice(0, 10),
+};
+
+const findChequeCombination = (cheques, targetAmount) => {
+  let result = null;
+  const target = Number(targetAmount);
+
+  const validCheques = cheques
+    .filter(c => Number(c.amount) > 0)
+    .sort((a, b) => Number(b.amount) - Number(a.amount));
+
+  const backtrack = (start, currentSum, currentCombo) => {
+    if (result) return;
+    if (currentSum === target) {
+      result = [...currentCombo];
+      return;
+    }
+    if (currentSum > target) return;
+
+    for (let i = start; i < validCheques.length; i++) {
+      currentCombo.push(validCheques[i]);
+      backtrack(i + 1, currentSum + Number(validCheques[i].amount), currentCombo);
+      currentCombo.pop();
+    }
+  };
+
+  backtrack(0, 0, []);
+  return result;
 };
 
 export default function Expenses() {
@@ -572,6 +600,28 @@ export default function Expenses() {
         chequeDate: form.chequeDate ? form.chequeDate : undefined,
         annealingPersonId: form.annealingPersonId ? form.annealingPersonId : undefined,
       };
+
+      if (!editingId && form.isEndorsedCheque && form.matchedCheques && form.matchedCheques.length > 0) {
+        let successCount = 0;
+        for (const cheque of form.matchedCheques) {
+          await expensesAPI.create({
+            ...payload,
+            amount: Number(cheque.amount),
+            chequeNumber: cheque.chequeNumber,
+            chequeBank: cheque.bankName,
+            chequeDate: cheque.chequeDate,
+            isEndorsedCheque: true,
+            sourceChequeId: cheque._id,
+            receivedFromName: cheque.receivedFrom?.partyName || '',
+          });
+          successCount++;
+        }
+        setSnack({ open: true, message: `Recorded ${successCount} expenses via auto-matched cheques`, severity: 'success' });
+        setDialogOpen(false);
+        fetchList();
+        return;
+      }
+
       if (editingId) await expensesAPI.update(editingId, payload);
       else await expensesAPI.create(payload);
       setSnack({ open: true, message: editingId ? 'Updated' : 'Recorded', severity: 'success' });
@@ -1548,11 +1598,59 @@ export default function Expenses() {
 
               {form.isEndorsedCheque ? (
                 <>
-                  <FormControl fullWidth size="small" margin="dense">
-                    <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
-                    <Select
-                      value={form.sourceChequeId || ''}
-                      label="Select from In-Hand Cheques (Optional)"
+                  <Box sx={{ mt: 1, mb: 1, p: 1.5, border: '1px dashed', borderColor: 'primary.main', borderRadius: 1 }}>
+                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Endorse Multiple Cheques Automatically</Typography>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                      <TextField
+                        size="small"
+                        label="Target Total Amount"
+                        type="number"
+                        value={form.amount}
+                        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                        sx={{ flex: 1 }}
+                      />
+                      <Button 
+                        variant="contained" 
+                        onClick={() => {
+                          const target = Number(form.amount);
+                          if (!target || target <= 0) {
+                            setSnack({ open: true, message: 'Please enter a valid target amount first', severity: 'warning' });
+                            return;
+                          }
+                          const matched = findChequeCombination(inHandChequesList, target);
+                          if (matched) {
+                            setForm((f) => ({ ...f, matchedCheques: matched, sourceChequeId: '' }));
+                            setSnack({ open: true, message: `Matched ${matched.length} cheques for ${formatCurrency(target)}!`, severity: 'success' });
+                          } else {
+                            setSnack({ open: true, message: 'Could not find a combination of cheques matching this exact amount.', severity: 'error' });
+                          }
+                        }}
+                      >
+                        Auto-Match
+                      </Button>
+                    </Box>
+
+                    {form.matchedCheques && form.matchedCheques.length > 0 && (
+                      <Box sx={{ mb: 2, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" color="success.dark">Matched {form.matchedCheques.length} cheques:</Typography>
+                        {form.matchedCheques.map((c) => (
+                          <Typography key={c._id} variant="caption" display="block" color="success.dark">
+                            • #{c.chequeNumber} ({c.bankName}) - {formatCurrency(c.amount)}
+                          </Typography>
+                        ))}
+                        <Button size="small" color="error" onClick={() => setForm((f) => ({ ...f, matchedCheques: [] }))} sx={{ mt: 0.5, textTransform: 'none' }}>Clear Match</Button>
+                      </Box>
+                    )}
+
+                    <Divider sx={{ my: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">OR Pick Single Cheque</Typography>
+                    </Divider>
+
+                    <FormControl fullWidth size="small" margin="dense">
+                      <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                      <Select
+                        value={form.sourceChequeId || ''}
+                        label="Select from In-Hand Cheques (Optional)"
                       onChange={(e) => {
                         const chqId = e.target.value;
                         if (!chqId) {
@@ -1620,6 +1718,7 @@ export default function Expenses() {
                     margin="dense"
                     placeholder="e.g. Original customer name"
                   />
+                </Box>
                 </>
               ) : (
                 <>

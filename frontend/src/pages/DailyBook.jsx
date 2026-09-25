@@ -248,6 +248,33 @@ function ToolbarSection({ label, children }) {
 
 const toolbarBtn = { textTransform: 'none', fontWeight: 600, borderRadius: 1.5, px: 1.5 };
 
+const findChequeCombination = (cheques, targetAmount) => {
+  let result = null;
+  const target = Number(targetAmount);
+
+  const validCheques = cheques
+    .filter(c => Number(c.amount) > 0)
+    .sort((a, b) => Number(b.amount) - Number(a.amount));
+
+  const backtrack = (start, currentSum, currentCombo) => {
+    if (result) return;
+    if (currentSum === target) {
+      result = [...currentCombo];
+      return;
+    }
+    if (currentSum > target) return;
+
+    for (let i = start; i < validCheques.length; i++) {
+      currentCombo.push(validCheques[i]);
+      backtrack(i + 1, currentSum + Number(validCheques[i].amount), currentCombo);
+      currentCombo.pop();
+    }
+  };
+
+  backtrack(0, 0, []);
+  return result;
+};
+
 export default function DailyBook() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -382,6 +409,7 @@ export default function DailyBook() {
     chequeType: 'Company Cheque',
     isEndorsedCheque: false,
     sourceChequeId: '',
+    matchedCheques: [],
     receivedFromName: '',
   });
   const [editingId, setEditingId] = useState(null);
@@ -401,6 +429,7 @@ export default function DailyBook() {
     bankName: '',
     paidBy: '',
     note: '',
+    matchedCheques: [],
   });
   const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
   const [partyDialogOpen, setPartyDialogOpen] = useState(false);
@@ -1726,6 +1755,32 @@ export default function DailyBook() {
       setSnack({ open: true, message: 'Please select a category and enter a valid amount', severity: 'error' });
       return;
     }
+
+    if (personalPaymentForm.isEndorsedCheque && personalPaymentForm.matchedCheques && personalPaymentForm.matchedCheques.length > 0) {
+      try {
+        let successCount = 0;
+        for (const cheque of personalPaymentForm.matchedCheques) {
+          await personalPaymentsAPI.addPayment(personalPaymentForm.categoryId, {
+            ...personalPaymentForm,
+            amount: cheque.amount,
+            chequeNumber: cheque.chequeNumber,
+            bankName: cheque.bankName,
+            chequeDate: cheque.chequeDate || new Date().toISOString(),
+            isEndorsedCheque: true,
+            sourceChequeId: cheque._id,
+          });
+          successCount++;
+        }
+        setSnack({ open: true, message: `Recorded ${successCount} personal payments via auto-matched cheques`, severity: 'success' });
+        setPersonalPaymentDialogOpen(false);
+        fetchData();
+        return;
+      } catch (err) {
+        console.error('Failed to record personal payments:', err);
+        setSnack({ open: true, message: err.response?.data?.message || 'Error recording personal payments', severity: 'error' });
+        return;
+      }
+    }
     try {
       await personalPaymentsAPI.addPayment(personalPaymentForm.categoryId, personalPaymentForm);
       setSnack({ open: true, message: 'Personal payment recorded successfully', severity: 'success' });
@@ -2028,6 +2083,38 @@ export default function DailyBook() {
         const supplier = suppliers.find((s) => s._id === form.relatedId);
         relatedName = supplier?.name || '';
       }
+
+      if (!editingId && form.isEndorsedCheque && form.matchedCheques && form.matchedCheques.length > 0) {
+        let successCount = 0;
+        for (const cheque of form.matchedCheques) {
+          const payload = {
+            transactionType: form.transactionType,
+            amount: Number(cheque.amount),
+            paymentMethod: form.paymentMethod,
+            relatedTo: form.relatedTo,
+            relatedId: form.relatedTo === 'Other' ? undefined : form.relatedId,
+            relatedName,
+            description: form.description,
+            handledBy: form.handledBy,
+            transactionDate: entryDate,
+            chequeNumber: cheque.chequeNumber,
+            chequeBank: cheque.bankName,
+            chequeDate: cheque.chequeDate,
+            chequeType: 'Customer Cheque',
+            isEndorsedCheque: true,
+            sourceChequeId: cheque._id,
+            receivedFromName: cheque.receivedFrom?.partyName || '',
+          };
+          await transactionsAPI.create(payload);
+          successCount++;
+        }
+        setSnack({ open: true, message: `Recorded ${successCount} transactions via auto-matched cheques`, severity: 'success' });
+        closeTransactionDialog();
+        fetchData();
+        fetchPartyLedger();
+        return;
+      }
+
       const payload = {
         transactionType: form.transactionType,
         amount: Number(form.amount),
@@ -5039,11 +5126,59 @@ export default function DailyBook() {
 
               {form.isEndorsedCheque ? (
                 <>
-                  <FormControl fullWidth size="small" margin="dense">
-                    <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
-                    <Select
-                      value={form.sourceChequeId || ''}
-                      label="Select from In-Hand Cheques (Optional)"
+                  <Box sx={{ mt: 1, mb: 1, p: 1.5, border: '1px dashed', borderColor: 'primary.main', borderRadius: 1 }}>
+                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Endorse Multiple Cheques Automatically</Typography>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                      <TextField
+                        size="small"
+                        label="Target Total Amount"
+                        type="number"
+                        value={form.amount}
+                        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                        sx={{ flex: 1 }}
+                      />
+                      <Button 
+                        variant="contained" 
+                        onClick={() => {
+                          const target = Number(form.amount);
+                          if (!target || target <= 0) {
+                            setSnack({ open: true, message: 'Please enter a valid target amount first', severity: 'warning' });
+                            return;
+                          }
+                          const matched = findChequeCombination(inHandChequesList, target);
+                          if (matched) {
+                            setForm((f) => ({ ...f, matchedCheques: matched, sourceChequeId: '' }));
+                            setSnack({ open: true, message: `Matched ${matched.length} cheques for ${formatCurrency(target)}!`, severity: 'success' });
+                          } else {
+                            setSnack({ open: true, message: 'Could not find a combination of cheques matching this exact amount.', severity: 'error' });
+                          }
+                        }}
+                      >
+                        Auto-Match
+                      </Button>
+                    </Box>
+
+                    {form.matchedCheques && form.matchedCheques.length > 0 && (
+                      <Box sx={{ mb: 2, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" color="success.dark">Matched {form.matchedCheques.length} cheques:</Typography>
+                        {form.matchedCheques.map((c) => (
+                          <Typography key={c._id} variant="caption" display="block" color="success.dark">
+                            • #{c.chequeNumber} ({c.bankName}) - {formatCurrency(c.amount)}
+                          </Typography>
+                        ))}
+                        <Button size="small" color="error" onClick={() => setForm((f) => ({ ...f, matchedCheques: [] }))} sx={{ mt: 0.5, textTransform: 'none' }}>Clear Match</Button>
+                      </Box>
+                    )}
+
+                    <Divider sx={{ my: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">OR Pick Single Cheque</Typography>
+                    </Divider>
+
+                    <FormControl fullWidth size="small" margin="dense">
+                      <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                      <Select
+                        value={form.sourceChequeId || ''}
+                        label="Select from In-Hand Cheques (Optional)"
                       onChange={(e) => {
                         const chqId = e.target.value;
                         if (!chqId) {
@@ -5102,6 +5237,7 @@ export default function DailyBook() {
                     margin="dense"
                     InputLabelProps={{ shrink: true }}
                   />
+                </Box>
                 </>
               ) : (
                 <>
@@ -5222,11 +5358,59 @@ export default function DailyBook() {
 
                   {form.isEndorsedCheque ? (
                     <>
-                      <FormControl fullWidth size="small" margin="dense">
-                        <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
-                        <Select
-                          value={form.sourceChequeId || ''}
-                          label="Select from In-Hand Cheques (Optional)"
+                      <Box sx={{ mt: 1, mb: 1, p: 1.5, border: '1px dashed', borderColor: 'primary.main', borderRadius: 1 }}>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Endorse Multiple Cheques Automatically</Typography>
+                        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                          <TextField
+                            size="small"
+                            label="Target Total Amount"
+                            type="number"
+                            value={form.amount}
+                            onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                            sx={{ flex: 1 }}
+                          />
+                          <Button 
+                            variant="contained" 
+                            onClick={() => {
+                              const target = Number(form.amount);
+                              if (!target || target <= 0) {
+                                setSnack({ open: true, message: 'Please enter a valid target amount first', severity: 'warning' });
+                                return;
+                              }
+                              const matched = findChequeCombination(inHandChequesList, target);
+                              if (matched) {
+                                setForm((f) => ({ ...f, matchedCheques: matched, sourceChequeId: '' }));
+                                setSnack({ open: true, message: `Matched ${matched.length} cheques for ${formatCurrency(target)}!`, severity: 'success' });
+                              } else {
+                                setSnack({ open: true, message: 'Could not find a combination of cheques matching this exact amount.', severity: 'error' });
+                              }
+                            }}
+                          >
+                            Auto-Match
+                          </Button>
+                        </Box>
+
+                        {form.matchedCheques && form.matchedCheques.length > 0 && (
+                          <Box sx={{ mb: 2, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                            <Typography variant="subtitle2" color="success.dark">Matched {form.matchedCheques.length} cheques:</Typography>
+                            {form.matchedCheques.map((c) => (
+                              <Typography key={c._id} variant="caption" display="block" color="success.dark">
+                                • #{c.chequeNumber} ({c.bankName}) - {formatCurrency(c.amount)}
+                              </Typography>
+                            ))}
+                            <Button size="small" color="error" onClick={() => setForm((f) => ({ ...f, matchedCheques: [] }))} sx={{ mt: 0.5, textTransform: 'none' }}>Clear Match</Button>
+                          </Box>
+                        )}
+
+                        <Divider sx={{ my: 1.5 }}>
+                          <Typography variant="caption" color="text.secondary">OR Pick Single Cheque</Typography>
+                        </Divider>
+
+                        <FormControl fullWidth size="small" margin="dense">
+                          <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                          <Select
+                            value={form.sourceChequeId || ''}
+                            label="Select from In-Hand Cheques (Optional)"
                           onChange={(e) => {
                             const chqId = e.target.value;
                             if (!chqId) {
@@ -5297,6 +5481,7 @@ export default function DailyBook() {
                         margin="dense"
                         placeholder="e.g. Original customer name"
                       />
+                    </Box>
                     </>
                   ) : (
                     <>
@@ -7194,11 +7379,59 @@ export default function DailyBook() {
 
                     {personalPaymentForm.isEndorsedCheque ? (
                       <>
-                        <FormControl fullWidth size="small" margin="dense">
-                          <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
-                          <Select
-                            value={personalPaymentForm.sourceChequeId || ''}
-                            label="Select from In-Hand Cheques (Optional)"
+                        <Box sx={{ mt: 1, mb: 1, p: 1.5, border: '1px dashed', borderColor: 'primary.main', borderRadius: 1 }}>
+                          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Endorse Multiple Cheques Automatically</Typography>
+                          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                            <TextField
+                              size="small"
+                              label="Target Total Amount"
+                              type="number"
+                              value={personalPaymentForm.amount}
+                              onChange={(e) => setPersonalPaymentForm((f) => ({ ...f, amount: e.target.value }))}
+                              sx={{ flex: 1 }}
+                            />
+                            <Button 
+                              variant="contained" 
+                              onClick={() => {
+                                const target = Number(personalPaymentForm.amount);
+                                if (!target || target <= 0) {
+                                  setSnack({ open: true, message: 'Please enter a valid target amount first', severity: 'warning' });
+                                  return;
+                                }
+                                const matched = findChequeCombination(inHandChequesList, target);
+                                if (matched) {
+                                  setPersonalPaymentForm((f) => ({ ...f, matchedCheques: matched, sourceChequeId: '' }));
+                                  setSnack({ open: true, message: `Matched ${matched.length} cheques for ${formatCurrency(target)}!`, severity: 'success' });
+                                } else {
+                                  setSnack({ open: true, message: 'Could not find a combination of cheques matching this exact amount.', severity: 'error' });
+                                }
+                              }}
+                            >
+                              Auto-Match
+                            </Button>
+                          </Box>
+
+                          {personalPaymentForm.matchedCheques && personalPaymentForm.matchedCheques.length > 0 && (
+                            <Box sx={{ mb: 2, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                              <Typography variant="subtitle2" color="success.dark">Matched {personalPaymentForm.matchedCheques.length} cheques:</Typography>
+                              {personalPaymentForm.matchedCheques.map((c) => (
+                                <Typography key={c._id} variant="caption" display="block" color="success.dark">
+                                  • #{c.chequeNumber} ({c.bankName}) - {formatCurrency(c.amount)}
+                                </Typography>
+                              ))}
+                              <Button size="small" color="error" onClick={() => setPersonalPaymentForm((f) => ({ ...f, matchedCheques: [] }))} sx={{ mt: 0.5, textTransform: 'none' }}>Clear Match</Button>
+                            </Box>
+                          )}
+
+                          <Divider sx={{ my: 1.5 }}>
+                            <Typography variant="caption" color="text.secondary">OR Pick Single Cheque</Typography>
+                          </Divider>
+
+                          <FormControl fullWidth size="small" margin="dense">
+                            <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                            <Select
+                              value={personalPaymentForm.sourceChequeId || ''}
+                              label="Select from In-Hand Cheques (Optional)"
                             onChange={(e) => {
                               const chqId = e.target.value;
                               if (!chqId) {
@@ -7258,6 +7491,7 @@ export default function DailyBook() {
                           margin="dense"
                           InputLabelProps={{ shrink: true }}
                         />
+                      </Box>
                       </>
                     ) : (
                       <>

@@ -54,6 +54,32 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import AccessDeniedSnackbar from '../components/Common/AccessDeniedSnackbar';
 import PageToolbar from '../components/Common/PageToolbar';
 import { usePermissions } from '../hooks/usePermissions';
+const findChequeCombination = (cheques, targetAmount) => {
+  let result = null;
+  const target = Number(targetAmount);
+
+  const validCheques = cheques
+    .filter(c => Number(c.amount) > 0)
+    .sort((a, b) => Number(b.amount) - Number(a.amount));
+
+  const backtrack = (start, currentSum, currentCombo) => {
+    if (result) return;
+    if (currentSum === target) {
+      result = [...currentCombo];
+      return;
+    }
+    if (currentSum > target) return;
+
+    for (let i = start; i < validCheques.length; i++) {
+      currentCombo.push(validCheques[i]);
+      backtrack(i + 1, currentSum + Number(validCheques[i].amount), currentCombo);
+      currentCombo.pop();
+    }
+  };
+
+  backtrack(0, 0, []);
+  return result;
+};
 
 export default function PersonalPayments() {
   const theme = useTheme();
@@ -119,6 +145,7 @@ export default function PersonalPayments() {
     chequeType: 'Company Cheque',
     isEndorsedCheque: false,
     sourceChequeId: '',
+    matchedCheques: [],
     chequeNumber: '',
     chequeBank: 'MBL',
     chequeDate: new Date().toISOString().slice(0, 10),
@@ -254,6 +281,32 @@ export default function PersonalPayments() {
       alert('Please enter a valid amount');
       return;
     }
+
+    if (paymentForm.isEndorsedCheque && paymentForm.matchedCheques && paymentForm.matchedCheques.length > 0) {
+      try {
+        let successCount = 0;
+        for (const cheque of paymentForm.matchedCheques) {
+          await personalPaymentsAPI.addPayment(activeCategory._id, {
+            ...paymentForm,
+            amount: cheque.amount,
+            chequeNumber: cheque.chequeNumber,
+            bankName: cheque.bankName,
+            chequeDate: cheque.chequeDate,
+            isEndorsedCheque: true,
+            sourceChequeId: cheque._id,
+          });
+          successCount++;
+        }
+        setPaymentDialog(false);
+        fetchData();
+        return;
+      } catch (err) {
+        console.error('Error adding payments:', err);
+        alert(err.response?.data?.message || 'Error recording payments');
+        return;
+      }
+    }
+
     try {
       await personalPaymentsAPI.addPayment(activeCategory._id, paymentForm);
       setPaymentDialog(false);
@@ -1032,11 +1085,59 @@ export default function PersonalPayments() {
 
                 {paymentForm.isEndorsedCheque ? (
                   <>
-                    <FormControl fullWidth size="small" margin="dense">
-                      <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
-                      <Select
-                        value={paymentForm.sourceChequeId || ''}
-                        label="Select from In-Hand Cheques (Optional)"
+                    <Box sx={{ mt: 1, mb: 1, p: 1.5, border: '1px dashed', borderColor: 'primary.main', borderRadius: 1 }}>
+                      <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>Endorse Multiple Cheques Automatically</Typography>
+                      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                        <TextField
+                          size="small"
+                          label="Target Total Amount"
+                          type="number"
+                          value={paymentForm.amount}
+                          onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))}
+                          sx={{ flex: 1 }}
+                        />
+                        <Button 
+                          variant="contained" 
+                          onClick={() => {
+                            const target = Number(paymentForm.amount);
+                            if (!target || target <= 0) {
+                              alert('Please enter a valid target amount first');
+                              return;
+                            }
+                            const matched = findChequeCombination(inHandChequesList, target);
+                            if (matched) {
+                              setPaymentForm((f) => ({ ...f, matchedCheques: matched, sourceChequeId: '' }));
+                              alert(`Matched ${matched.length} cheques perfectly!`);
+                            } else {
+                              alert('Could not find a combination of cheques matching this exact amount.');
+                            }
+                          }}
+                        >
+                          Auto-Match
+                        </Button>
+                      </Box>
+
+                      {paymentForm.matchedCheques && paymentForm.matchedCheques.length > 0 && (
+                        <Box sx={{ mb: 2, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                          <Typography variant="subtitle2" color="success.dark">Matched {paymentForm.matchedCheques.length} cheques:</Typography>
+                          {paymentForm.matchedCheques.map((c) => (
+                            <Typography key={c._id} variant="caption" display="block" color="success.dark">
+                              • #{c.chequeNumber} ({c.bankName}) - Rs {Number(c.amount).toLocaleString()}
+                            </Typography>
+                          ))}
+                          <Button size="small" color="error" onClick={() => setPaymentForm((f) => ({ ...f, matchedCheques: [] }))} sx={{ mt: 0.5, textTransform: 'none' }}>Clear Match</Button>
+                        </Box>
+                      )}
+
+                      <Divider sx={{ my: 1.5 }}>
+                        <Typography variant="caption" color="text.secondary">OR Pick Single Cheque</Typography>
+                      </Divider>
+
+                      <FormControl fullWidth size="small" margin="dense">
+                        <InputLabel>Select from In-Hand Cheques (Optional)</InputLabel>
+                        <Select
+                          value={paymentForm.sourceChequeId || ''}
+                          label="Select from In-Hand Cheques (Optional)"
                         onChange={(e) => {
                           const chqId = e.target.value;
                           if (!chqId) {
@@ -1105,6 +1206,7 @@ export default function PersonalPayments() {
                       margin="dense"
                       placeholder="e.g. Original customer name"
                     />
+                  </Box>
                   </>
                 ) : (
                   <>
