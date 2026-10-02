@@ -20,7 +20,13 @@ function getOrderWeight(order) {
 exports.getBalanceSheet = async (req, res, next) => {
   try {
     const { date, startDate, endDate } = req.query;
-    const asOfDate = date ? endOfDay(new Date(date)) : new Date();
+    // FIX 1: In Date Range mode, frontend sends startDate+endDate (not date).
+    // asOfDate must use endDate as the upper bound; fallback to date or now.
+    const asOfDate = endDate
+      ? endOfDay(new Date(endDate))
+      : date
+        ? endOfDay(new Date(date))
+        : new Date();
 
     const PeriodClose = require('../models/PeriodClose');
     const latestClose = await PeriodClose.findOne({
@@ -40,6 +46,12 @@ exports.getBalanceSheet = async (req, res, next) => {
       dawnOfTime = startOfDay(new Date(latestOB.purchaseDate));
     } else if (latestClose) {
       dawnOfTime = startOfDay(new Date(latestClose.closeDate));
+    }
+    // FIX 2: If the user explicitly chose a Date Range with a startDate,
+    // honour their start as the floor so the range-filtered view is correct.
+    if (startDate) {
+      const userStart = startOfDay(new Date(startDate));
+      if (userStart > dawnOfTime) dawnOfTime = userStart;
     }
 
     // 1. ASSETS
@@ -134,13 +146,18 @@ exports.getBalanceSheet = async (req, res, next) => {
     const avgRawRate = rawMaterialWeightKg > 0 ? (rawMaterialValue / rawMaterialWeightKg) : 0;
 
     // 1d. Ready Stock Value
-    const readyStockItems = await ReadyStock.find({ productionDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
+    // FIX 3: ReadyStock has no period-close opening balance mechanism.
+    // We must query ALL production entries ever recorded up to asOfDate,
+    // and subtract ALL wire orders ever sold up to asOfDate — regardless of dawnOfTime.
+    // This ensures ready stock is never incorrectly zero due to period-close clipping.
+    const readyStockItems = await ReadyStock.find({ productionDate: { $lte: asOfDate } }).lean();
+    const allOrdersForWireSold = await Order.find({ orderDate: { $lte: asOfDate } }).lean();
     let totalReadyStockKg = 0;
     let readyStockValue = 0;
 
     let wireSoldKg = 0;
     let wireReturnedKg = 0;
-    allOrdersBefore.forEach(o => {
+    allOrdersForWireSold.forEach(o => {
       if (!o.isAnnealed) {
         if (o.isReturn) wireReturnedKg += getOrderWeight(o);
         else wireSoldKg += getOrderWeight(o);
@@ -153,7 +170,16 @@ exports.getBalanceSheet = async (req, res, next) => {
     });
 
     totalReadyStockKg = Math.max(0, totalProduced - wireSoldKg + wireReturnedKg);
-    readyStockValue = Math.round(totalReadyStockKg * avgRawRate);
+    // Use avgRawRate if we have coil stock; otherwise fall back to a simple average of
+    // manufacturing costs recorded in the ReadyStock entries themselves.
+    let readyStockRateForValue = avgRawRate;
+    if (readyStockRateForValue === 0 && readyStockItems.length > 0) {
+      const costsWithRate = readyStockItems.filter(s => s.manufacturingCostPerKg > 0);
+      if (costsWithRate.length > 0) {
+        readyStockRateForValue = costsWithRate.reduce((s, r) => s + r.manufacturingCostPerKg, 0) / costsWithRate.length;
+      }
+    }
+    readyStockValue = Math.round(totalReadyStockKg * readyStockRateForValue);
 
     // 1e. Annealing Stock (Coil at Bhatti)
     const activeAnnealing = await JobWork.find({ 

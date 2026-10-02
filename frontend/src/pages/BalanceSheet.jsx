@@ -85,8 +85,8 @@ export default function BalanceSheet() {
       if (dateMode === 'asOf') {
         params.date = asOfDate;
       } else if (dateMode === 'range') {
-        params.startDate = startDate;
-        params.endDate = endDate;
+        if (startDate) params.startDate = startDate;
+        if (endDate) params.endDate = endDate;
       }
       const res = await balanceSheetAPI.get(params);
       setData(res.data.data || null);
@@ -235,6 +235,26 @@ export default function BalanceSheet() {
         </Paper>
       ) : (
         <>
+          {/* Report Date Banner */}
+          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              Report as of:
+            </Typography>
+            <Chip
+              size="small"
+              label={
+                dateMode === 'range'
+                  ? `${startDate || 'Beginning'} → ${endDate || 'Today'}`
+                  : dateMode === 'asOf'
+                    ? asOfDate
+                    : `Live (${new Date().toLocaleDateString('en-PK')})`
+              }
+              color={dateMode === 'current' ? 'default' : 'primary'}
+              variant="outlined"
+              sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+            />
+          </Box>
+
           {/* Top 3 Prominent KPI Summary Cards */}
           <Grid container spacing={2.5} sx={{ mb: 3 }}>
             {/* Total Assets Card */}
