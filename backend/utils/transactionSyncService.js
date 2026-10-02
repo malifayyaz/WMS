@@ -369,7 +369,19 @@ function computeExpenseTotalsFromRecords(expenses, processPurchases) {
     }
   });
 
-  const processMaterialTotal = (processPurchases || []).reduce((s, m) => s + (m.totalCost || 0), 0);
+  const processMaterialTotal = (processPurchases || []).reduce((s, m) => {
+    const amountPaid = m.amountPaid || 0;
+    if (amountPaid <= 0) return s;
+
+    let pm = 'Cash';
+    if (m.paymentHistory && m.paymentHistory.length > 0) {
+      pm = m.paymentHistory[0].paymentMethod || 'Cash';
+    }
+
+    if (pm === 'Bank Transfer' || pm === 'Cheque') return s;
+
+    return s + amountPaid;
+  }, 0);
   factoryFromDetails += processMaterialTotal;
 
   return {

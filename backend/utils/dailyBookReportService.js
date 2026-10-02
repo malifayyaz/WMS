@@ -180,10 +180,20 @@ async function buildDayReport(day) {
     );
   });
   processMaterials.forEach((material) => {
+    const amountPaid = material.amountPaid || 0;
+    if (amountPaid <= 0) return;
+
+    let pm = 'Cash';
+    if (material.paymentHistory && material.paymentHistory.length > 0) {
+      pm = material.paymentHistory[0].paymentMethod || 'Cash';
+    }
+
+    if (pm === 'Bank Transfer' || pm === 'Cheque') return;
+
     addFactoryCategory(
       material.materialType || 'Process Material',
       'Process Material',
-      material.totalCost
+      amountPaid
     );
   });
   const factoryExpenseBreakdown = Array.from(factoryCategoryMap.values())
