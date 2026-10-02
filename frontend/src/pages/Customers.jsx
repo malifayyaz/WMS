@@ -69,6 +69,9 @@ const defaultCustomer = {
   openingBalance: '',
   openingBalanceDate: new Date().toISOString().slice(0, 10),
   openingBalanceType: 'none',
+  linkedSupplierId: '',
+  linkedProcessingCustomerId: '',
+  linkedRegularCustomerId: '',
 };
 
 export default function Customers() {
@@ -128,7 +131,9 @@ export default function Customers() {
       openingBalance: row.openingBalanceType === 'none' ? '' : row.openingBalance || 0,
       openingBalanceDate: row.openingBalanceDate ? row.openingBalanceDate.substring(0, 10) : new Date().toISOString().slice(0, 10),
       openingBalanceType: row.openingBalanceType || 'none',
-      linkedSupplierId: row.linkedSupplierId || '',
+      linkedSupplierId: row.linkedSupplierId?._id || row.linkedSupplierId || '',
+      linkedProcessingCustomerId: row.linkedProcessingCustomerId?._id || row.linkedProcessingCustomerId || '',
+      linkedRegularCustomerId: row.linkedRegularCustomerId?._id || row.linkedRegularCustomerId || '',
     });
     setEditingId(row._id);
     setDialogOpen(true);
@@ -156,8 +161,15 @@ export default function Customers() {
           ? Number(form.openingBalance)
           : 0,
       };
-      if (editingId) await customersAPI.update(editingId, payload);
-      else await customersAPI.create(payload);
+      if (editingId) {
+        const orig = list.find((c) => c._id === editingId);
+        if (orig?.linkedSupplierId && !form.linkedSupplierId) payload.unlinkSupplier = true;
+        if (orig?.linkedProcessingCustomerId && !form.linkedProcessingCustomerId) payload.unlinkProcessingCustomer = true;
+        if (orig?.linkedRegularCustomerId && !form.linkedRegularCustomerId) payload.unlinkRegularCustomer = true;
+        await customersAPI.update(editingId, payload);
+      } else {
+        await customersAPI.create(payload);
+      }
       setSnack({ open: true, message: editingId ? 'Updated' : 'Created', severity: 'success' });
       setDialogOpen(false);
       fetchList();
@@ -220,7 +232,38 @@ export default function Customers() {
           {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
             <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                <Typography fontWeight={700}>{row.name}</Typography>
+                <Box>
+                  <Typography fontWeight={700}>{row.name}</Typography>
+                  <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
+                    {row.linkedProcessingCustomerId && (
+                      <Chip
+                        size="small"
+                        label={`Linked JobWork: ${row.linkedProcessingCustomerId.name || 'Yes'}`}
+                        color="info"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem' }}
+                      />
+                    )}
+                    {row.linkedRegularCustomerId && (
+                      <Chip
+                        size="small"
+                        label={`Linked Customer: ${row.linkedRegularCustomerId.name || 'Yes'}`}
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem' }}
+                      />
+                    )}
+                    {row.linkedSupplierId && (
+                      <Chip
+                        size="small"
+                        label={`Linked Supplier: ${row.linkedSupplierId.name || 'Yes'}`}
+                        color="secondary"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem' }}
+                      />
+                    )}
+                  </Box>
+                </Box>
                 <Chip
                   size="small"
                   label={row.customerType === 'Daily' ? 'Daily' : row.customerType === 'Processing' ? 'Processing' : 'Ledger'}
@@ -228,7 +271,7 @@ export default function Customers() {
                   variant="outlined"
                 />
               </Box>
-              <Typography variant="body2" color="text.secondary">{row.contactNumber || '—'}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{row.contactNumber || '—'}</Typography>
               {row.address && <Typography variant="body2">{row.address}</Typography>}
               <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
                 <Typography variant="caption">Purchased: <strong>{formatCurrency(row.totalAmountPurchased)}</strong></Typography>
@@ -300,7 +343,40 @@ export default function Customers() {
               )}
               {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row._id}>
-                  <TableCell>{row.name}</TableCell>
+                  <TableCell>
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>{row.name}</Typography>
+                      <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
+                        {row.linkedProcessingCustomerId && (
+                          <Chip
+                            size="small"
+                            label={`Linked JobWork: ${row.linkedProcessingCustomerId.name || 'Yes'}`}
+                            color="info"
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: '0.65rem' }}
+                          />
+                        )}
+                        {row.linkedRegularCustomerId && (
+                          <Chip
+                            size="small"
+                            label={`Linked Customer: ${row.linkedRegularCustomerId.name || 'Yes'}`}
+                            color="success"
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: '0.65rem' }}
+                          />
+                        )}
+                        {row.linkedSupplierId && (
+                          <Chip
+                            size="small"
+                            label={`Linked Supplier: ${row.linkedSupplierId.name || 'Yes'}`}
+                            color="secondary"
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: '0.65rem' }}
+                          />
+                        )}
+                      </Box>
+                    </Box>
+                  </TableCell>
                   <TableCell>
                     <Chip
                       size="small"
@@ -382,18 +458,55 @@ export default function Customers() {
             </Select>
           </FormControl>
 
-          {form.customerType === 'Processing' && (
+          {form.customerType === 'Processing' ? (
+            <>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Link to Regular Customer (Same person who buys wire)</InputLabel>
+                <Select
+                  value={form.linkedRegularCustomerId || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, linkedRegularCustomerId: e.target.value }))}
+                  label="Link to Regular Customer (Same person who buys wire)"
+                >
+                  <MenuItem value=""><em>None</em></MenuItem>
+                  {list
+                    .filter((c) => c.customerType !== 'Processing' && c._id !== editingId)
+                    .map((c) => (
+                      <MenuItem key={c._id} value={c._id}>
+                        {c.name} {c.contactNumber ? `(${c.contactNumber})` : ''}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Link to Supplier (Same person who sells coil)</InputLabel>
+                <Select
+                  value={form.linkedSupplierId || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, linkedSupplierId: e.target.value }))}
+                  label="Link to Supplier (Same person who sells coil)"
+                >
+                  <MenuItem value=""><em>None</em></MenuItem>
+                  {suppliers.map((s) => (
+                    <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </>
+          ) : (
             <FormControl fullWidth margin="dense">
-              <InputLabel>Link to Supplier</InputLabel>
+              <InputLabel>Link to Processing Customer (Same person who does job work)</InputLabel>
               <Select
-                value={form.linkedSupplierId || ''}
-                onChange={(e) => setForm((f) => ({ ...f, linkedSupplierId: e.target.value }))}
-                label="Link to Supplier"
+                value={form.linkedProcessingCustomerId || ''}
+                onChange={(e) => setForm((f) => ({ ...f, linkedProcessingCustomerId: e.target.value }))}
+                label="Link to Processing Customer (Same person who does job work)"
               >
                 <MenuItem value=""><em>None</em></MenuItem>
-                {suppliers.map((s) => (
-                  <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>
-                ))}
+                {list
+                  .filter((c) => c.customerType === 'Processing' && c._id !== editingId)
+                  .map((c) => (
+                    <MenuItem key={c._id} value={c._id}>
+                      {c.name} {c.contactNumber ? `(${c.contactNumber})` : ''}
+                    </MenuItem>
+                  ))}
               </Select>
             </FormControl>
           )}
@@ -449,7 +562,13 @@ export default function Customers() {
           title={`Ledger — ${ledgerCustomer.name}`}
           fetchLedger={fetchLedger}
           partyType="Customer"
-          linked={!!ledgerCustomer.linkedSupplierId}
+          linked={!!(ledgerCustomer.linkedSupplierId?._id || ledgerCustomer.linkedSupplierId)}
+          linkedCustomer={!!(ledgerCustomer.linkedProcessingCustomerId?._id || ledgerCustomer.linkedProcessingCustomerId || ledgerCustomer.linkedRegularCustomerId?._id || ledgerCustomer.linkedRegularCustomerId)}
+          linkedPartyName={
+            ledgerCustomer.customerType === 'Processing'
+              ? (ledgerCustomer.linkedRegularCustomerId?.name || '')
+              : (ledgerCustomer.linkedProcessingCustomerId?.name || '')
+          }
           primaryRole={ledgerCustomer.customerType === 'Processing' ? 'processing' : 'customer'}
         />
       )}

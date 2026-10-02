@@ -11,6 +11,10 @@ const rawMaterialSchema = new mongoose.Schema(
       default: COIL_CATEGORIES.SHIPLET,
     },
     materialType: { type: String, required: false },
+    /** 'Coil' → raw coil stock, 'Wire' → finished wire stock (ReadyStock) */
+    purchaseType: { type: String, enum: ['Coil', 'Wire'], default: 'Coil' },
+    /** Wire number when purchaseType is 'Wire' (1-20) */
+    wireNumber: { type: Number, min: 1, max: 20 },
     weightInKg: { type: Number, required: true },
     ratePerKg: { type: Number, required: true },
     totalAmount: Number,

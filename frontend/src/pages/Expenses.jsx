@@ -419,6 +419,9 @@ export default function Expenses() {
         paymentOption: isDue ? 'later' : 'full',
         amountPaid: row.amountPaid !== undefined ? row.amountPaid : (row.amount || ''),
         paymentMethod: row.paymentMethod || 'Cash',
+        chequeNumber: row.chequeNumber || '',
+        chequeBank: row.chequeBank || 'MBL',
+        chequeDate: row.chequeDate ? new Date(row.chequeDate).toISOString().slice(0, 10) : entryDate,
         paidBy: row.paidBy || '',
         supplierName: row.supplierName || '',
         supplierContact: row.supplierContact || '',
@@ -438,6 +441,9 @@ export default function Expenses() {
         paymentOption: 'full',
         amountPaid: '',
         paymentMethod: 'Cash',
+        chequeNumber: '',
+        chequeBank: 'MBL',
+        chequeDate: entryDate,
         paidBy: '',
         supplierName: '',
         supplierContact: '',
@@ -467,6 +473,10 @@ export default function Expenses() {
         totalCost: totalAmount || undefined,
         amountPaid,
         paymentMethod: processForm.paymentMethod || 'Cash',
+        chequeType: processForm.paymentMethod === 'Cheque' ? 'Company Cheque' : undefined,
+        chequeNumber: processForm.paymentMethod === 'Cheque' ? processForm.chequeNumber : undefined,
+        chequeBank: processForm.paymentMethod === 'Cheque' ? processForm.chequeBank : undefined,
+        chequeDate: processForm.paymentMethod === 'Cheque' ? (processForm.chequeDate || entryDate) : undefined,
         paidBy: processForm.paidBy || '',
         supplierName: processForm.supplierName || '',
         supplierContact: processForm.supplierContact || '',
@@ -492,6 +502,9 @@ export default function Expenses() {
     setProcessPayForm({
       amount: row.amountDue || '',
       paymentMethod: 'Cash',
+      chequeNumber: '',
+      chequeBank: 'MBL',
+      chequeDate: entryDate,
       paidBy: '',
       note: '',
     });
@@ -515,6 +528,10 @@ export default function Expenses() {
       await consumptionAPI.addPayment(processPayTarget._id, {
         amount,
         paymentMethod: processPayForm.paymentMethod,
+        chequeType: processPayForm.paymentMethod === 'Cheque' ? 'Company Cheque' : undefined,
+        chequeNumber: processPayForm.paymentMethod === 'Cheque' ? processPayForm.chequeNumber : undefined,
+        chequeBank: processPayForm.paymentMethod === 'Cheque' ? processPayForm.chequeBank : undefined,
+        chequeDate: processPayForm.paymentMethod === 'Cheque' ? (processPayForm.chequeDate || entryDate) : undefined,
         paidBy: processPayForm.paidBy,
         note: processPayForm.note,
       });
@@ -1200,7 +1217,44 @@ export default function Expenses() {
                 type="number"
                 label={`Quantity (${processForm.unit})`}
                 value={processForm.quantity}
-                onChange={(e) => setProcessForm((f) => ({ ...f, quantity: e.target.value }))}
+                onChange={(e) => {
+                  const q = e.target.value;
+                  setProcessForm((f) => {
+                    const updated = { ...f, quantity: q };
+                    if (f.costPerUnit && Number(q) > 0) {
+                      const calc = Math.round(Number(q) * Number(f.costPerUnit) * 100) / 100;
+                      updated.totalCost = String(calc);
+                      if (f.paymentOption === 'full') {
+                        updated.amountPaid = String(calc);
+                      }
+                    }
+                    return updated;
+                  });
+                }}
+                margin="dense"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Cost per unit (optional)"
+                value={processForm.costPerUnit}
+                onChange={(e) => {
+                  const rate = e.target.value;
+                  setProcessForm((f) => {
+                    const updated = { ...f, costPerUnit: rate };
+                    if (rate !== '' && Number(f.quantity) > 0) {
+                      const calc = Math.round(Number(f.quantity) * Number(rate) * 100) / 100;
+                      updated.totalCost = String(calc);
+                      if (f.paymentOption === 'full') {
+                        updated.amountPaid = String(calc);
+                      }
+                    }
+                    return updated;
+                  });
+                }}
+                helperText="Entering a rate auto-calculates total cost"
                 margin="dense"
               />
             </Grid>
@@ -1220,16 +1274,7 @@ export default function Expenses() {
                     return updated;
                   });
                 }}
-                margin="dense"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Cost per unit (optional)"
-                value={processForm.costPerUnit}
-                onChange={(e) => setProcessForm((f) => ({ ...f, costPerUnit: e.target.value }))}
+                helperText={processForm.costPerUnit ? 'Auto-calculated from quantity × rate' : 'Enter manual total if rate is unknown'}
                 margin="dense"
               />
             </Grid>
@@ -1324,6 +1369,44 @@ export default function Expenses() {
                   <MenuItem value="Cheque">Cheque</MenuItem>
                 </Select>
               </FormControl>
+              {processForm.paymentMethod === 'Cheque' && (
+                <Box sx={{ mt: 1, mb: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>Cheque Details</Typography>
+                  <Grid container spacing={1}>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Cheque Number *"
+                        value={processForm.chequeNumber || ''}
+                        onChange={(e) => setProcessForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                        placeholder="e.g. 123456"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Bank Account *"
+                        value={processForm.chequeBank || ''}
+                        onChange={(e) => setProcessForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                        placeholder="e.g. MBL, UBL"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="date"
+                        label="Cheque Date"
+                        value={processForm.chequeDate || entryDate}
+                        onChange={(e) => setProcessForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
               <TextField
                 fullWidth
                 label="Paid By"
@@ -1344,18 +1427,58 @@ export default function Expenses() {
                 helperText="Enter 0 or partial amount paid right now"
               />
               {Number(processForm.amountPaid) > 0 && (
-                <FormControl fullWidth margin="dense">
-                  <InputLabel>Payment Method</InputLabel>
-                  <Select
-                    value={processForm.paymentMethod}
-                    label="Payment Method"
-                    onChange={(e) => setProcessForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-                  >
-                    <MenuItem value="Cash">Cash</MenuItem>
-                    <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
-                    <MenuItem value="Cheque">Cheque</MenuItem>
-                  </Select>
-                </FormControl>
+                <>
+                  <FormControl fullWidth margin="dense">
+                    <InputLabel>Payment Method</InputLabel>
+                    <Select
+                      value={processForm.paymentMethod}
+                      label="Payment Method"
+                      onChange={(e) => setProcessForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                    >
+                      <MenuItem value="Cash">Cash</MenuItem>
+                      <MenuItem value="Bank Transfer">Bank Transfer</MenuItem>
+                      <MenuItem value="Cheque">Cheque</MenuItem>
+                    </Select>
+                  </FormControl>
+                  {processForm.paymentMethod === 'Cheque' && (
+                    <Box sx={{ mt: 1, mb: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>Cheque Details</Typography>
+                      <Grid container spacing={1}>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Cheque Number *"
+                            value={processForm.chequeNumber || ''}
+                            onChange={(e) => setProcessForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                            placeholder="e.g. 123456"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Bank Account *"
+                            value={processForm.chequeBank || ''}
+                            onChange={(e) => setProcessForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                            placeholder="e.g. MBL, UBL"
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            type="date"
+                            label="Cheque Date"
+                            value={processForm.chequeDate || entryDate}
+                            onChange={(e) => setProcessForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </Box>
+                  )}
+                </>
               )}
               {(() => {
                 const total = Number(processForm.totalCost) || (Number(processForm.quantity) * Number(processForm.costPerUnit)) || 0;
@@ -1414,6 +1537,39 @@ export default function Expenses() {
               <MenuItem value="Cheque">Cheque</MenuItem>
             </Select>
           </FormControl>
+          {processPayForm.paymentMethod === 'Cheque' && (
+            <Box sx={{ mt: 1, mb: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>Cheque Details</Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="Cheque Number *"
+                value={processPayForm.chequeNumber || ''}
+                onChange={(e) => setProcessPayForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. 123456"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Bank Account *"
+                value={processPayForm.chequeBank || ''}
+                onChange={(e) => setProcessPayForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. MBL, UBL"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="Cheque Date"
+                value={processPayForm.chequeDate || entryDate}
+                onChange={(e) => setProcessPayForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                margin="dense"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Box>
+          )}
           <TextField
             fullWidth
             label="Paid By"

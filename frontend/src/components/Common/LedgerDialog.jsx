@@ -70,6 +70,8 @@ export default function LedgerDialog({
   fetchLedger,
   partyType,
   linked = false,
+  linkedCustomer = false,
+  linkedPartyName = '',
   primaryRole = 'customer',
 }) {
   const isMobile = useIsMobile();
@@ -83,14 +85,23 @@ export default function LedgerDialog({
   // Reset scope when dialog opens — default to Combined Net so settlement is visible
   useEffect(() => {
     if (!open) return;
+    if (linkedCustomer) {
+      setScopeTab(2); // Combined Ledger default
+      return;
+    }
     if (!linked) {
       setScopeTab(0);
       return;
     }
     setScopeTab(2); // Combined Net
-  }, [open, linked, primaryRole]);
+  }, [open, linked, linkedCustomer, primaryRole]);
 
   const scopeForTab = () => {
+    if (linkedCustomer) {
+      if (scopeTab === 0) return 'customer-regular';
+      if (scopeTab === 1) return 'customer-processing';
+      return 'customer-combined';
+    }
     if (!linked) return 'own';
     if (scopeTab === 0) return 'processing';
     if (scopeTab === 1) return 'supplier';
@@ -116,10 +127,10 @@ export default function LedgerDialog({
         setLoading(false);
       }
     })();
-  }, [open, fetchLedger, startDate, endDate, viewTab, scopeTab, linked]);
+  }, [open, fetchLedger, startDate, endDate, viewTab, scopeTab, linked, linkedCustomer]);
 
   const isDateWise = ledger?.ledgerMode === 'datewise';
-  const isCombined = ledger?.scope === 'combined';
+  const isCombined = ledger?.scope === 'combined' || ledger?.scope === 'customer-combined';
   const settlement = ledger?.settlement || ledger?.summary?.settlement;
 
   const balanceLabel = (balance) => {
@@ -132,11 +143,20 @@ export default function LedgerDialog({
 
   const roleChip = (role) => {
     if (!role) return null;
+    let label = 'Processing';
+    let color = 'primary';
+    if (role === 'supplier') {
+      label = 'Supplier';
+      color = 'secondary';
+    } else if (role === 'regular') {
+      label = 'Sales';
+      color = 'info';
+    }
     return (
       <Chip
         size="small"
-        label={role === 'processing' ? 'Processing' : 'Supplier'}
-        color={role === 'processing' ? 'primary' : 'secondary'}
+        label={label}
+        color={color}
         variant="outlined"
         sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
       />
@@ -146,6 +166,7 @@ export default function LedgerDialog({
   const SettlementPanel = () => {
     if (!isCombined || !settlement) return null;
     const net = settlement.netBalance || 0;
+    const isCustCombined = ledger?.scope === 'customer-combined';
     return (
       <Box
         sx={{
@@ -158,51 +179,80 @@ export default function LedgerDialog({
       >
         <Box sx={{ bgcolor: 'primary.50', px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle2" fontWeight={700}>
-            Combined Settlement — Processing + Supplier
+            {isCustCombined
+              ? 'Combined Settlement — Regular Customer + Processing Customer (Same Person)'
+              : 'Combined Settlement — Processing + Supplier'}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Separate ledgers stay unchanged. This view only deducts the two sides to show the final net.
+            {isCustCombined
+              ? 'Separate ledgers stay unchanged. This view combines regular wire sales and job-work processing charges to show the unified net position.'
+              : 'Separate ledgers stay unchanged. This view only deducts the two sides to show the final net.'}
           </Typography>
         </Box>
         <Box display="flex" flexWrap="wrap" gap={2} sx={{ px: 1.5, py: 1.25 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary">They owe us (Processing)</Typography>
-            <Typography variant="body2" fontWeight={700} color="success.main">
-              {formatCurrency(settlement.theyOweUsFromProcessing || 0)}
-            </Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary">We owe them (Supplier)</Typography>
-            <Typography variant="body2" fontWeight={700} color="error.main">
-              {formatCurrency(settlement.weOweThemAsSupplier || 0)}
-            </Typography>
-          </Box>
-          {(settlement.theyOweUsAsSupplier > 0 || settlement.weOweThemFromProcessing > 0) && (
+          {isCustCombined ? (
             <>
-              {settlement.theyOweUsAsSupplier > 0 && (
-                <Box>
-                  <Typography variant="caption" color="text.secondary">They owe us (Supplier advance)</Typography>
-                  <Typography variant="body2" fontWeight={700} color="success.main">
-                    {formatCurrency(settlement.theyOweUsAsSupplier)}
+              <Box>
+                <Typography variant="caption" color="text.secondary">Regular Sales Balance</Typography>
+                <Typography variant="body2" fontWeight={700} color={settlement.regular?.balance > 0 ? 'success.main' : settlement.regular?.balance < 0 ? 'error.main' : 'text.primary'}>
+                  {formatCurrency(Math.abs(settlement.regular?.balance || 0))}
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, fontWeight: 500 }}>
+                    ({settlement.regular?.status || (settlement.regular?.balance > 0 ? 'They owe us' : 'Advance')})
                   </Typography>
-                </Box>
-              )}
-              {settlement.weOweThemFromProcessing > 0 && (
-                <Box>
-                  <Typography variant="caption" color="text.secondary">We owe them (Processing)</Typography>
-                  <Typography variant="body2" fontWeight={700} color="error.main">
-                    {formatCurrency(settlement.weOweThemFromProcessing)}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Processing Work Balance</Typography>
+                <Typography variant="body2" fontWeight={700} color={settlement.processing?.balance > 0 ? 'success.main' : settlement.processing?.balance < 0 ? 'error.main' : 'text.primary'}>
+                  {formatCurrency(Math.abs(settlement.processing?.balance || 0))}
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, fontWeight: 500 }}>
+                    ({settlement.processing?.status || (settlement.processing?.balance > 0 ? 'They owe us' : 'Advance')})
                   </Typography>
-                </Box>
+                </Typography>
+              </Box>
+            </>
+          ) : (
+            <>
+              <Box>
+                <Typography variant="caption" color="text.secondary">They owe us (Processing)</Typography>
+                <Typography variant="body2" fontWeight={700} color="success.main">
+                  {formatCurrency(settlement.theyOweUsFromProcessing || 0)}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">We owe them (Supplier)</Typography>
+                <Typography variant="body2" fontWeight={700} color="error.main">
+                  {formatCurrency(settlement.weOweThemAsSupplier || 0)}
+                </Typography>
+              </Box>
+              {(settlement.theyOweUsAsSupplier > 0 || settlement.weOweThemFromProcessing > 0) && (
+                <>
+                  {settlement.theyOweUsAsSupplier > 0 && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">They owe us (Supplier advance)</Typography>
+                      <Typography variant="body2" fontWeight={700} color="success.main">
+                        {formatCurrency(settlement.theyOweUsAsSupplier)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {settlement.weOweThemFromProcessing > 0 && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">We owe them (Processing)</Typography>
+                      <Typography variant="body2" fontWeight={700} color="error.main">
+                        {formatCurrency(settlement.weOweThemFromProcessing)}
+                      </Typography>
+                    </Box>
+                  )}
+                </>
               )}
+              <Box>
+                <Typography variant="caption" color="text.secondary">Deducted against each other</Typography>
+                <Typography variant="body2" fontWeight={700}>
+                  {formatCurrency(settlement.deducted || 0)}
+                </Typography>
+              </Box>
             </>
           )}
-          <Box>
-            <Typography variant="caption" color="text.secondary">Deducted against each other</Typography>
-            <Typography variant="body2" fontWeight={700}>
-              {formatCurrency(settlement.deducted || 0)}
-            </Typography>
-          </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">Final amount</Typography>
             <Typography
@@ -225,14 +275,35 @@ export default function LedgerDialog({
     <ResponsiveDialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ py: 1.5, px: 2, fontSize: '1.05rem', fontWeight: 700, borderBottom: 1, borderColor: 'divider' }}>
         {title || 'Ledger'}
-        {linked && (
+        {linkedCustomer && (
+          <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 500, display: { xs: 'block', sm: 'inline' }, ml: { xs: 0, sm: 1.5 } }}>
+            Linked regular + processing customer {linkedPartyName ? `(${linkedPartyName})` : ''}
+          </Typography>
+        )}
+        {linked && !linkedCustomer && (
           <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 500, display: { xs: 'block', sm: 'inline' }, ml: { xs: 0, sm: 1.5 } }}>
             Linked supplier + processing
           </Typography>
         )}
       </DialogTitle>
       <DialogContent sx={{ px: { xs: 1.5, sm: 2 }, pt: 1.5, pb: 1, overflowX: 'hidden' }}>
-        {linked && (
+        {linkedCustomer ? (
+          <Tabs
+            value={scopeTab}
+            onChange={(_, v) => setScopeTab(v)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            sx={{
+              minHeight: 36,
+              mb: 1,
+              '& .MuiTab-root': { minHeight: 36, py: 0.5, px: 1.5, fontSize: '0.8rem', textTransform: 'none', fontWeight: 600 },
+            }}
+          >
+            <Tab label="Regular Sales" />
+            <Tab label="Processing Work" />
+            <Tab label="Combined Ledger" />
+          </Tabs>
+        ) : linked ? (
           <Tabs
             value={scopeTab}
             onChange={(_, v) => setScopeTab(v)}
@@ -248,7 +319,7 @@ export default function LedgerDialog({
             <Tab label="Supplier" />
             <Tab label="Combined Net" />
           </Tabs>
-        )}
+        ) : null}
 
         <Tabs
           value={viewTab}
@@ -321,18 +392,37 @@ export default function LedgerDialog({
             >
               {isCombined && settlement ? (
                 <>
-                  <Typography variant="body2">
-                    Processing: <strong>{formatCurrency(Math.abs(settlement.processing?.balance || 0))}</strong>
-                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                      {settlement.processing?.status}
-                    </Typography>
-                  </Typography>
-                  <Typography variant="body2">
-                    Supplier: <strong>{formatCurrency(Math.abs(settlement.supplier?.balance || 0))}</strong>
-                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                      {settlement.supplier?.status}
-                    </Typography>
-                  </Typography>
+                  {ledger?.scope === 'customer-combined' ? (
+                    <>
+                      <Typography variant="body2">
+                        Regular Sales: <strong>{formatCurrency(Math.abs(settlement.regular?.balance || 0))}</strong>
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          {settlement.regular?.status}
+                        </Typography>
+                      </Typography>
+                      <Typography variant="body2">
+                        Processing Work: <strong>{formatCurrency(Math.abs(settlement.processing?.balance || 0))}</strong>
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          {settlement.processing?.status}
+                        </Typography>
+                      </Typography>
+                    </>
+                  ) : (
+                    <>
+                      <Typography variant="body2">
+                        Processing: <strong>{formatCurrency(Math.abs(settlement.processing?.balance || 0))}</strong>
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          {settlement.processing?.status}
+                        </Typography>
+                      </Typography>
+                      <Typography variant="body2">
+                        Supplier: <strong>{formatCurrency(Math.abs(settlement.supplier?.balance || 0))}</strong>
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          {settlement.supplier?.status}
+                        </Typography>
+                      </Typography>
+                    </>
+                  )}
                   <Typography variant="body2">
                     Combined Credit: <strong>{formatCurrency(ledger.summary?.totalCredit || 0)}</strong>
                   </Typography>

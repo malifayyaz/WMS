@@ -1,4 +1,5 @@
 const RawMaterial = require('../models/RawMaterial');
+const ReadyStock = require('../models/ReadyStock');
 const Supplier = require('../models/Supplier');
 const AnnealingRecord = require('../models/AnnealingRecord');
 const { COIL_CATEGORIES, getWiresForCoilCategory } = require('../utils/wireConfig');
@@ -20,15 +21,34 @@ const { logActivity } = require('../utils/activityLogService');
 const createRawMaterial = async (req, res, next) => {
   try {
     const body = { ...req.body };
-    if (!body.coilCategory || ![COIL_CATEGORIES.SHIPLET, COIL_CATEGORIES.PATRI].includes(body.coilCategory)) {
-      return res.status(400).json({ success: false, error: 'Invalid coil category', message: 'coilCategory must be Shiplet Coil or Patri Coil' });
+    const purchaseType = body.purchaseType || 'Coil';
+
+    // Wire purchases: coilCategory is not required; wireNumber is.
+    if (purchaseType === 'Coil') {
+      if (!body.coilCategory || ![COIL_CATEGORIES.SHIPLET, COIL_CATEGORIES.PATRI].includes(body.coilCategory)) {
+        return res.status(400).json({ success: false, error: 'Invalid coil category', message: 'coilCategory must be Shiplet Coil or Patri Coil' });
+      }
+    } else if (purchaseType === 'Wire') {
+      const wn = Number(body.wireNumber);
+      if (!wn || wn < 1 || wn > 20) {
+        return res.status(400).json({ success: false, error: 'Invalid wire number', message: 'wireNumber (1–20) is required for Wire purchases' });
+      }
+      body.coilCategory = body.coilCategory || COIL_CATEGORIES.SHIPLET; // set a default to avoid enum error
     }
+
     if (!body.materialType) {
-      body.materialType = body.coilCategory;
+      body.materialType = purchaseType === 'Wire' ? 'Wire' : body.coilCategory;
     }
     body.totalAmount = body.weightInKg * body.ratePerKg;
     body.amountDue = (body.totalAmount || 0) - (body.amountPaid || 0);
-    body.currentStock = body.weightInKg;
+
+    // Wire purchases go to ReadyStock, not RawMaterial.currentStock
+    if (purchaseType === 'Wire') {
+      body.currentStock = 0; // no raw coil stock added
+    } else {
+      body.currentStock = body.weightInKg;
+    }
+
     body.isReturn = false;
     const supplier = await Supplier.findById(body.supplierId);
     if (supplier) body.supplierName = supplier.name;
@@ -41,7 +61,27 @@ const createRawMaterial = async (req, res, next) => {
     await syncTransactionFromRawMaterial(raw, supplier?.name);
     await recalcSupplierTotals(body.supplierId);
 
-    // Automatically fulfil orders that had pending stock for this coil category
+    // Wire: add directly to finished wire stock (ReadyStock)
+    if (purchaseType === 'Wire') {
+      await ReadyStock.create({
+        wireNumber: Number(body.wireNumber),
+        wireLabel: body.wireLabel || `Wire #${body.wireNumber}`,
+        weightKg: Number(body.weightInKg),
+        bundles: Number(body.bundles) || 0,
+        productionDate: body.purchaseDate ? new Date(body.purchaseDate) : new Date(),
+        source: 'Supplier Purchase',
+        notes: body.notes || `Purchased from ${raw.supplierName || 'supplier'}`,
+        manufacturingCostPerKg: raw.ratePerKg || 0,
+      });
+      res.status(201).json({
+        success: true,
+        data: raw,
+        message: 'Wire purchase recorded and added to finished wire stock',
+      });
+      return;
+    }
+
+    // Coil: fulfil pending orders as before
     const fulfillResult = await fulfillPendingOrdersFromNewStock(body.coilCategory);
     await refreshLowStockAlerts(body.coilCategory);
 
@@ -191,6 +231,7 @@ const getRawMaterials = async (req, res, next) => {
   try {
     const filter = {};
     if (req.query.supplierId) filter.supplierId = req.query.supplierId;
+    if (req.query.purchaseType) filter.purchaseType = req.query.purchaseType;
     if (req.query.coilCategory) filter.coilCategory = req.query.coilCategory;
     if (req.query.materialType) filter.materialType = req.query.materialType;
     if (req.query.startDate || req.query.endDate) {

@@ -87,6 +87,9 @@ export default function ProcessMaterialLedger({ startDate, endDate, onDataChange
     setPayForm({
       amount: record.amountDue || '',
       paymentMethod: 'Cash',
+      chequeNumber: '',
+      chequeBank: 'MBL',
+      chequeDate: new Date().toISOString().slice(0, 10),
       paidBy: '',
       note: '',
     });
@@ -113,6 +116,10 @@ export default function ProcessMaterialLedger({ startDate, endDate, onDataChange
       await consumptionAPI.addPayment(payDialog.record._id, {
         amount,
         paymentMethod: payForm.paymentMethod,
+        chequeType: payForm.paymentMethod === 'Cheque' ? 'Company Cheque' : undefined,
+        chequeNumber: payForm.paymentMethod === 'Cheque' ? payForm.chequeNumber : undefined,
+        chequeBank: payForm.paymentMethod === 'Cheque' ? payForm.chequeBank : undefined,
+        chequeDate: payForm.paymentMethod === 'Cheque' ? payForm.chequeDate : undefined,
         paidBy: payForm.paidBy,
         note: payForm.note,
       });
@@ -432,6 +439,39 @@ export default function ProcessMaterialLedger({ startDate, endDate, onDataChange
               <MenuItem value="Cheque">Cheque</MenuItem>
             </Select>
           </FormControl>
+          {payForm.paymentMethod === 'Cheque' && (
+            <Box sx={{ mt: 1, mb: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>Cheque Details</Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="Cheque Number *"
+                value={payForm.chequeNumber || ''}
+                onChange={(e) => setPayForm((f) => ({ ...f, chequeNumber: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. 123456"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Bank Account *"
+                value={payForm.chequeBank || ''}
+                onChange={(e) => setPayForm((f) => ({ ...f, chequeBank: e.target.value }))}
+                margin="dense"
+                placeholder="e.g. MBL, UBL"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="Cheque Date"
+                value={payForm.chequeDate || new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setPayForm((f) => ({ ...f, chequeDate: e.target.value }))}
+                margin="dense"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Box>
+          )}
           <TextField
             fullWidth
             label="Paid By"

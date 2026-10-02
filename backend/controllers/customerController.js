@@ -2,7 +2,7 @@ const Customer = require('../models/Customer');
 const Order = require('../models/Order');
 const Transaction = require('../models/Transaction');
 const { buildScopedLedger, applyOpeningBalanceToTotals } = require('../utils/ledgerService');
-const { handleCustomerLinkOnSave, unlinkCustomer } = require('../utils/partyLinkService');
+const { handleCustomerLinkOnSave, unlinkCustomer, linkRegularAndProcessingCustomer, unlinkRegularCustomer, unlinkProcessingCustomer } = require('../utils/partyLinkService');
 const { logActivity } = require('../utils/activityLogService');
 const { recalcCustomerTotals } = require('../utils/transactionSyncService');
 
@@ -35,13 +35,22 @@ const createCustomer = async (req, res, next) => {
   try {
     const body = withOpeningBalance(req.body);
     // Don't persist link helper flags on the document
-    const { alsoSupplier, linkedSupplierId, unlinkSupplier, companyName, ...createBody } = body;
+    const {
+      alsoSupplier, linkedSupplierId, unlinkSupplier, companyName,
+      linkedProcessingCustomerId, linkedRegularCustomerId,
+      unlinkProcessingCustomer, unlinkRegularCustomer,
+      ...createBody
+    } = body;
     let customer = await Customer.create(createBody);
     customer = await handleCustomerLinkOnSave(customer, {
       alsoSupplier,
       linkedSupplierId,
       unlinkSupplier,
       companyName,
+      linkedProcessingCustomerId,
+      linkedRegularCustomerId,
+      unlinkProcessingCustomer,
+      unlinkRegularCustomer,
     });
     await logActivity({
       req,
@@ -66,7 +75,12 @@ const getCustomers = async (req, res, next) => {
     const { search } = req.query;
     const filter = {};
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { contactNumber: new RegExp(search, 'i') }];
-    const customers = await Customer.find(filter).sort({ createdAt: -1 }).lean();
+    const customers = await Customer.find(filter)
+      .populate('linkedSupplierId', 'name')
+      .populate('linkedProcessingCustomerId', 'name contactNumber')
+      .populate('linkedRegularCustomerId', 'name contactNumber')
+      .sort({ createdAt: -1 })
+      .lean();
     res.json({ success: true, data: customers, total: customers.length });
   } catch (error) {
     next(error);
@@ -128,13 +142,22 @@ const updateCustomer = async (req, res, next) => {
     }
 
     const previousValue = existing.toObject();
-    const { alsoSupplier, linkedSupplierId, unlinkSupplier, companyName, ...updateBody } = body;
+    const {
+      alsoSupplier, linkedSupplierId, unlinkSupplier, companyName,
+      linkedProcessingCustomerId, linkedRegularCustomerId,
+      unlinkProcessingCustomer, unlinkRegularCustomer,
+      ...updateBody
+    } = body;
     let customer = await Customer.findByIdAndUpdate(req.params.id, updateBody, { new: true, runValidators: true });
     customer = await handleCustomerLinkOnSave(customer, {
       alsoSupplier,
       linkedSupplierId,
       unlinkSupplier,
       companyName,
+      linkedProcessingCustomerId,
+      linkedRegularCustomerId,
+      unlinkProcessingCustomer,
+      unlinkRegularCustomer,
     });
     await logActivity({
       req,
@@ -345,6 +368,43 @@ const getCustomerLedger = async (req, res, next) => {
   }
 };
 
+/**
+ * Part D: Link a regular Customer to a Processing Customer (bidirectional).
+ * Body: { regularCustomerId, processingCustomerId }
+ * Or: pass both directly and link the current customer (by id param) to the given one.
+ */
+const linkCustomerToProcessingCustomer = async (req, res, next) => {
+  try {
+    const { regularCustomerId, processingCustomerId } = req.body;
+    if (!regularCustomerId || !processingCustomerId) {
+      return res.status(400).json({ success: false, message: 'regularCustomerId and processingCustomerId are required' });
+    }
+    const result = await linkRegularAndProcessingCustomer(regularCustomerId, processingCustomerId);
+    res.json({ success: true, data: result, message: 'Customers linked successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Part D: Remove the Customer<->ProcessingCustomer link from a regular customer.
+ */
+const unlinkCustomerFromProcessingCustomer = async (req, res, next) => {
+  try {
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+    if (customer.customerType === 'Processing') {
+      await unlinkProcessingCustomer(customer._id);
+    } else {
+      await unlinkRegularCustomer(customer._id);
+    }
+    const updated = await Customer.findById(req.params.id);
+    res.json({ success: true, data: updated, message: 'Customer link removed' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createCustomer,
   getCustomers,
@@ -355,4 +415,6 @@ module.exports = {
   getCustomerPaymentHistory,
   addCustomerPayment,
   getCustomerLedger,
+  linkCustomerToProcessingCustomer,
+  unlinkCustomerFromProcessingCustomer,
 };

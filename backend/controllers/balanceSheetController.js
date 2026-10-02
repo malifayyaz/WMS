@@ -8,6 +8,7 @@ const JobWork = require('../models/JobWork');
 const Transaction = require('../models/Transaction');
 const PersonalPayment = require('../models/PersonalPayment');
 const Order = require('../models/Order');
+const ConsumptionMaterial = require('../models/ConsumptionMaterial');
 const { buildProfitReport } = require('../utils/profitReportService');
 
 function getOrderWeight(order) {
@@ -284,11 +285,28 @@ exports.getBalanceSheet = async (req, res, next) => {
       }
     });
 
+    // Add ProcessMaterial purchases to supplier payables (Part A)
+    const consumptionMaterialRecords = await ConsumptionMaterial.find({
+      supplierId: { $exists: true, $ne: null },
+      purchaseDate: { $gte: dawnOfTime, $lte: asOfDate },
+    }).lean();
+    consumptionMaterialRecords.forEach((cm) => {
+      if (cm.supplierId) {
+        const sid = cm.supplierId.toString();
+        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        // totalCost = debit (we owe them); amountPaid = credit (already paid)
+        supplierBalances[sid] += (Number(cm.totalCost) || 0);
+        supplierBalances[sid] -= (Number(cm.amountPaid) || 0);
+      }
+    });
+
     transactions.forEach(t => {
       if (t.relatedTo === 'Supplier' && t.relatedId) {
         const sid = t.relatedId.toString();
         if (!supplierBalances[sid]) supplierBalances[sid] = 0;
         if (t.transactionType === 'Money Out') {
+          // Skip ConsumptionMaterial-sourced transactions — already counted above via amountPaid
+          if (t.sourceType === 'ConsumptionMaterial') return;
           supplierBalances[sid] -= (Number(t.amount) || 0);
         } else if (t.transactionType === 'Money In') {
           supplierBalances[sid] += (Number(t.amount) || 0);
@@ -306,9 +324,27 @@ exports.getBalanceSheet = async (req, res, next) => {
     let annealingAdvances = 0;
     const allAnnealers = await AnnealingPerson.find().lean();
     let annealingCount = 0;
-    allAnnealers.forEach(a => {
-      if (a.totalAmountDue > 0) { annealingPayables += a.totalAmountDue; annealingCount++; }
-      else if (a.totalAmountDue < 0) annealingAdvances += Math.abs(a.totalAmountDue);
+
+    // Part B fix: reconstruct annealing balance as-of asOfDate from paymentHistory
+    // instead of reading stored totalAmountDue (which never changes with date picker).
+    allAnnealers.forEach((a) => {
+      let balance = 0;
+      const ob = Number(a.openingBalance || 0);
+      const obType = a.openingBalanceType || 'none';
+      const obDate = a.openingBalanceDate ? new Date(a.openingBalanceDate) : new Date(0);
+      if (ob > 0 && obType !== 'none' && obDate <= asOfDate) {
+        balance = obType === 'credit' ? ob : -ob;
+      }
+      (a.paymentHistory || []).forEach((ph) => {
+        const phDate = ph.paymentDate ? new Date(ph.paymentDate) : new Date(0);
+        if (phDate > asOfDate) return;
+        const amt = Number(ph.amount || 0);
+        // 'Bill Added' entries increase due; all other entries (payments) reduce due
+        const isBill = (ph.note || '').toLowerCase().includes('bill');
+        if (isBill) { balance += amt; } else { balance -= amt; }
+      });
+      if (balance > 0) { annealingPayables += balance; annealingCount++; }
+      else if (balance < 0) annealingAdvances += Math.abs(balance);
     });
 
     let personalReceivables = 0;

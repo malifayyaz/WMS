@@ -10,7 +10,7 @@ const readyStockSchema = new mongoose.Schema(
     productionDate: { type: Date, default: Date.now },
     source: {
       type: String,
-      enum: ['Direct Production', 'Order Surplus', 'Customer Return'],
+      enum: ['Direct Production', 'Order Surplus', 'Customer Return', 'Supplier Purchase'],
       default: 'Direct Production',
     },
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },

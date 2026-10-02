@@ -31,6 +31,22 @@ const customerSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Supplier',
     },
+    /**
+     * For a regular (Ledger/Daily) customer: linked Processing Customer record
+     * when the same person also gives coil/wire for job work.
+     */
+    linkedProcessingCustomerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+    },
+    /**
+     * For a Processing customer: linked regular Customer record
+     * when the same person also buys wire from us.
+     */
+    linkedRegularCustomerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+    },
     paymentHistory: [paymentHistorySchema],
   },
   { timestamps: true }
@@ -38,5 +54,7 @@ const customerSchema = new mongoose.Schema(
 
 customerSchema.index({ name: 1 });
 customerSchema.index({ linkedSupplierId: 1 });
+customerSchema.index({ linkedProcessingCustomerId: 1 });
+customerSchema.index({ linkedRegularCustomerId: 1 });
 
 module.exports = mongoose.model('Customer', customerSchema);

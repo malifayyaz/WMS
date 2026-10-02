@@ -68,6 +68,8 @@ const jobWorkSchema = new mongoose.Schema(
       enum: [COIL_CATEGORIES.SHIPLET, COIL_CATEGORIES.PATRI],
       default: COIL_CATEGORIES.SHIPLET,
     },
+    /** 'Coil' = customer brings raw coil (default), 'Wire' = customer brings finished wire for resizing */
+    inputMaterialType: { type: String, enum: ['Coil', 'Wire'], default: 'Coil' },
     arrivedWeightKg: { type: Number, required: true },
     /** Customer's own coil rate (informational, e.g. 232) */
     coilRatePerKg: { type: Number, default: 0 },

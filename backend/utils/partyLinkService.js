@@ -78,6 +78,27 @@ async function handleCustomerLinkOnSave(customer, body) {
     await customer.save();
   }
 
+  // --- Part D: Customer<->ProcessingCustomer link ---
+  if (body.unlinkProcessingCustomer) {
+    await unlinkProcessingCustomer(customer._id);
+    return Customer.findById(customer._id);
+  }
+
+  if (body.linkedProcessingCustomerId) {
+    await linkRegularAndProcessingCustomer(customer._id, body.linkedProcessingCustomerId);
+    return Customer.findById(customer._id);
+  }
+
+  if (body.linkedRegularCustomerId) {
+    await linkRegularAndProcessingCustomer(body.linkedRegularCustomerId, customer._id);
+    return Customer.findById(customer._id);
+  }
+
+  if (body.unlinkRegularCustomer) {
+    await unlinkRegularCustomer(customer._id);
+    return Customer.findById(customer._id);
+  }
+
   return Customer.findById(customer._id);
 }
 
@@ -112,10 +133,69 @@ async function handleSupplierLinkOnSave(supplier, body) {
   return Supplier.findById(supplier._id);
 }
 
+// ─── Part D: Customer <-> ProcessingCustomer linking ────────────────────────
+
+/**
+ * Bidirectional link between a regular Customer and a Processing Customer.
+ * A regular customer sets linkedProcessingCustomerId.
+ * The processing customer sets linkedRegularCustomerId.
+ */
+async function linkRegularAndProcessingCustomer(regularId, processingId) {
+  if (!regularId || !processingId) return null;
+
+  const regular = await Customer.findById(regularId);
+  const processing = await Customer.findById(processingId);
+  if (!regular || !processing) {
+    const err = new Error('One or both customers not found for linking');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  // Clear stale reverse links
+  if (regular.linkedProcessingCustomerId && String(regular.linkedProcessingCustomerId) !== String(processingId)) {
+    await Customer.findByIdAndUpdate(regular.linkedProcessingCustomerId, { $unset: { linkedRegularCustomerId: 1 } });
+  }
+  if (processing.linkedRegularCustomerId && String(processing.linkedRegularCustomerId) !== String(regularId)) {
+    await Customer.findByIdAndUpdate(processing.linkedRegularCustomerId, { $unset: { linkedProcessingCustomerId: 1 } });
+  }
+
+  regular.linkedProcessingCustomerId = processingId;
+  processing.linkedRegularCustomerId = regularId;
+  await regular.save();
+  await processing.save();
+
+  return { regular, processing };
+}
+
+/**
+ * Remove the Customer<->ProcessingCustomer link starting from the regular customer.
+ */
+async function unlinkRegularCustomer(regularId) {
+  const regular = await Customer.findById(regularId);
+  if (!regular?.linkedProcessingCustomerId) return;
+  await Customer.findByIdAndUpdate(regular.linkedProcessingCustomerId, { $unset: { linkedRegularCustomerId: 1 } });
+  regular.linkedProcessingCustomerId = undefined;
+  await regular.save();
+}
+
+/**
+ * Remove the Customer<->ProcessingCustomer link starting from the processing customer.
+ */
+async function unlinkProcessingCustomer(processingId) {
+  const processing = await Customer.findById(processingId);
+  if (!processing?.linkedRegularCustomerId) return;
+  await Customer.findByIdAndUpdate(processing.linkedRegularCustomerId, { $unset: { linkedProcessingCustomerId: 1 } });
+  processing.linkedRegularCustomerId = undefined;
+  await processing.save();
+}
+
 module.exports = {
   linkCustomerAndSupplier,
   unlinkCustomer,
   unlinkSupplier,
   handleCustomerLinkOnSave,
   handleSupplierLinkOnSave,
+  linkRegularAndProcessingCustomer,
+  unlinkRegularCustomer,
+  unlinkProcessingCustomer,
 };

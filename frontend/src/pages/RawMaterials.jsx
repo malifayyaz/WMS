@@ -9,6 +9,8 @@ import {
   Switch,
   Collapse,
   Divider,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -24,6 +26,7 @@ import { usePermissions } from '../hooks/usePermissions';
 
 const paymentMethods = ['Cash', 'Bank Transfer', 'Cheque'];
 const COIL_CATEGORIES = ['Shiplet Coil', 'Patri Coil'];
+const WIRE_NUMBERS = Array.from({ length: 20 }, (_, i) => i + 1);
 const toInputDate = (value) => (value ? new Date(value).toISOString().slice(0, 10) : '');
 
 export default function RawMaterials() {
@@ -37,6 +40,8 @@ export default function RawMaterials() {
   const [tab, setTab] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
+    purchaseType: 'Coil',
+    wireNumber: '12',
     supplierId: '', coilCategory: 'Shiplet Coil', materialType: '', weightInKg: '', ratePerKg: '',
     amountPaid: 0, paymentMethod: 'Cash', paidBy: '', purchaseDate: '', notes: '',
     bundles: '',
@@ -52,14 +57,18 @@ export default function RawMaterials() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
-  const categoryFilter = tab === 1 ? 'Shiplet Coil' : tab === 2 ? 'Patri Coil' : '';
-
   const fetchList = async () => {
     setLoading(true);
     try {
-      const params = categoryFilter ? { coilCategory: categoryFilter } : {};
+      const params = {};
+      if (tab === 1) params.coilCategory = 'Shiplet Coil';
+      else if (tab === 2) params.coilCategory = 'Patri Coil';
+      else if (tab === 3) params.purchaseType = 'Wire';
+
       const [res, supRes, sumRes] = await Promise.all([
-        rawMaterialsAPI.getAll(params), suppliersAPI.getAll(), rawMaterialsAPI.getStockSummary(),
+        rawMaterialsAPI.getAll(params),
+        suppliersAPI.getAll({ supplierType: 'Raw Material' }),
+        rawMaterialsAPI.getStockSummary(),
       ]);
       setList(res.data.data || []);
       setSuppliers(supRes.data.data || []);
@@ -73,10 +82,15 @@ export default function RawMaterials() {
 
   useEffect(() => { setPage(0); fetchList(); }, [tab]);
 
-  const handleOpenAdd = (coilCategory = 'Shiplet Coil') => {
+  const handleOpenAdd = (defaultType = 'Coil') => {
     const today = new Date().toISOString().slice(0, 10);
+    const isWire = defaultType === 'Wire' || tab === 3;
     setForm({
-      supplierId: suppliers[0]?._id || '', coilCategory, materialType: coilCategory,
+      purchaseType: isWire ? 'Wire' : 'Coil',
+      wireNumber: '12',
+      supplierId: suppliers[0]?._id || '',
+      coilCategory: defaultType === 'Patri Coil' ? 'Patri Coil' : 'Shiplet Coil',
+      materialType: isWire ? 'Wire' : (defaultType === 'Patri Coil' ? 'Patri Coil' : 'Shiplet Coil'),
       weightInKg: '', ratePerKg: '', amountPaid: 0, paymentMethod: 'Cash', paidBy: '',
       purchaseDate: today, notes: '',
       bundles: '',
@@ -91,7 +105,10 @@ export default function RawMaterials() {
   };
 
   const handleOpenEdit = (row) => {
+    const isWire = row.purchaseType === 'Wire' || !!row.wireNumber;
     setForm({
+      purchaseType: isWire ? 'Wire' : 'Coil',
+      wireNumber: row.wireNumber ? String(row.wireNumber) : '12',
       supplierId: row.supplierId?._id || row.supplierId,
       coilCategory: row.coilCategory || 'Shiplet Coil',
       materialType: row.materialType,
@@ -114,20 +131,33 @@ export default function RawMaterials() {
   };
 
   const handleSave = async () => {
-    if (!form.supplierId || !form.coilCategory || !form.weightInKg || !form.ratePerKg) {
-      setSnack({ open: true, message: 'Supplier, coil category, weight and rate required', severity: 'error' });
+    const isWire = form.purchaseType === 'Wire';
+    if (!form.supplierId || !form.weightInKg || !form.ratePerKg) {
+      setSnack({ open: true, message: 'Supplier, weight and rate are required', severity: 'error' });
       return;
     }
+    if (isWire && (!form.wireNumber || Number(form.wireNumber) < 1 || Number(form.wireNumber) > 20)) {
+      setSnack({ open: true, message: 'Please select a valid wire number (1–20)', severity: 'error' });
+      return;
+    }
+    if (!isWire && !form.coilCategory) {
+      setSnack({ open: true, message: 'Please select a coil category', severity: 'error' });
+      return;
+    }
+
     const payload = {
       ...form,
-      materialType: form.materialType || form.coilCategory,
+      purchaseType: form.purchaseType || 'Coil',
+      materialType: isWire ? 'Wire' : (form.materialType || form.coilCategory),
+      wireNumber: isWire ? Number(form.wireNumber) : undefined,
+      wireLabel: isWire ? `Wire #${form.wireNumber}` : undefined,
       weightInKg: Number(form.weightInKg),
       ratePerKg: Number(form.ratePerKg),
       amountPaid: Number(form.amountPaid) || 0,
       bundles: Number(form.bundles) || 0,
       purchaseDate: form.purchaseDate || undefined,
     };
-    if (!editingId && form.sendForAnnealing) {
+    if (!editingId && !isWire && form.sendForAnnealing) {
       payload.sendForAnnealing = true;
       payload.annealingWeightKg = Number(form.annealingWeightKg) || Number(form.weightInKg);
       payload.annealingBundles = Number(form.annealingBundles) || Number(form.bundles) || 0;
@@ -149,6 +179,8 @@ export default function RawMaterials() {
         const res = await rawMaterialsAPI.create(payload);
         if (payload.sendForAnnealing || res.data?.data?.annealingRecord) {
           msg = 'Stock recorded and sent for annealing successfully';
+        } else if (isWire) {
+          msg = 'Wire purchase recorded and added to finished wire stock (Ready Stock)';
         } else {
           msg = 'Stock recorded successfully';
         }
@@ -200,9 +232,10 @@ export default function RawMaterials() {
         allowScrollButtonsMobile
         sx={{ mb: 2 }}
       >
-        <Tab label="All Coils" />
+        <Tab label="All Purchases" />
         <Tab label="Shiplet Coil (#1–#19)" />
         <Tab label="Patri Coil (#20 Binding)" />
+        <Tab label="Finished Wire Purchases" />
       </Tabs>
 
       <PageToolbar sx={{ justifyContent: 'flex-end' }}>
@@ -237,7 +270,7 @@ export default function RawMaterials() {
           startIcon={<AddIcon />}
           onClick={() => {
             if (isViewer) { setAccessDenied(true); return; }
-            handleOpenAdd(categoryFilter || 'Shiplet Coil');
+            handleOpenAdd(tab === 3 ? 'Wire' : tab === 2 ? 'Patri Coil' : 'Coil');
           }}
         >
           Add Purchase
@@ -249,17 +282,24 @@ export default function RawMaterials() {
       ) : isMobile ? (
         <Stack spacing={1.5}>
           {list.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No coil purchases found.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No purchases found.</Typography>
           )}
           {list.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
             <Paper key={row._id} variant="outlined" sx={{ p: 1.5 }}>
               <Typography fontWeight={700}>{row.supplierName || row.supplierId?.name}</Typography>
-              <Typography variant="body2" color="text.secondary">{formatDate(row.purchaseDate)} · {row.coilCategory}</Typography>
+              <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                <Typography variant="body2" color="text.secondary">{formatDate(row.purchaseDate)} ·</Typography>
+                {row.purchaseType === 'Wire' || row.wireNumber ? (
+                  <Chip size="small" label={`Wire #${row.wireNumber || ''}`} color="secondary" sx={{ height: 20, fontSize: '0.72rem', fontWeight: 600 }} />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">{row.coilCategory}</Typography>
+                )}
+              </Box>
               <Box display="flex" justifyContent="space-between" mt={1} flexWrap="wrap" gap={0.5}>
                 <Typography variant="caption">Weight: <strong>{row.weightInKg} kg</strong></Typography>
                 <Typography variant="caption">Rate: <strong>{formatCurrency(row.ratePerKg)}</strong></Typography>
                 <Typography variant="caption">Total: <strong>{formatCurrency(row.totalAmount)}</strong></Typography>
-                <Typography variant="caption">Stock: <strong>{row.currentStock}</strong></Typography>
+                <Typography variant="caption">Stock: <strong>{row.purchaseType === 'Wire' ? 'Ready Stock' : row.currentStock}</strong></Typography>
               </Box>
               <Stack direction="row" spacing={0.5} justifyContent="flex-end" mt={1}>
                 <IconButton size="small" onClick={() => { if (isViewer) { setAccessDenied(true); return; } handleOpenEdit(row); }}><EditIcon /></IconButton>
@@ -284,11 +324,11 @@ export default function RawMaterials() {
               <TableRow>
                 <TableCell>Date</TableCell>
                 <TableCell>Supplier</TableCell>
-                <TableCell>Coil Category</TableCell>
+                <TableCell>Category / Material</TableCell>
                 <TableCell align="right">Weight (kg)</TableCell>
                 <TableCell align="right">Rate</TableCell>
                 <TableCell align="right">Total</TableCell>
-                <TableCell align="right">Stock</TableCell>
+                <TableCell align="right">Stock Pool</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -296,7 +336,7 @@ export default function RawMaterials() {
               {list.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8}>
-                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No coil purchases found.</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No purchases found.</Typography>
                   </TableCell>
                 </TableRow>
               )}
@@ -317,11 +357,26 @@ export default function RawMaterials() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell>{row.coilCategory}</TableCell>
+                  <TableCell>
+                    {row.purchaseType === 'Wire' || row.wireNumber ? (
+                      <Box display="flex" alignItems="center" gap={0.75}>
+                        <Chip label={`Wire #${row.wireNumber}`} size="small" color="secondary" sx={{ fontWeight: 700, height: 22 }} />
+                        <Typography variant="caption" color="text.secondary">Finished Wire</Typography>
+                      </Box>
+                    ) : (
+                      row.coilCategory
+                    )}
+                  </TableCell>
                   <TableCell align="right">{row.weightInKg}</TableCell>
                   <TableCell align="right">{formatCurrency(row.ratePerKg)}</TableCell>
                   <TableCell align="right">{formatCurrency(row.totalAmount)}</TableCell>
-                  <TableCell align="right">{row.currentStock}</TableCell>
+                  <TableCell align="right">
+                    {row.purchaseType === 'Wire' || row.wireNumber ? (
+                      <Chip label="Ready Stock" size="small" variant="outlined" color="success" sx={{ height: 20, fontSize: '0.68rem' }} />
+                    ) : (
+                      row.currentStock
+                    )}
+                  </TableCell>
                   <TableCell align="right">
                     <IconButton
                       size="small"
@@ -360,17 +415,54 @@ export default function RawMaterials() {
       )}
 
       <ResponsiveDialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId ? 'Edit Purchase' : 'Record Coil Purchase'}</DialogTitle>
+        <DialogTitle>{editingId ? 'Edit Purchase' : form.purchaseType === 'Wire' ? 'Record Finished Wire Purchase' : 'Record Coil Purchase'}</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Coil Category</InputLabel>
-            <Select value={form.coilCategory} onChange={(e) => setForm((f) => ({ ...f, coilCategory: e.target.value, materialType: e.target.value }))} label="Coil Category">
-              {COIL_CATEGORIES.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
-            {form.coilCategory === 'Patri Coil' ? 'Used for Binding Wire #20 only' : 'Used for Wire #1 through #19'}
-          </Alert>
+          <Box sx={{ my: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block', fontWeight: 600 }}>Purchase Material Type</Typography>
+            <ToggleButtonGroup
+              value={form.purchaseType}
+              exclusive
+              onChange={(_, val) => val && setForm((f) => ({ ...f, purchaseType: val, materialType: val === 'Wire' ? 'Wire' : f.coilCategory }))}
+              size="small"
+              fullWidth
+            >
+              <ToggleButton value="Coil" sx={{ fontWeight: 600 }}>Raw Coil (Shiplet / Patri)</ToggleButton>
+              <ToggleButton value="Wire" sx={{ fontWeight: 600 }}>Finished Wire (Ready Stock)</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          {form.purchaseType === 'Wire' ? (
+            <>
+              <FormControl fullWidth margin="dense" required>
+                <InputLabel>Wire Size / Number</InputLabel>
+                <Select
+                  value={form.wireNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, wireNumber: e.target.value }))}
+                  label="Wire Size / Number"
+                >
+                  {WIRE_NUMBERS.map((n) => (
+                    <MenuItem key={n} value={String(n)}>Wire #{n}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                Direct wire purchase: adds stock into finished WIRE stock (Ready Stock inventory pool).
+              </Alert>
+            </>
+          ) : (
+            <>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Coil Category</InputLabel>
+                <Select value={form.coilCategory} onChange={(e) => setForm((f) => ({ ...f, coilCategory: e.target.value, materialType: e.target.value }))} label="Coil Category">
+                  {COIL_CATEGORIES.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                {form.coilCategory === 'Patri Coil' ? 'Used for Binding Wire #20 only' : 'Used for Wire #1 through #19'}
+              </Alert>
+            </>
+          )}
+
           <FormControl fullWidth margin="dense">
             <InputLabel>Supplier</InputLabel>
             <Select value={form.supplierId} onChange={(e) => setForm((f) => ({ ...f, supplierId: e.target.value }))} label="Supplier">
@@ -379,6 +471,7 @@ export default function RawMaterials() {
           </FormControl>
           <TextField fullWidth type="number" label="Weight (kg)" value={form.weightInKg} onChange={(e) => setForm((f) => ({ ...f, weightInKg: e.target.value }))} margin="dense" required />
           <TextField fullWidth type="number" label="Rate per kg" value={form.ratePerKg} onChange={(e) => setForm((f) => ({ ...f, ratePerKg: e.target.value }))} margin="dense" required />
+          <TextField fullWidth type="number" label="Bundles (optional)" value={form.bundles} onChange={(e) => setForm((f) => ({ ...f, bundles: e.target.value }))} margin="dense" />
           <TextField fullWidth type="number" label="Amount Paid" value={form.amountPaid} onChange={(e) => setForm((f) => ({ ...f, amountPaid: e.target.value }))} margin="dense" />
           <TextField fullWidth type="date" label="Purchase Date" value={form.purchaseDate} onChange={(e) => setForm((f) => ({ ...f, purchaseDate: e.target.value }))} margin="dense" InputLabelProps={{ shrink: true }} />
           <FormControl fullWidth margin="dense">
@@ -390,7 +483,7 @@ export default function RawMaterials() {
           <TextField fullWidth label="Paid By" value={form.paidBy} onChange={(e) => setForm((f) => ({ ...f, paidBy: e.target.value }))} margin="dense" />
           <TextField fullWidth label="Notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} margin="dense" />
 
-          {!editingId && (
+          {!editingId && form.purchaseType === 'Coil' && (
             <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
               <FormControlLabel
                 control={

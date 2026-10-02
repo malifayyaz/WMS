@@ -2779,6 +2779,7 @@ export default function DailyBook() {
       setJobWorkEditId(row._id);
       setJobWorkForm({
         customerId: row.customerId?._id || row.customerId,
+        inputMaterialType: row.inputMaterialType || 'Coil',
         coilCategory: row.coilCategory || 'Shiplet Coil',
         arrivedWeightKg: row.arrivedWeightKg || '',
         coilRatePerKg: row.coilRatePerKg || '',
@@ -2789,6 +2790,7 @@ export default function DailyBook() {
       setJobWorkEditId(null);
       setJobWorkForm({
         customerId: selectedPartyId || processingCustomers[0]?._id || '',
+        inputMaterialType: 'Coil',
         coilCategory: 'Shiplet Coil',
         arrivedWeightKg: '',
         coilRatePerKg: '',
@@ -2807,6 +2809,7 @@ export default function DailyBook() {
     try {
       const payload = {
         ...jobWorkForm,
+        inputMaterialType: jobWorkForm.inputMaterialType || 'Coil',
         arrivedWeightKg: Number(jobWorkForm.arrivedWeightKg),
         coilRatePerKg: Number(jobWorkForm.coilRatePerKg) || 0,
         arrivalDate: jobWorkForm.arrivalDate || entryDate,
@@ -2816,7 +2819,15 @@ export default function DailyBook() {
       } else {
         await jobWorkAPI.create(payload);
       }
-      setSnack({ open: true, message: jobWorkEditId ? 'Job work updated' : 'Job work coil arrival recorded', severity: 'success' });
+      setSnack({
+        open: true,
+        message: jobWorkEditId
+          ? 'Job work updated'
+          : payload.inputMaterialType === 'Wire'
+            ? 'Job work wire arrival recorded'
+            : 'Job work coil arrival recorded',
+        severity: 'success',
+      });
       setJobWorkDialogOpen(false);
       setJobWorkEditId(null);
       fetchJobWorkData();
@@ -4490,7 +4501,14 @@ export default function DailyBook() {
                       <TableRow>
                         <TableCell>{formatDate(row.arrivalDate)}</TableCell>
                         <TableCell>{row.customerName}</TableCell>
-                        <TableCell>{row.coilCategory}</TableCell>
+                        <TableCell>
+                          <Box display="flex" alignItems="center" gap={0.75}>
+                            {row.inputMaterialType === 'Wire' && (
+                              <Chip size="small" label="Wire" color="secondary" sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }} />
+                            )}
+                            <span>{row.coilCategory}</span>
+                          </Box>
+                        </TableCell>
                         <TableCell align="right">{(row.arrivedWeightKg || 0).toFixed(2)}</TableCell>
                         <TableCell align="right">{row.coilRatePerKg ? formatCurrency(row.coilRatePerKg) : '—'}</TableCell>
                         <TableCell align="right">{(row.deliveredWeightKg || 0).toFixed(2)}</TableCell>
@@ -6054,10 +6072,10 @@ export default function DailyBook() {
       </ResponsiveDialog>
 
       <ResponsiveDialog open={jobWorkDialogOpen} onClose={() => { setJobWorkDialogOpen(false); setJobWorkEditId(null); }} maxWidth="sm" fullWidth>
-        <DialogTitle>{jobWorkEditId ? 'Edit Processing Work Record' : 'Processing Work — Coil Arrival'}</DialogTitle>
+        <DialogTitle>{jobWorkEditId ? 'Edit Processing Work Record' : 'Processing Work — Arrival'}</DialogTitle>
         <DialogContent sx={{ overflowY: 'auto' }}>
           <Alert severity="info" sx={{ mb: 1 }}>
-            Customer&apos;s own coil arrives for manufacturing. Labour rate is entered later when wire is delivered (rate varies by wire).
+            Customer&apos;s own coil or wire arrives for manufacturing / resizing. Labour rate is entered later when wire is delivered.
           </Alert>
           <PartySearchSelect
             options={processingCustomers}
@@ -6068,8 +6086,19 @@ export default function DailyBook() {
             getOptionLabel={customerSearchLabel}
           />
           <FormControl fullWidth margin="dense">
-            <InputLabel>Coil Category</InputLabel>
-            <Select value={jobWorkForm.coilCategory} label="Coil Category" onChange={(e) => setJobWorkForm((f) => ({ ...f, coilCategory: e.target.value }))}>
+            <InputLabel>Material Brought by Customer</InputLabel>
+            <Select
+              value={jobWorkForm.inputMaterialType || 'Coil'}
+              label="Material Brought by Customer"
+              onChange={(e) => setJobWorkForm((f) => ({ ...f, inputMaterialType: e.target.value }))}
+            >
+              <MenuItem value="Coil">Raw Coil (Customer brings raw coil to draw into wire)</MenuItem>
+              <MenuItem value="Wire">Finished Wire (Customer brings wire to resize into different size)</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Coil / Material Category</InputLabel>
+            <Select value={jobWorkForm.coilCategory} label="Coil / Material Category" onChange={(e) => setJobWorkForm((f) => ({ ...f, coilCategory: e.target.value }))}>
               <MenuItem value="Shiplet Coil">Shiplet Coil</MenuItem>
               <MenuItem value="Patri Coil">Patri Coil</MenuItem>
             </Select>

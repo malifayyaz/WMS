@@ -1,6 +1,7 @@
 const Transaction = require('../models/Transaction');
 const Order = require('../models/Order');
 const RawMaterial = require('../models/RawMaterial');
+const ConsumptionMaterial = require('../models/ConsumptionMaterial');
 const JobWork = require('../models/JobWork');
 const { startOfDay, endOfDay, format } = require('date-fns');
 
@@ -318,12 +319,49 @@ async function collectRawEntries(partyType, party) {
       }
     });
 
+    // Process Material purchases from this vendor
+    const processPurchases = await ConsumptionMaterial.find({ supplierId: party._id }).sort({ purchaseDate: 1 });
+    processPurchases.forEach((p) => {
+      entries.push({
+        date: p.purchaseDate,
+        description: `Process material — ${p.materialType} (${p.quantity} ${p.unit || ''})`.trim(),
+        credit: 0,
+        debit: p.totalCost || 0,
+        weightKg: 0,
+        ratePerKg: p.costPerUnit || 0,
+        totalPrice: p.totalCost || 0,
+        source: 'Process Material Purchase',
+        sourceId: p._id,
+        entryType: 'purchase',
+        paymentMethod: '',
+      });
+      // Each payment entry (initial + subsequent) stored in paymentHistory
+      (p.paymentHistory || []).forEach((ph) => {
+        if ((ph.amount || 0) <= 0) return;
+        entries.push({
+          date: ph.paymentDate,
+          description: `Payment — ${p.materialType}`,
+          credit: ph.amount,
+          debit: 0,
+          weightKg: 0,
+          ratePerKg: 0,
+          totalPrice: ph.amount,
+          source: 'Process Material Payment',
+          sourceId: p._id,
+          entryType: 'payment',
+          paymentMethod: ph.paymentMethod || '',
+        });
+      });
+    });
+
   }
 
   const transactions = await Transaction.find({ relatedTo: partyType, relatedId: party._id }).sort({ transactionDate: 1 });
   transactions.forEach((t) => {
     if (t.orderId || t.sourceType === 'Order') return;
     if (t.sourceType === 'RawMaterial') return;
+    // ConsumptionMaterial entries are already added from paymentHistory above; skip to avoid double-count
+    if (partyType === 'Supplier' && t.sourceType === 'ConsumptionMaterial') return;
     const isIn = t.transactionType === 'Money In';
     if (partyType === 'Customer') {
       entries.push({
@@ -650,6 +688,61 @@ async function buildCombinedLedger(customer, supplier, options = {}) {
  * - own / processing / supplier (single-side)
  * - combined (both sides when linked)
  */
+/**
+ * Merge two Customer ledgers (regular <-> processing) into a single combined view.
+ * Tags each entry with role: 'regular' | 'processing'.
+ * Part D: Customer<->ProcessingCustomer link.
+ */
+async function buildCombinedCustomerLedger(regular, processing, options = {}) {
+  const [regEntries, procEntries] = await Promise.all([
+    regular ? collectRawEntries('Customer', regular) : Promise.resolve([]),
+    processing ? collectRawEntries('Customer', processing) : Promise.resolve([]),
+  ]);
+  const regRanged = applyDateRange(regEntries, options.startDate, options.endDate);
+  const procRanged = applyDateRange(procEntries, options.startDate, options.endDate);
+  const regularSide = regular ? sideSettlement('Regular Sales', 'regular', regRanged.entries) : null;
+  const processingSide = processing ? sideSettlement('Processing Work', 'processing', procRanged.entries) : null;
+  const theyOweUs = (regularSide?.theyOweUs || 0) + (processingSide?.theyOweUs || 0);
+  const weOweThem = (regularSide?.weOweThem || 0) + (processingSide?.weOweThem || 0);
+  const netBalance = theyOweUs - weOweThem;
+  const settlement = {
+    regular: regularSide, processing: processingSide, theyOweUs, weOweThem,
+    deducted: Math.min(theyOweUs, weOweThem), netBalance, netAmount: Math.abs(netBalance),
+    status: netBalance > 0 ? 'They owe us' : netBalance < 0 ? 'We owe them' : 'Settled',
+  };
+  const tagged = [
+    ...regEntries.map((e) => ({ ...e, role: 'regular', roleLabel: 'Regular' })),
+    ...procEntries.map((e) => ({ ...e, role: 'processing', roleLabel: 'Processing' })),
+  ].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const party = {
+    _id: regular?._id || processing?._id, name: regular?.name || processing?.name,
+    type: 'CombinedCustomer', regularCustomerId: regular?._id || null, processingCustomerId: processing?._id || null,
+  };
+  const { entries: rangedEntries, broughtForward } = applyDateRange(tagged, options.startDate, options.endDate);
+  if (options.mode === 'datewise') {
+    const byDate = new Map();
+    rangedEntries.forEach((e) => {
+      if (e.entryType === 'broughtforward') return;
+      const day = format(new Date(e.date), 'yyyy-MM-dd');
+      if (!byDate.has(day)) byDate.set(day, { date: day, credit: 0, debit: 0, totalWeight: 0, totalPrice: 0, entries: [] });
+      const row = byDate.get(day);
+      row.credit += e.credit || 0; row.debit += e.debit || 0; row.totalPrice += e.totalPrice || 0;
+      if (['sale', 'purchase', 'jobwork'].includes(e.entryType)) row.totalWeight += e.weightKg || 0;
+      row.entries.push(e);
+    });
+    let runningBalance = broughtForward;
+    const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
+      .map((day) => { const ob = runningBalance; runningBalance += day.credit - day.debit; return { ...day, openingBalance: ob, closingBalance: runningBalance }; });
+    const summary = summarizeEntries(rangedEntries);
+    summary.broughtForward = broughtForward; summary.settlement = settlement; summary.balance = settlement.netBalance;
+    return { party, ledgerMode: 'datewise', scope: 'customer-combined', linked: true, days, summary, settlement };
+  }
+  const entries = applyRunningBalance(rangedEntries);
+  const summary = summarizeEntries(rangedEntries);
+  summary.broughtForward = broughtForward; summary.settlement = settlement; summary.balance = settlement.netBalance;
+  return { party, ledgerMode: 'personal', scope: 'customer-combined', linked: true, entries, summary, settlement };
+}
+
 async function buildScopedLedger(primaryType, party, options = {}) {
   const Customer = require('../models/Customer');
   const Supplier = require('../models/Supplier');
@@ -666,6 +759,18 @@ async function buildScopedLedger(primaryType, party, options = {}) {
     customer = await Customer.findById(party.linkedCustomerId);
   }
 
+  // Resolve Customer<->ProcessingCustomer link (Part D)
+  let linkedRegular = null;
+  let linkedProcessing = null;
+  if (primaryType === 'Customer') {
+    if (party.linkedProcessingCustomerId) {
+      linkedProcessing = await Customer.findById(party.linkedProcessingCustomerId);
+    }
+    if (party.linkedRegularCustomerId) {
+      linkedRegular = await Customer.findById(party.linkedRegularCustomerId);
+    }
+  }
+
   const linked = !!(customer && supplier);
   const buildOne = async (type, p) => {
     if (!p) return null;
@@ -674,7 +779,7 @@ async function buildScopedLedger(primaryType, party, options = {}) {
       : await buildLedger(type, p, options);
     return {
       ...ledger,
-      scope: type === 'Customer' ? 'processing' : 'supplier',
+      scope: type === 'Customer' ? (p.customerType === 'Processing' ? 'processing' : 'regular') : 'supplier',
       linked,
       party: {
         ...ledger.party,
@@ -682,13 +787,36 @@ async function buildScopedLedger(primaryType, party, options = {}) {
         supplierId: supplier?._id || null,
         linkedSupplierId: customer?.linkedSupplierId || null,
         linkedCustomerId: supplier?.linkedCustomerId || null,
+        linkedProcessingCustomerId: party.linkedProcessingCustomerId || null,
+        linkedRegularCustomerId: party.linkedRegularCustomerId || null,
       },
     };
   };
 
+  // Customer<->ProcessingCustomer combined view (Part D)
+  if (scope === 'customer-combined') {
+    const isProcessing = party.customerType === 'Processing';
+    const regularParty = isProcessing ? (linkedRegular || null) : party;
+    const processingParty = isProcessing ? party : (linkedProcessing || null);
+    if (regularParty && processingParty) {
+      return buildCombinedCustomerLedger(regularParty, processingParty, { ...options, mode });
+    }
+    // Not linked -- fall back to own side
+  }
+  if (scope === 'customer-regular') {
+    const isProcessing = party.customerType === 'Processing';
+    const regularParty = isProcessing ? (linkedRegular || null) : party;
+    if (regularParty) return buildOne('Customer', regularParty);
+  }
+  if (scope === 'customer-processing') {
+    const isProcessing = party.customerType === 'Processing';
+    const processingParty = isProcessing ? party : (linkedProcessing || null);
+    if (processingParty) return buildOne('Customer', processingParty);
+  }
+
   if (scope === 'combined') {
     if (linked) return buildCombinedLedger(customer, supplier, { ...options, mode });
-    // not linked — fall back to own side
+    // not linked -- fall back to own side
   }
   if ((scope === 'supplier' || (scope === 'linked' && primaryType === 'Customer')) && supplier) {
     return buildOne('Supplier', supplier);
@@ -700,10 +828,12 @@ async function buildScopedLedger(primaryType, party, options = {}) {
   return buildOne(primaryType, party);
 }
 
+
 module.exports = {
   buildLedger,
   buildDateWiseLedger,
   buildCombinedLedger,
+  buildCombinedCustomerLedger,
   buildScopedLedger,
   applyOpeningBalanceToTotals,
   collectRawEntries,

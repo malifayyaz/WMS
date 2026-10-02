@@ -7,9 +7,10 @@ const Order = require('../models/Order');
 const ReadyStock = require('../models/ReadyStock');
 const JobWork = require('../models/JobWork');
 const Supplier = require('../models/Supplier');
+const Transaction = require('../models/Transaction');
 
 const { CONSUMPTION_MATERIAL_TYPES } = require('../utils/wireConfig');
-const { deleteTransactionsForSource } = require('../utils/transactionSyncService');
+const { deleteTransactionsForSource, recalcSupplierTotals } = require('../utils/transactionSyncService');
 const { startOfDay, endOfDay } = require('date-fns');
 
 
@@ -86,6 +87,42 @@ async function syncUsageForMaterial(material) {
 
 }
 
+/**
+ * Create a Daily Book Money Out transaction for a process material purchase.
+ * If a supplierId is present the transaction is linked to that vendor (relatedTo: 'Supplier')
+ * so it appears correctly in the supplier ledger and Daily Book.
+ * Amount is amountPaid — the "due" portion is tracked through recalcSupplierTotals.
+ *
+ * Payment method is honoured as-is (Cash / Bank Transfer / Cheque — cheque is NOT
+ * coerced to Cash).
+ */
+async function syncTransactionFromProcessMaterial(material, supplierName) {
+  if (!material?._id) return null;
+
+  const amountPaid = Number(material.amountPaid) || 0;
+
+  // Delete any existing transaction for this source so we can upsert cleanly
+  await Transaction.deleteMany({ sourceType: 'ConsumptionMaterial', sourceId: material._id });
+
+  if (amountPaid <= 0) return null;
+
+  const payload = {
+    transactionType: 'Money Out',
+    amount: amountPaid,
+    paymentMethod: material.paymentMethod || 'Cash',
+    relatedTo: material.supplierId ? 'Supplier' : 'Other',
+    relatedId: material.supplierId || undefined,
+    relatedName: supplierName || material.supplierName || 'Process Material',
+    description: `${material.materialType} — ${material.quantity} ${material.unit || ''}`.trim(),
+    sourceType: 'ConsumptionMaterial',
+    sourceId: material._id,
+    expenseGroup: 'Process Material',
+    expenseCategory: material.materialType,
+    transactionDate: material.purchaseDate || new Date(),
+  };
+
+  return Transaction.create(payload);
+}
 
 
 const createMaterial = async (req, res, next) => {
@@ -174,26 +211,20 @@ const createMaterial = async (req, res, next) => {
     }
 
     const doc = await ConsumptionMaterial.create(body);
-    
-    // Link to Supplier ledger if provided
-    if (body.supplierId) {
-      const supplier = await Supplier.findById(body.supplierId);
-      if (supplier) {
-        supplier.totalAmountPurchased += totalCost;
-        supplier.totalAmountDue += amountDue;
-        supplier.totalAmountPaid += amountPaid;
-        
-        if (amountPaid > 0) {
-          supplier.paymentHistory.push({
-            amount: amountPaid,
-            paymentDate: body.purchaseDate ? new Date(body.purchaseDate) : new Date(),
-            paymentMethod: body.paymentMethod || 'Cash',
-            note: `Payment for Process Material: ${doc.materialType} (${doc.quantity} ${doc.unit})`,
-            paidBy: body.paidBy || '',
-          });
-        }
-        await supplier.save();
-      }
+
+    // Resolve supplier name for transaction / ledger
+    let resolvedSupplierName = doc.supplierName || '';
+    if (doc.supplierId) {
+      const supplier = await Supplier.findById(doc.supplierId).lean();
+      if (supplier) resolvedSupplierName = supplier.name;
+    }
+
+    // Create Daily Book transaction (Money Out, linked to supplier if present)
+    await syncTransactionFromProcessMaterial(doc, resolvedSupplierName);
+
+    // Recalculate supplier running totals from ledger entries (same as coil purchase)
+    if (doc.supplierId) {
+      await recalcSupplierTotals(doc.supplierId);
     }
 
     await syncUsageForMaterial(doc);
@@ -283,6 +314,16 @@ const updateMaterial = async (req, res, next) => {
 
 
 
+    // Re-sync transaction and supplier totals
+    const supplierId = updated.supplierId || existing.supplierId;
+    let supplierName = updated.supplierName || existing.supplierName || '';
+    if (supplierId) {
+      const supplier = await Supplier.findById(supplierId).lean();
+      if (supplier) supplierName = supplier.name;
+    }
+    await syncTransactionFromProcessMaterial(updated, supplierName);
+    if (supplierId) await recalcSupplierTotals(supplierId);
+
     await syncUsageForMaterial(updated);
 
     res.json({ success: true, data: updated, message: 'Process material updated' });
@@ -309,11 +350,16 @@ const deleteMaterial = async (req, res, next) => {
 
     }
 
+    const supplierId = existing.supplierId;
+
     await ConsumptionUsage.deleteMany({ materialId: existing._id });
 
     await deleteTransactionsForSource('ConsumptionMaterial', existing._id);
 
     await ConsumptionMaterial.findByIdAndDelete(req.params.id);
+
+    // Recalc supplier totals after deletion
+    if (supplierId) await recalcSupplierTotals(supplierId);
 
     res.json({ success: true, message: 'Process material deleted' });
 
@@ -334,6 +380,7 @@ const getMaterials = async (req, res, next) => {
     const filter = {};
 
     if (req.query.materialType) filter.materialType = req.query.materialType;
+    if (req.query.supplierId) filter.supplierId = req.query.supplierId;
 
     const list = await ConsumptionMaterial.find(filter).sort({ purchaseDate: -1 });
 
@@ -562,10 +609,18 @@ const getConsumptionAnalysis = async (req, res, next) => {
   }
 };
 
-/** Record payment towards an unpaid or partial process material purchase. */
+/**
+ * Record a later payment towards an unpaid / partial process material purchase.
+ *
+ * Fixes:
+ *  - Creates a proper Daily Book Money Out transaction (with correct paymentMethod —
+ *    Cheque is NOT coerced to Cash any more).
+ *  - Links transaction to the vendor (relatedTo: 'Supplier') when supplierId is set.
+ *  - Recalculates the supplier's running totals (totalAmountDue/Paid/Purchased).
+ */
 const addPayment = async (req, res, next) => {
   try {
-    const { amount, paymentMethod, paidBy, note } = req.body;
+    const { amount, paymentMethod, paidBy, note, paymentDate } = req.body;
     const paymentAmount = Number(amount);
     if (!paymentAmount || paymentAmount <= 0) {
       return res.status(400).json({ success: false, message: 'Valid payment amount is required and must be greater than 0' });
@@ -584,10 +639,13 @@ const addPayment = async (req, res, next) => {
       });
     }
 
+    const method = paymentMethod || 'Cash';
+    const pDate = paymentDate ? new Date(paymentDate) : new Date();
+
     record.paymentHistory.push({
       amount: paymentAmount,
-      paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : new Date(),
-      paymentMethod: paymentMethod || 'Cash',
+      paymentDate: pDate,
+      paymentMethod: method,
       paidBy: paidBy || '',
       note: note || '',
       createdAt: new Date(),
@@ -606,6 +664,34 @@ const addPayment = async (req, res, next) => {
 
     await record.save();
 
+    // Create a Daily Book Money Out transaction for this payment
+    // (separate from the initial purchase transaction)
+    let supplierName = record.supplierName || '';
+    if (record.supplierId) {
+      const supplier = await Supplier.findById(record.supplierId).lean();
+      if (supplier) supplierName = supplier.name;
+    }
+
+    await Transaction.create({
+      transactionType: 'Money Out',
+      amount: paymentAmount,
+      paymentMethod: method,          // preserved — Cheque stays Cheque
+      relatedTo: record.supplierId ? 'Supplier' : 'Other',
+      relatedId: record.supplierId || undefined,
+      relatedName: supplierName || 'Process Material',
+      description: `Payment for ${record.materialType} — ${record.quantity} ${record.unit || ''}`.trim(),
+      sourceType: 'ConsumptionMaterial',
+      sourceId: record._id,
+      expenseGroup: 'Process Material',
+      expenseCategory: record.materialType,
+      transactionDate: pDate,
+    });
+
+    // Recalc supplier running totals
+    if (record.supplierId) {
+      await recalcSupplierTotals(record.supplierId);
+    }
+
     res.json({
       success: true,
       data: record,
@@ -619,10 +705,15 @@ const addPayment = async (req, res, next) => {
 /** Get material ledger filtered by materialType and date range with summary totals. */
 const getLedger = async (req, res, next) => {
   try {
-    const { materialType, startDate, endDate } = req.query;
+    const { materialType, supplierId, startDate, endDate } = req.query;
     const filter = {};
     if (materialType) {
-      filter.materialType = materialType;
+      filter.materialType = ['Stationery', 'Stationary'].includes(materialType)
+        ? { $in: ['Stationary', 'Stationery'] }
+        : materialType;
+    }
+    if (supplierId) {
+      filter.supplierId = supplierId;
     }
     if (startDate || endDate) {
       filter.purchaseDate = {};
@@ -670,4 +761,3 @@ module.exports = {
   addPayment,
   getLedger,
 };
-

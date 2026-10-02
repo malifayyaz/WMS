@@ -14,10 +14,12 @@ const createJobWork = async (req, res, next) => {
     if (!arrivedWeightKg || arrivedWeightKg <= 0) {
       return res.status(400).json({ success: false, message: 'Valid arrived weight required' });
     }
+    const inputMaterialType = body.inputMaterialType || 'Coil';
     const doc = await JobWork.create({
       customerId: body.customerId,
       customerName: customer.name,
       coilCategory: body.coilCategory || 'Shiplet Coil',
+      inputMaterialType,
       arrivedWeightKg,
       coilRatePerKg: Number(body.coilRatePerKg) || 0,
       // Labour rate is set at delivery time (varies by wire)
@@ -25,7 +27,10 @@ const createJobWork = async (req, res, next) => {
       arrivalDate: body.arrivalDate ? new Date(body.arrivalDate) : new Date(),
       notes: body.notes || '',
     });
-    res.status(201).json({ success: true, data: doc, message: 'Job work coil arrival recorded' });
+    const msg = inputMaterialType === 'Wire'
+      ? 'Job work wire arrival recorded'
+      : 'Job work coil arrival recorded';
+    res.status(201).json({ success: true, data: doc, message: msg });
   } catch (error) {
     next(error);
   }
@@ -381,6 +386,7 @@ const updateJobWork = async (req, res, next) => {
       doc.customerName = customer.name;
     }
     if (body.coilCategory !== undefined) doc.coilCategory = body.coilCategory;
+    if (body.inputMaterialType !== undefined) doc.inputMaterialType = body.inputMaterialType;
     if (body.arrivedWeightKg !== undefined) doc.arrivedWeightKg = Number(body.arrivedWeightKg);
     if (body.coilRatePerKg !== undefined) doc.coilRatePerKg = Number(body.coilRatePerKg) || 0;
     if (body.labourRatePerKg !== undefined) doc.labourRatePerKg = Number(body.labourRatePerKg);
