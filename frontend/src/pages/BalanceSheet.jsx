@@ -48,10 +48,8 @@ export default function BalanceSheet() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [dateMode, setDateMode] = useState('current'); // 'current', 'asOf', 'range'
+  const [dateMode, setDateMode] = useState('current'); // 'current', 'asOf'
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
   // Bank breakdown collapse state
   const [bankExpanded, setBankExpanded] = useState(false);
@@ -82,11 +80,8 @@ export default function BalanceSheet() {
     setLoading(true);
     try {
       const params = {};
-      if (dateMode === 'asOf') {
+      if (dateMode === 'asOf' && asOfDate) {
         params.date = asOfDate;
-      } else if (dateMode === 'range') {
-        if (startDate) params.startDate = startDate;
-        if (endDate) params.endDate = endDate;
       }
       const res = await balanceSheetAPI.get(params);
       setData(res.data.data || null);
@@ -95,7 +90,7 @@ export default function BalanceSheet() {
     } finally {
       setLoading(false);
     }
-  }, [dateMode, asOfDate, startDate, endDate]);
+  }, [dateMode, asOfDate]);
 
   useEffect(() => {
     fetchBalanceSheet();
@@ -179,7 +174,6 @@ export default function BalanceSheet() {
             >
               <ToggleButton value="current">Current / Live Position</ToggleButton>
               <ToggleButton value="asOf">As of Date</ToggleButton>
-              <ToggleButton value="range">Date Range</ToggleButton>
             </ToggleButtonGroup>
 
             {dateMode === 'asOf' && (
@@ -190,30 +184,6 @@ export default function BalanceSheet() {
                   label="As of Date"
                   value={asOfDate}
                   onChange={(e) => setAsOfDate(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                />
-                <Button variant="contained" size="small" onClick={fetchBalanceSheet} sx={{ textTransform: 'none' }}>
-                  Generate
-                </Button>
-              </Stack>
-            )}
-
-            {dateMode === 'range' && (
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <TextField
-                  type="date"
-                  size="small"
-                  label="From"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                />
-                <TextField
-                  type="date"
-                  size="small"
-                  label="To"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
                   InputLabelProps={{ shrink: true }}
                 />
                 <Button variant="contained" size="small" onClick={fetchBalanceSheet} sx={{ textTransform: 'none' }}>
@@ -243,11 +213,9 @@ export default function BalanceSheet() {
             <Chip
               size="small"
               label={
-                dateMode === 'range'
-                  ? `${startDate || 'Beginning'} → ${endDate || 'Today'}`
-                  : dateMode === 'asOf'
-                    ? asOfDate
-                    : `Live (${new Date().toLocaleDateString('en-PK')})`
+                dateMode === 'asOf'
+                  ? asOfDate
+                  : `Live (${new Date().toLocaleDateString('en-PK')})`
               }
               color={dateMode === 'current' ? 'default' : 'primary'}
               variant="outlined"

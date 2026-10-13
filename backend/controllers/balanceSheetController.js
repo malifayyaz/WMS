@@ -19,14 +19,8 @@ function getOrderWeight(order) {
 
 exports.getBalanceSheet = async (req, res, next) => {
   try {
-    const { date, startDate, endDate } = req.query;
-    // FIX 1: In Date Range mode, frontend sends startDate+endDate (not date).
-    // asOfDate must use endDate as the upper bound; fallback to date or now.
-    const asOfDate = endDate
-      ? endOfDay(new Date(endDate))
-      : date
-        ? endOfDay(new Date(date))
-        : new Date();
+    const { date } = req.query;
+    const asOfDate = date ? endOfDay(new Date(date)) : new Date();
 
     const PeriodClose = require('../models/PeriodClose');
     const latestClose = await PeriodClose.findOne({
@@ -46,12 +40,6 @@ exports.getBalanceSheet = async (req, res, next) => {
       dawnOfTime = startOfDay(new Date(latestOB.purchaseDate));
     } else if (latestClose) {
       dawnOfTime = startOfDay(new Date(latestClose.closeDate));
-    }
-    // FIX 2: If the user explicitly chose a Date Range with a startDate,
-    // honour their start as the floor so the range-filtered view is correct.
-    if (startDate) {
-      const userStart = startOfDay(new Date(startDate));
-      if (userStart > dawnOfTime) dawnOfTime = userStart;
     }
 
     // 1. ASSETS
@@ -206,13 +194,29 @@ exports.getBalanceSheet = async (req, res, next) => {
     let processingReceivables = 0;
     let processingAdvances = 0;
 
+    const allOrdersForReceivables = await Order.find({ orderDate: { $lte: asOfDate } }).lean();
+    const allJobWorksForReceivables = await JobWork.find({ arrivalDate: { $lte: asOfDate } }).lean();
+    const partyTransactions = await Transaction.find({ transactionDate: { $lte: asOfDate }, relatedTo: { $in: ['Customer', 'Supplier'] } }).lean();
+
     const customerBalances = {};
     const allCustomers = await Customer.find().lean();
     allCustomers.forEach(c => {
       customerBalances[c._id.toString()] = { type: c.customerType, balance: 0 };
+      const ob = Number(c.openingBalance || 0);
+      const obType = c.openingBalanceType || 'none';
+      const obDate = c.openingBalanceDate ? new Date(c.openingBalanceDate) : new Date(0);
+      if (ob > 0 && obType !== 'none' && obDate <= asOfDate) {
+        customerBalances[c._id.toString()].balance += (obType === 'debit' ? ob : -ob);
+      }
+      (c.paymentHistory || []).forEach(p => {
+        const pDate = p.date ? new Date(p.date) : new Date(0);
+        if (pDate <= asOfDate) {
+          customerBalances[c._id.toString()].balance -= (Number(p.amount) || 0);
+        }
+      });
     });
 
-    allOrdersBefore.forEach(o => {
+    allOrdersForReceivables.forEach(o => {
       if (o.customerId) {
         const cid = o.customerId.toString();
         if (!customerBalances[cid]) customerBalances[cid] = { type: 'Ledger', balance: 0 };
@@ -224,8 +228,7 @@ exports.getBalanceSheet = async (req, res, next) => {
       }
     });
 
-    const allJobWorks = await JobWork.find({ arrivalDate: { $gte: dawnOfTime, $lte: asOfDate } }).lean();
-    allJobWorks.forEach(jw => {
+    allJobWorksForReceivables.forEach(jw => {
       if (jw.customerId) {
         const cid = jw.customerId.toString();
         if (!customerBalances[cid]) customerBalances[cid] = { type: 'Processing', balance: 0 };
@@ -244,15 +247,13 @@ exports.getBalanceSheet = async (req, res, next) => {
       }
     });
 
-    transactions.forEach(t => {
-      if (t.relatedTo === 'Customer' && t.relatedId) {
-        const cid = t.relatedId.toString();
-        if (!customerBalances[cid]) customerBalances[cid] = { type: 'Ledger', balance: 0 };
-        if (t.transactionType === 'Money In') {
-          customerBalances[cid].balance -= (Number(t.amount) || 0);
-        } else if (t.transactionType === 'Money Out') {
-          customerBalances[cid].balance += (Number(t.amount) || 0);
-        }
+    partyTransactions.filter(t => t.relatedTo === 'Customer' && t.relatedId).forEach(t => {
+      const cid = t.relatedId.toString();
+      if (!customerBalances[cid]) customerBalances[cid] = { type: 'Ledger', balance: 0 };
+      if (t.transactionType === 'Money In') {
+        customerBalances[cid].balance -= (Number(t.amount) || 0);
+      } else if (t.transactionType === 'Money Out') {
+        customerBalances[cid].balance += (Number(t.amount) || 0);
       }
     });
 
@@ -271,7 +272,7 @@ exports.getBalanceSheet = async (req, res, next) => {
 
     // Processing Stock Value
     let totalProcessingStockKg = 0;
-    allJobWorks.forEach(jw => {
+    allJobWorksForReceivables.forEach(jw => {
       let pool = Number(jw.arrivedWeightKg) || 0;
       (jw.deliveries || []).forEach(del => {
         if (new Date(del.deliveredDate || jw.arrivalDate) <= asOfDate) pool -= (Number(del.weightKg) || 0);
@@ -294,49 +295,54 @@ exports.getBalanceSheet = async (req, res, next) => {
     const allSuppliers = await Supplier.find().lean();
     allSuppliers.forEach(s => {
       supplierBalances[s._id.toString()] = 0;
+      const ob = Number(s.openingBalance || 0);
+      const obType = s.openingBalanceType || 'none';
+      const obDate = s.openingBalanceDate ? new Date(s.openingBalanceDate) : new Date(0);
+      if (ob > 0 && obType !== 'none' && obDate <= asOfDate) {
+        supplierBalances[s._id.toString()] += (obType === 'credit' ? ob : -ob);
+      }
     });
 
-    rawMaterials.forEach(rm => {
+    const allRawPurchasesForPayables = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: false }).lean();
+    const allRawReturnsForPayables = await RawMaterial.find({ purchaseDate: { $lte: asOfDate }, isReturn: true }).lean();
+    const allConsumptionForPayables = await ConsumptionMaterial.find({
+      supplierId: { $exists: true, $ne: null },
+      purchaseDate: { $lte: asOfDate },
+    }).lean();
+
+    allRawPurchasesForPayables.forEach(rm => {
       if (rm.supplierId) {
         const sid = rm.supplierId.toString();
-        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        if (supplierBalances[sid] === undefined) supplierBalances[sid] = 0;
         supplierBalances[sid] += (Number(rm.totalAmount) || 0);
       }
     });
-    allReturnsToSupplierBefore.forEach(rm => {
+
+    allRawReturnsForPayables.forEach(rm => {
       if (rm.supplierId) {
         const sid = rm.supplierId.toString();
-        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
+        if (supplierBalances[sid] === undefined) supplierBalances[sid] = 0;
         supplierBalances[sid] -= (Number(rm.totalAmount) || 0);
       }
     });
 
-    // Add ProcessMaterial purchases to supplier payables (Part A)
-    const consumptionMaterialRecords = await ConsumptionMaterial.find({
-      supplierId: { $exists: true, $ne: null },
-      purchaseDate: { $gte: dawnOfTime, $lte: asOfDate },
-    }).lean();
-    consumptionMaterialRecords.forEach((cm) => {
+    allConsumptionForPayables.forEach((cm) => {
       if (cm.supplierId) {
         const sid = cm.supplierId.toString();
-        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
-        // totalCost = debit (we owe them); amountPaid = credit (already paid)
+        if (supplierBalances[sid] === undefined) supplierBalances[sid] = 0;
         supplierBalances[sid] += (Number(cm.totalCost) || 0);
         supplierBalances[sid] -= (Number(cm.amountPaid) || 0);
       }
     });
 
-    transactions.forEach(t => {
-      if (t.relatedTo === 'Supplier' && t.relatedId) {
-        const sid = t.relatedId.toString();
-        if (!supplierBalances[sid]) supplierBalances[sid] = 0;
-        if (t.transactionType === 'Money Out') {
-          // Skip ConsumptionMaterial-sourced transactions — already counted above via amountPaid
-          if (t.sourceType === 'ConsumptionMaterial') return;
-          supplierBalances[sid] -= (Number(t.amount) || 0);
-        } else if (t.transactionType === 'Money In') {
-          supplierBalances[sid] += (Number(t.amount) || 0);
-        }
+    partyTransactions.filter(t => t.relatedTo === 'Supplier' && t.relatedId).forEach(t => {
+      const sid = t.relatedId.toString();
+      if (supplierBalances[sid] === undefined) supplierBalances[sid] = 0;
+      if (t.sourceType === 'ConsumptionMaterial') return; // already counted in cm.amountPaid
+      if (t.transactionType === 'Money Out') {
+        supplierBalances[sid] -= (Number(t.amount) || 0);
+      } else if (t.transactionType === 'Money In') {
+        supplierBalances[sid] += (Number(t.amount) || 0);
       }
     });
 

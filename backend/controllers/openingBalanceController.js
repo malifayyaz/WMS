@@ -135,7 +135,7 @@ async function applyOpeningBalance(opening, closeDate) {
         const isDebit = opening.balanceType === 'debit';
         const isCredit = opening.balanceType === 'credit';
         const bal = Number(opening.balanceAmount) || 0;
-        
+
         // Load AnnealingPerson Model on demand to avoid circular deps if any
         const AnnealingPerson = require('../models/AnnealingPerson');
         await AnnealingPerson.findByIdAndUpdate(opening.referenceId, {

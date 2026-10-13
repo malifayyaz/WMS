@@ -220,33 +220,19 @@ exports.executeClose = async (req, res) => {
     const activityLogsDeleted = await ActivityLog.deleteMany({ createdAt: { $lt: closeDate } });
     console.log(`[PeriodClose] Deleted ${activityLogsDeleted.deletedCount} activity logs`);
 
-    // STEP D: Zero out all running balances
-    console.log('[PeriodClose] Step D: Resetting customer, supplier, stock, worker, and cash/bank balances...');
+    // STEP D: Recalculate customer and supplier balances, reset stock, worker, and cash/bank balances
+    console.log('[PeriodClose] Step D: Recalculating customer and supplier balances from remaining records...');
 
-    await Customer.updateMany(
-      {},
-      {
-        $set: {
-          totalAmountPurchased: 0,
-          totalAmountPaid: 0,
-          totalAmountDue: 0,
-          totalOrders: 0,
-          paymentHistory: [],
-        },
-      }
-    );
+    const { recalcCustomerTotals, recalcSupplierTotals } = require('../utils/transactionSyncService');
+    const allCustomers = await Customer.find({}, '_id');
+    for (const c of allCustomers) {
+      await recalcCustomerTotals(c._id);
+    }
 
-    await Supplier.updateMany(
-      {},
-      {
-        $set: {
-          totalAmountPurchased: 0,
-          totalAmountPaid: 0,
-          totalAmountDue: 0,
-          paymentHistory: [],
-        },
-      }
-    );
+    const allSuppliers = await Supplier.find({}, '_id');
+    for (const s of allSuppliers) {
+      await recalcSupplierTotals(s._id);
+    }
 
     await RawMaterial.updateMany(
       {},
