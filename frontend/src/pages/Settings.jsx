@@ -81,7 +81,7 @@ export default function Settings() {
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
               Percentage of cost of wire sold deducted as manufacturing waste in the P&L report. 
-              Common range: 3% to 7%.
+              Default: 2.5%. Common range: 1% to 5%.
             </Typography>
 
             <Box display="flex" alignItems="center" gap={2} mt={2}>

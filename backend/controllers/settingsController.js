@@ -4,7 +4,7 @@ const SystemSettings = require('../models/SystemSettings');
 const defaultSettings = [
   {
     key: 'wastePercentage',
-    value: 5,
+    value: 2.5,
     description: 'Percentage of cost of wire sold deducted as manufacturing waste',
   }
 ];
@@ -29,6 +29,11 @@ exports.getSettings = async (req, res, next) => {
     }
 
     const settingsObj = settings.reduce((acc, curr) => {
+      // If legacy auto-seeded 5% without admin modification, migrate to 2.5%
+      if (curr.key === 'wastePercentage' && curr.value === 5 && !curr.updatedBy) {
+        curr.value = 2.5;
+        SystemSettings.updateOne({ _id: curr._id }, { $set: { value: 2.5 } }).catch(() => {});
+      }
       acc[curr.key] = curr.value;
       return acc;
     }, {});

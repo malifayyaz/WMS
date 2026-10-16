@@ -308,7 +308,7 @@ function CategoryProfit({ data, title, isCombined }) {
                 <TableRow><TableCell sx={dense}>G. Wire Sold (incl. Processing)</TableCell><TableCell sx={dense} align="right">{Number(data.wireSoldKg || 0).toFixed(1)} kg</TableCell></TableRow>
                 <TableRow><TableCell sx={dense}>H. Wire Returns</TableCell><TableCell sx={dense} align="right" color="error.main">-{Number(data.wireReturnsKg || 0).toFixed(1)} kg</TableCell></TableRow>
                 <TableRow><TableCell sx={dense}>I. Weighted Average Sale Rate</TableCell><TableCell sx={dense} align="right">{formatCurrency(data.weightedAvgSaleRate || 0)}</TableCell></TableRow>
-                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>J. Cost of Wire Sold</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{formatCurrency(data.costOfWireSold || 0)}</TableCell></TableRow>
+                <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>J. Cost of Wire Sold{isCombined && (data.wastePercentage !== undefined || data.wasteAmount) ? ` (incl. ${data.wastePercentage ?? 2.5}% wastage)` : ''}</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{formatCurrency(data.costOfWireSold || 0)}</TableCell></TableRow>
                 <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>K. Revenue</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{formatCurrency(data.revenue || 0)}</TableCell></TableRow>
                 <TableRow sx={{ bgcolor: 'grey.100' }}><TableCell sx={{...dense, fontWeight: 700}}>L. Closing Stock</TableCell><TableCell sx={{...dense, fontWeight: 700}} align="right">{Number(data.closingStockKg || 0).toFixed(1)} kg</TableCell></TableRow>
               </TableBody>
@@ -324,7 +324,7 @@ function CategoryProfit({ data, title, isCombined }) {
             {isCombined && (
               <>
                 <Grid item xs={12} sm={6}><MetricCard title="Gross Profit" value={formatCurrency(data.grossProfit)} color={data.grossProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>
-                <Grid item xs={12} sm={6}><MetricCard title={`Wastage (${data.wastePercentage || 5}%)`} value={formatCurrency(data.wasteAmount || 0)} color="warning.main" helper="Included in Cost of Wire Sold" /></Grid>
+                <Grid item xs={12} sm={6}><MetricCard title={`Wastage (${data.wastePercentage ?? 2.5}%)`} value={formatCurrency(data.wasteAmount || 0)} color="warning.main" helper="Included in Cost of Wire Sold" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Factory Expenses" value={formatCurrency(data.factoryExpenses || 0)} color="error.main" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Consumption Cost" value={formatCurrency(data.consumptionCost || 0)} color="error.main" /></Grid>
                 <Grid item xs={12} sm={6}><MetricCard title="Operating Profit" value={formatCurrency(data.operatingProfit)} color={data.operatingProfit >= 0 ? 'success.main' : 'error.main'} /></Grid>

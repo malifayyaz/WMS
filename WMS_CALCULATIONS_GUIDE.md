@@ -47,9 +47,9 @@ The Profit & Loss report measures how much money the business actually earned fr
 
 **Example:**
 1. Your initial Cost of Wire Sold is Rs. 100,000.
-2. The factory waste setting is 5%. 
-3. Waste Amount = 100,000 × 0.05 = 5,000.
-4. Final Cost of Wire Sold = 100,000 + 5,000 = **Rs. 105,000**.
+2. The factory waste setting is 2.5%. 
+3. Waste Amount = 100,000 × 0.025 = 2,500.
+4. Final Cost of Wire Sold = 100,000 + 2,500 = **Rs. 102,500**.
 
 ### Gross Profit
 **Explanation:** The raw profit made purely from manufacturing and selling goods, before paying for factory overheads, bills, or personal withdrawals.
@@ -59,8 +59,8 @@ The Profit & Loss report measures how much money the business actually earned fr
 
 **Example:**
 1. Total Revenue is Rs. 320,000.
-2. Final Cost of Wire Sold is Rs. 105,000.
-*Gross Profit = 320,000 − 105,000 = **Rs. 215,000**.*
+2. Final Cost of Wire Sold is Rs. 102,500.
+*Gross Profit = 320,000 − 102,500 = **Rs. 217,500**.*
 
 ### Factory Expenses
 **Explanation:** The everyday operational costs of running the factory, such as electricity, worker salaries, machinery maintenance, and consumable materials used in processing.

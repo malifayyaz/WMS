@@ -201,7 +201,15 @@ function getProcessingStats(jobWorks, category, sDate, eDate) {
 
 async function buildProfitReport({ startDate, endDate } = {}) {
   const setting = await SystemSettings.findOne({ key: 'wastePercentage' });
-  const wastePercentage = setting?.value ?? 5;
+  let wastePercentage = 2.5;
+  if (setting && setting.value !== undefined) {
+    if (setting.value === 5 && !setting.updatedBy) {
+      wastePercentage = 2.5;
+      SystemSettings.updateOne({ _id: setting._id }, { $set: { value: 2.5 } }).catch(() => {});
+    } else {
+      wastePercentage = Number(setting.value);
+    }
+  }
 
   const sDate = startDate ? startOfDay(new Date(startDate)) : new Date(0);
   const eDate = endDate ? endOfDay(new Date(endDate)) : new Date();
